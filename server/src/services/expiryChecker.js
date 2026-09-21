@@ -10,7 +10,8 @@ function daysUntil(dateStr) {
 }
 
 /** Checks licences and Entra ID app secrets for items expiring soon or
- * already expired, and sends a single digest notification if any are found.
+ * already expired, and sends a digest notification for each (tagged with
+ * separate event types so they can be enabled/disabled independently).
  * Never throws — logs and swallows errors so a bad run doesn't crash the
  * scheduler. */
 async function checkExpiries() {
@@ -27,25 +28,21 @@ async function checkExpiries() {
       .map((a) => ({ ...a, days: daysUntil(a.secret_expiry) }))
       .filter((a) => a.days <= WARNING_WINDOW_DAYS);
 
-    if (licences.length === 0 && entraApps.length === 0) return;
-
-    const lines = [];
     if (licences.length > 0) {
-      lines.push(`Licences (${licences.length}):`);
-      licences.forEach((l) => {
+      const lines = licences.map((l) => {
         const status = l.days < 0 ? `expired ${-l.days}d ago` : `expires in ${l.days}d`;
-        lines.push(`  - ${l.vendor} ${l.licence_type}: ${status}`);
+        return `  - ${l.vendor} ${l.licence_type}: ${status}`;
       });
-    }
-    if (entraApps.length > 0) {
-      lines.push(`Entra ID app secrets (${entraApps.length}):`);
-      entraApps.forEach((a) => {
-        const status = a.days < 0 ? `expired ${-a.days}d ago` : `expires in ${a.days}d`;
-        lines.push(`  - ${a.app_name}: ${status}`);
-      });
+      await notify(`InfraLoom — licences expiring soon:\n${lines.join('\n')}`, 'licence_expiring');
     }
 
-    await notify(`InfraLoom — upcoming expirations:\n${lines.join('\n')}`);
+    if (entraApps.length > 0) {
+      const lines = entraApps.map((a) => {
+        const status = a.days < 0 ? `expired ${-a.days}d ago` : `expires in ${a.days}d`;
+        return `  - ${a.app_name}: ${status}`;
+      });
+      await notify(`InfraLoom — Entra ID app secrets expiring soon:\n${lines.join('\n')}`, 'entra_expiring');
+    }
   } catch (err) {
     console.error('[expiryChecker] check failed:', err.message);
   }

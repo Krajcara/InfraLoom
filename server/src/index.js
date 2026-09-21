@@ -112,7 +112,7 @@ cron.schedule('0 3 * * *', () => require('./services/expiryChecker').checkExpiri
 // empty SSL column for up to 24h before the first scheduled run.
 require('./services/monitorWorker').initMonitorWorker();
 cron.schedule('0 2 * * *', () => require('./services/sslChecker').checkAllSSL());
-setTimeout(() => require('./services/sslChecker').checkAllSSL(), 5000);
+setTimeout(() => require('./services/sslChecker').checkAllSSL(false), 5000);
 
 process.on('SIGTERM', () => {
   server.close(() => process.exit(0));

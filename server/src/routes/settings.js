@@ -37,6 +37,9 @@ const ALL_KEYS = [
   'ntfy_topic',
   'pushover_app_token',
   'pushover_user_key',
+  'quiet_hours_enabled',
+  'quiet_hours_start',
+  'quiet_hours_end',
 ];
 
 const MASK = '***';
@@ -127,6 +130,46 @@ router.post('/test/notification', requireAuth, requireRole('superadmin', 'admin'
   } catch (err) {
     res.json({ ok: false, error: err.message });
   }
+});
+
+// GET /api/settings/notification-rules — matrix metadata + saved rules + quiet hours
+router.get('/notification-rules', requireAuth, (req, res) => {
+  const { EVENT_TYPES, CHANNEL_NAMES, getNotificationRules } = require('../services/notificationService');
+  const s = getSettings(false);
+  res.json({
+    eventTypes: EVENT_TYPES,
+    channels: CHANNEL_NAMES,
+    rules: getNotificationRules(),
+    quietHours: {
+      enabled: s.quiet_hours_enabled === '1',
+      start: s.quiet_hours_start || '22:00',
+      end: s.quiet_hours_end || '07:00',
+    },
+  });
+});
+
+// POST /api/settings/notification-rules — { rules: {channel: {eventType: bool}}, quietHours: {enabled,start,end} }
+router.post('/notification-rules', requireAuth, requireRole('superadmin', 'admin'), (req, res) => {
+  const { rules, quietHours } = req.body || {};
+  const stmt = db.prepare(
+    "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
+  );
+
+  if (rules && typeof rules === 'object') {
+    stmt.run('notification_rules', JSON.stringify(rules));
+  }
+  if (quietHours) {
+    stmt.run('quiet_hours_enabled', quietHours.enabled ? '1' : '0');
+    if (quietHours.start) stmt.run('quiet_hours_start', quietHours.start);
+    if (quietHours.end) stmt.run('quiet_hours_end', quietHours.end);
+  }
+
+  writeAuditLog({
+    user_id: req.user.id, username: req.user.username, action: 'settings.notification_rules_update',
+    module: 'settings', ip_address: req.ip,
+  });
+
+  res.json({ ok: true });
 });
 
 module.exports = router;

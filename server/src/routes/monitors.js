@@ -104,7 +104,7 @@ router.post('/', requireRole('superadmin', 'admin', 'operator'), (req, res) => {
 
   if (['http', 'https', 'keyword', 'json_query'].includes(type)) {
     require('../services/sslChecker')
-      .checkAllSSL()
+      .checkAllSSL(false)
       .catch((e) => console.error('[Monitor] Immediate SSL check failed:', e.message));
   }
 

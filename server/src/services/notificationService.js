@@ -2,6 +2,19 @@
 
 const db = require('../db/database');
 
+// Event types the app can notify about. Keep this list in sync with every
+// place that calls notify(message, eventType) — the Settings UI reads it
+// via GET /api/settings/notification-rules to build the toggle matrix.
+const EVENT_TYPES = [
+  { id: 'monitor_down', label: 'Monitor down' },
+  { id: 'monitor_up', label: 'Monitor recovered' },
+  { id: 'ssl_expiring', label: 'SSL certificate expiring/expired' },
+  { id: 'licence_expiring', label: 'Licence expiring/expired' },
+  { id: 'entra_expiring', label: 'Entra ID secret expiring/expired' },
+];
+
+const CHANNEL_NAMES = ['telegram', 'slack', 'discord', 'ntfy', 'pushover'];
+
 function getRawSettings() {
   const rows = db.prepare('SELECT key, value FROM settings').all();
   const s = {};
@@ -9,6 +22,48 @@ function getRawSettings() {
     s[r.key] = r.value;
   });
   return s;
+}
+
+/** Per-channel-per-event toggle matrix. Defaults to "everything enabled"
+ * for any channel/event combination not explicitly set — so existing
+ * installs keep working exactly as before until someone opts out. */
+function getNotificationRules() {
+  const raw = db.prepare("SELECT value FROM settings WHERE key = 'notification_rules'").get()?.value;
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function isChannelEventEnabled(rules, channel, eventType) {
+  const channelRules = rules[channel];
+  if (!channelRules || channelRules[eventType] === undefined) return true; // default: on
+  return !!channelRules[eventType];
+}
+
+/** True if "now" falls inside the configured quiet-hours window (local
+ * server time, HH:MM). Handles windows that cross midnight. */
+function isQuietHours() {
+  const s = getRawSettings();
+  if (s.quiet_hours_enabled !== '1') return false;
+  const start = s.quiet_hours_start || '22:00';
+  const end = s.quiet_hours_end || '07:00';
+
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  const startMinutes = sh * 60 + sm;
+  const endMinutes = eh * 60 + em;
+
+  if (startMinutes === endMinutes) return false; // zero-length window = disabled
+  if (startMinutes < endMinutes) {
+    return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+  }
+  // window crosses midnight, e.g. 22:00 -> 07:00
+  return nowMinutes >= startMinutes || nowMinutes < endMinutes;
 }
 
 async function sendTelegram(s, message) {
@@ -75,14 +130,24 @@ const SENDERS = {
 };
 
 /**
- * Sends `message` to every channel that has its required settings filled in.
- * Each channel is attempted independently — one failing does not stop the
- * others. Returns a per-channel result summary; never throws.
+ * Sends `message` to every channel that (a) has its required settings
+ * filled in, (b) is enabled for `eventType` in the notification rules
+ * matrix, and (c) isn't currently inside the quiet-hours window.
+ * `eventType` is optional — omitting it (or passing an unknown id) sends
+ * to every configured channel unconditionally, for one-off/test messages.
+ * Each channel is attempted independently; one failing doesn't stop the
+ * others. Never throws.
  */
-async function notify(message) {
+async function notify(message, eventType = null) {
+  if (eventType && isQuietHours()) {
+    return { skipped: 'quiet_hours' };
+  }
+
   const s = getRawSettings();
+  const rules = getNotificationRules();
   const results = {};
   for (const [name, send] of Object.entries(SENDERS)) {
+    if (eventType && !isChannelEventEnabled(rules, name, eventType)) continue;
     try {
       await send(s, message);
       results[name] = { ok: true };
@@ -103,4 +168,10 @@ async function sendTestNotification(channel) {
   await send(s, `InfraLoom test notification (${new Date().toISOString()})`);
 }
 
-module.exports = { notify, sendTestNotification };
+module.exports = {
+  notify,
+  sendTestNotification,
+  EVENT_TYPES,
+  CHANNEL_NAMES,
+  getNotificationRules,
+};

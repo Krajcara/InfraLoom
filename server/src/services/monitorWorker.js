@@ -226,9 +226,9 @@ function recordResult(monitor, result) {
   if (prevStatus && prevStatus !== 'unknown' && prevStatus !== newStatus) {
     const { notify } = require('./notificationService');
     if (newStatus === 'down') {
-      notify(`InfraLoom — monitor DOWN: ${monitor.label} (${monitor.target}). ${result.error_msg || ''}`.trim());
+      notify(`InfraLoom — monitor DOWN: ${monitor.label} (${monitor.target}). ${result.error_msg || ''}`.trim(), 'monitor_down');
     } else if (newStatus === 'up') {
-      notify(`InfraLoom — monitor RECOVERED: ${monitor.label} (${monitor.target}) is back online.`);
+      notify(`InfraLoom — monitor RECOVERED: ${monitor.label} (${monitor.target}) is back online.`, 'monitor_up');
     }
   }
 }

@@ -12,6 +12,7 @@ export default function SettingsPage() {
       {canEdit && <GeneralSection />}
       {canEdit && <SmtpSection />}
       {canEdit && <NotificationsSection />}
+      {canEdit && <NotificationRulesSection />}
     </div>
   );
 }
@@ -240,6 +241,112 @@ function NotificationsSection() {
         ))}
         <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save all channels'}</button>
       </form>
+      {message && <p className={message.type === 'error' ? 'error' : 'success'}>{message.text}</p>}
+    </section>
+  );
+}
+
+function NotificationRulesSection() {
+  const [eventTypes, setEventTypes] = useState([]);
+  const [channels, setChannels] = useState([]);
+  const [rules, setRules] = useState({});
+  const [quietHours, setQuietHours] = useState({ enabled: false, start: '22:00', end: '07:00' });
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  useEffect(() => {
+    api.get('/settings/notification-rules').then((data) => {
+      setEventTypes(data.eventTypes);
+      setChannels(data.channels);
+      setRules(data.rules || {});
+      setQuietHours(data.quietHours);
+      setLoaded(true);
+    });
+  }, []);
+
+  function isEnabled(channel, eventId) {
+    if (!rules[channel] || rules[channel][eventId] === undefined) return true; // default on
+    return !!rules[channel][eventId];
+  }
+
+  function toggle(channel, eventId) {
+    setRules((prev) => ({
+      ...prev,
+      [channel]: { ...prev[channel], [eventId]: !isEnabled(channel, eventId) },
+    }));
+  }
+
+  async function save() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api.post('/settings/notification-rules', { rules, quietHours });
+      setMessage({ type: 'success', text: 'Saved.' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!loaded) return null;
+
+  return (
+    <section className="card">
+      <h2>Notification rules</h2>
+      <p className="muted">
+        Choose which message types go to which channel. Unchecked = that channel never receives
+        that type of alert, even if the channel itself is configured.
+      </p>
+
+      <table className="table rules-table">
+        <thead>
+          <tr>
+            <th>Event</th>
+            {channels.map((c) => (
+              <th key={c} className="rules-channel-head">{c}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {eventTypes.map((evt) => (
+            <tr key={evt.id}>
+              <td>{evt.label}</td>
+              {channels.map((c) => (
+                <td key={c} className="rules-checkbox-cell">
+                  <input type="checkbox" checked={isEnabled(c, evt.id)} onChange={() => toggle(c, evt.id)} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h3 className="rules-subheading">Quiet hours</h3>
+      <p className="muted">Suppress all notifications during this window (local server time).</p>
+      <div className="form-row">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={quietHours.enabled}
+            onChange={(e) => setQuietHours({ ...quietHours, enabled: e.target.checked })}
+          />
+          Enabled
+        </label>
+        <label>
+          From
+          <input type="time" value={quietHours.start} onChange={(e) => setQuietHours({ ...quietHours, start: e.target.value })} disabled={!quietHours.enabled} />
+        </label>
+        <label>
+          To
+          <input type="time" value={quietHours.end} onChange={(e) => setQuietHours({ ...quietHours, end: e.target.value })} disabled={!quietHours.enabled} />
+        </label>
+      </div>
+
+      <div className="form-row">
+        <button onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save notification rules'}</button>
+      </div>
       {message && <p className={message.type === 'error' ? 'error' : 'success'}>{message.text}</p>}
     </section>
   );

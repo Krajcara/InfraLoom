@@ -715,6 +715,24 @@ label {
   margin: 10px 0;
 }
 
+.rules-table {
+  max-width: 560px;
+}
+
+.rules-channel-head {
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.rules-checkbox-cell {
+  text-align: center;
+}
+
+.rules-subheading {
+  font-size: 14px;
+  margin: 20px 0 4px;
+}
+
 .checkbox-label {
   flex-direction: row !important;
   align-items: center;

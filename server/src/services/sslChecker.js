@@ -43,9 +43,15 @@ function checkSSL(targetUrl, timeoutMs = 10000) {
 }
 
 /** Checks SSL for all enabled http/https/keyword/json_query monitors and
- * updates ssl_expiry / ssl_days / ssl_error on each. Sends a digest
- * notification for certs expiring within 30 days or already expired. */
-async function checkAllSSL() {
+ * updates ssl_expiry / ssl_days / ssl_error on each.
+ *
+ * @param {boolean} sendNotification - When true (the daily 02:00 cron),
+ *   also sends a digest notification for certs expiring soon/expired.
+ *   Ad-hoc callers (server startup, a newly created monitor) pass false —
+ *   they only need the data refreshed immediately, not a fresh alert every
+ *   time the server happens to restart.
+ */
+async function checkAllSSL(sendNotification = true) {
   const monitors = db
     .prepare("SELECT id, label, target, type FROM monitors WHERE enabled = 1 AND type IN ('http','https','keyword','json_query')")
     .all();
@@ -71,6 +77,8 @@ async function checkAllSSL() {
   }
   console.log(`[SSL] Checked ${monitors.length} monitor(s)`);
 
+  if (!sendNotification) return;
+
   try {
     const expiring = db
       .prepare("SELECT label, ssl_days FROM monitors WHERE ssl_days IS NOT NULL AND ssl_days <= 30 ORDER BY ssl_days ASC")
@@ -78,7 +86,7 @@ async function checkAllSSL() {
     if (expiring.length > 0) {
       const { notify } = require('./notificationService');
       const lines = expiring.map((m) => `  - ${m.label}: ${m.ssl_days < 0 ? `expired ${-m.ssl_days}d ago` : `expires in ${m.ssl_days}d`}`);
-      await notify(`InfraLoom — SSL certificates expiring soon:\n${lines.join('\n')}`);
+      await notify(`InfraLoom — SSL certificates expiring soon:\n${lines.join('\n')}`, 'ssl_expiring');
     }
   } catch (e) {
     console.error('[SSL] Digest notification failed:', e.message);
