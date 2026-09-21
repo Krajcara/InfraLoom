@@ -300,3 +300,89 @@ label {
   gap: 12px;
   margin-top: 12px;
 }
+
+/* ── Dashboard ── */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.widget-card {
+  background: #1a1d24;
+  border: 1px solid #2a2e38;
+  border-radius: 10px;
+  padding: 16px 18px;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+}
+
+.widget-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.widget-header h3 {
+  margin: 0;
+  font-size: 14px;
+  flex: 1;
+}
+
+.widget-drag-handle {
+  cursor: grab;
+  color: #6b6f79;
+  font-size: 16px;
+  user-select: none;
+  touch-action: none;
+}
+
+.widget-drag-handle:active {
+  cursor: grabbing;
+}
+
+.widget-hide {
+  background: none;
+  border: none;
+  color: #6b6f79;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 13px;
+}
+
+.widget-hide:hover {
+  color: #ff6b6b;
+  background: none;
+}
+
+.widget-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.hidden-widgets {
+  margin-top: 24px;
+}
+
+.hidden-widgets h2 {
+  font-size: 14px;
+  color: #8b8f99;
+  font-weight: 500;
+}
+
+.hidden-widgets-list {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dashboard-footer {
+  margin-top: 40px;
+  color: #6b6f79;
+  font-size: 13px;
+  text-align: center;
+}

@@ -68,6 +68,7 @@ app.use('/api/profile', require('./routes/profile'));
 app.use('/api/update', require('./routes/update'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/audit-log', require('./routes/audit'));
+app.use('/api/dashboard', require('./routes/dashboard'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');

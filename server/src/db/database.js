@@ -129,6 +129,16 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_api_keys_user  ON api_keys(user_id);
 `);
 
+// ── Phase 3 — Dashboard shell ───────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS dashboard_layouts (
+    user_id    INTEGER PRIMARY KEY,
+    layout     TEXT NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`);
+
 // Seed default settings only if they don't already exist.
 const defaultSettings = {
   app_name: 'InfraLoom',

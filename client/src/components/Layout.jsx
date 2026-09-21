@@ -9,7 +9,7 @@ export default function Layout() {
       <header className="topbar">
         <span className="brand">InfraLoom</span>
         <nav className="topnav">
-          <Link to="/">Home</Link>
+          <Link to="/">Dashboard</Link>
           {user && (user.role === 'superadmin' || user.role === 'admin') && (
             <>
               <Link to="/users">Users</Link>
