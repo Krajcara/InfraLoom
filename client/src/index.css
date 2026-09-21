@@ -399,6 +399,19 @@ label {
   flex-direction: column;
 }
 
+.widget-card-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.widget-card-clickable:hover {
+  border-color: #3a3f4c;
+}
+
+.widget-card-clickable:active {
+  transform: scale(0.99);
+}
+
 .widget-header {
   display: flex;
   align-items: center;

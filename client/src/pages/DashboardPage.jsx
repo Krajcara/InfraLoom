@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   DndContext,
   PointerSensor,
@@ -107,7 +108,18 @@ export default function DashboardPage() {
   );
 }
 
+// Maps a widget id to the page it should open when clicked. Only widgets
+// whose module has actually shipped get an entry — the rest stay
+// non-clickable until their phase lands.
+const WIDGET_LINKS = {
+  licences: '/licences',
+  uptime: '/monitors',
+  ssl: '/monitors',
+  routers: '/routers',
+};
+
 function SortableWidget({ widget, onHide }) {
+  const navigate = useNavigate();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: widget.id,
   });
@@ -118,8 +130,22 @@ function SortableWidget({ widget, onHide }) {
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const link = WIDGET_LINKS[widget.id];
+
+  function handleCardClick(e) {
+    if (!link) return;
+    // Don't navigate when the click originated on the drag handle or hide button.
+    if (e.target.closest('.widget-drag-handle') || e.target.closest('.widget-hide')) return;
+    navigate(link);
+  }
+
   return (
-    <div ref={setNodeRef} style={style} className="widget-card">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`widget-card${link ? ' widget-card-clickable' : ''}`}
+      onClick={handleCardClick}
+    >
       <div className="widget-header">
         <span className="widget-drag-handle" {...attributes} {...listeners} title="Drag to reorder">
           ⠿
