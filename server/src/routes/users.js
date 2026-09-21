@@ -32,7 +32,7 @@ router.use(requireAuth, requireRole('superadmin', 'admin'));
 router.get('/', (req, res) => {
   const rows = db
     .prepare(
-      `SELECT id, username, role, totp_enabled, is_active, failed_attempts, locked_until, created_at
+      `SELECT id, username, full_name, email, role, totp_enabled, is_active, failed_attempts, locked_until, created_at
        FROM users ORDER BY created_at ASC`
     )
     .all();
@@ -41,7 +41,7 @@ router.get('/', (req, res) => {
 
 // POST /api/users
 router.post('/', (req, res) => {
-  const { username, role } = req.body || {};
+  const { username, role, full_name, email } = req.body || {};
   if (!username || !role) return res.status(400).json({ error: 'username and role are required' });
   if (!ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role' });
   if (!canManage(req.user.role, role)) return res.status(403).json({ error: 'You cannot assign this role' });
@@ -52,8 +52,8 @@ router.post('/', (req, res) => {
   const tempPassword = generatePassword();
   const hash = bcrypt.hashSync(tempPassword, 12);
   const result = db
-    .prepare('INSERT INTO users (username, password_hash, role, is_active) VALUES (?, ?, ?, 1)')
-    .run(username, hash, role);
+    .prepare('INSERT INTO users (username, password_hash, role, full_name, email, is_active) VALUES (?, ?, ?, ?, ?, 1)')
+    .run(username, hash, role, full_name || null, email || null);
 
   writeAuditLog({
     user_id: req.user.id,
@@ -67,7 +67,7 @@ router.post('/', (req, res) => {
   });
 
   res.status(201).json({
-    user: { id: result.lastInsertRowid, username, role },
+    user: { id: result.lastInsertRowid, username, role, full_name: full_name || null, email: email || null },
     temporaryPassword: tempPassword,
   });
 });
@@ -78,9 +78,19 @@ router.put('/:id', (req, res) => {
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (!canManage(req.user.role, target.role)) return res.status(403).json({ error: 'Insufficient permissions' });
 
-  const { role, is_active } = req.body || {};
+  const { role, is_active, full_name, email } = req.body || {};
   const updates = [];
   const values = [];
+
+  if (full_name !== undefined) {
+    updates.push('full_name = ?');
+    values.push(full_name || null);
+  }
+
+  if (email !== undefined) {
+    updates.push('email = ?');
+    values.push(email || null);
+  }
 
   if (role !== undefined) {
     if (!ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role' });

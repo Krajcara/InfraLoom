@@ -10,6 +10,8 @@ export default function UsersPage() {
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
   const [newUsername, setNewUsername] = useState('');
+  const [newFullName, setNewFullName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState('viewer');
   const [createdInfo, setCreatedInfo] = useState(null);
 
@@ -38,10 +40,26 @@ export default function UsersPage() {
     e.preventDefault();
     setCreatedInfo(null);
     try {
-      const data = await api.post('/users', { username: newUsername, role: newRole });
+      const data = await api.post('/users', {
+        username: newUsername,
+        role: newRole,
+        full_name: newFullName || undefined,
+        email: newEmail || undefined,
+      });
       setCreatedInfo({ username: data.user.username, password: data.temporaryPassword });
       setNewUsername('');
+      setNewFullName('');
+      setNewEmail('');
       setNewRole('viewer');
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function updateField(u, field, value) {
+    try {
+      await api.put(`/users/${u.id}`, { [field]: value });
       load();
     } catch (err) {
       setError(err.message);
@@ -118,6 +136,14 @@ export default function UsersPage() {
             <input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} required />
           </label>
           <label>
+            Full name
+            <input value={newFullName} onChange={(e) => setNewFullName(e.target.value)} placeholder="optional" />
+          </label>
+          <label>
+            Email
+            <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="optional" />
+          </label>
+          <label>
             Role
             <select value={newRole} onChange={(e) => setNewRole(e.target.value)}>
               {assignableRoles.map((r) => (
@@ -133,6 +159,8 @@ export default function UsersPage() {
         <thead>
           <tr>
             <th>Username</th>
+            <th>Full name</th>
+            <th>Email</th>
             <th>Role</th>
             <th>2FA</th>
             <th>Status</th>
@@ -145,6 +173,37 @@ export default function UsersPage() {
             return (
               <tr key={u.id}>
                 <td>{u.username}</td>
+                <td>
+                  {canManage ? (
+                    <input
+                      key={`fn-${u.id}-${u.full_name || ''}`}
+                      defaultValue={u.full_name || ''}
+                      placeholder="—"
+                      className="cell-input"
+                      onBlur={(e) => {
+                        if (e.target.value !== (u.full_name || '')) updateField(u, 'full_name', e.target.value || null);
+                      }}
+                    />
+                  ) : (
+                    u.full_name || '—'
+                  )}
+                </td>
+                <td>
+                  {canManage ? (
+                    <input
+                      key={`em-${u.id}-${u.email || ''}`}
+                      type="email"
+                      defaultValue={u.email || ''}
+                      placeholder="—"
+                      className="cell-input"
+                      onBlur={(e) => {
+                        if (e.target.value !== (u.email || '')) updateField(u, 'email', e.target.value || null);
+                      }}
+                    />
+                  ) : (
+                    u.email || '—'
+                  )}
+                </td>
                 <td>
                   {canManage && u.id !== me.id ? (
                     <select value={u.role} onChange={(e) => changeRole(u, e.target.value)}>

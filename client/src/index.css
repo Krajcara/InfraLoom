@@ -230,3 +230,17 @@ label {
   display: flex;
   gap: 8px;
 }
+
+.cell-input {
+  width: 100%;
+  min-width: 100px;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 4px 6px;
+  margin: 0;
+}
+
+.cell-input:hover, .cell-input:focus {
+  background: #14161b;
+  border-color: #2a2e38;
+}

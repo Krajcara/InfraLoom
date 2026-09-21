@@ -97,6 +97,8 @@ db.exec(`
 // ── Phase 1 — Auth & Users ──────────────────────────────────────────────
 ensureColumn('users', 'failed_attempts', "INTEGER NOT NULL DEFAULT 0");
 ensureColumn('users', 'locked_until', "TEXT");
+ensureColumn('users', 'full_name', "TEXT");
+ensureColumn('users', 'email', "TEXT");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS sessions (
