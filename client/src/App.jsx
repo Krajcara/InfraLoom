@@ -7,6 +7,7 @@ import HomePage from './pages/HomePage';
 import ProfilePage from './pages/ProfilePage';
 import UsersPage from './pages/UsersPage';
 import SettingsPage from './pages/SettingsPage';
+import AuditLogPage from './pages/AuditLogPage';
 
 export default function App() {
   return (
@@ -35,6 +36,14 @@ export default function App() {
             element={
               <ProtectedRoute roles={['superadmin', 'admin']}>
                 <SettingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/audit-log"
+            element={
+              <ProtectedRoute roles={['superadmin', 'admin']}>
+                <AuditLogPage />
               </ProtectedRoute>
             }
           />

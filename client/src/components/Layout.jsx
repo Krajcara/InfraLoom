@@ -13,6 +13,7 @@ export default function Layout() {
           {user && (user.role === 'superadmin' || user.role === 'admin') && (
             <>
               <Link to="/users">Users</Link>
+              <Link to="/audit-log">Audit Log</Link>
               <Link to="/settings">Settings</Link>
             </>
           )}

@@ -275,3 +275,28 @@ label {
 .update-manual {
   margin-top: 16px;
 }
+
+.channel-row {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #2a2e38;
+}
+
+.channel-row:last-of-type {
+  border-bottom: none;
+}
+
+.filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
