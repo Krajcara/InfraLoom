@@ -11,7 +11,10 @@ export default function Layout() {
         <nav className="topnav">
           <Link to="/">Home</Link>
           {user && (user.role === 'superadmin' || user.role === 'admin') && (
-            <Link to="/users">Users</Link>
+            <>
+              <Link to="/users">Users</Link>
+              <Link to="/settings">Settings</Link>
+            </>
           )}
           <Link to="/profile">Profile</Link>
         </nav>

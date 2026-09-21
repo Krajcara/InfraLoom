@@ -244,3 +244,34 @@ label {
   background: #14161b;
   border-color: #2a2e38;
 }
+
+.mono {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+}
+
+.update-info {
+  border-radius: 8px;
+  padding: 12px 16px;
+  border: 1px solid;
+  margin: 12px 0;
+}
+
+.update-info.ok {
+  background: rgba(74, 222, 128, 0.08);
+  border-color: rgba(74, 222, 128, 0.3);
+}
+
+.update-info.available {
+  background: rgba(250, 204, 21, 0.08);
+  border-color: rgba(250, 204, 21, 0.3);
+}
+
+.update-info-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.update-manual {
+  margin-top: 16px;
+}

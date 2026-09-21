@@ -19,6 +19,7 @@ const db = require('./db/database'); // eslint-disable-line no-unused-vars -- en
 const app = express();
 const server = http.createServer(app);
 const io = new SocketIOServer(server, { cors: { origin: true, credentials: true } });
+global.io = io; // accessible to routes/services that need to push events (update, later monitors etc.)
 
 const APP_PORT = process.env.APP_PORT || 3000;
 
@@ -64,6 +65,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/profile', require('./routes/profile'));
+app.use('/api/update', require('./routes/update'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');

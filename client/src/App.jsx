@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import ProfilePage from './pages/ProfilePage';
 import UsersPage from './pages/UsersPage';
+import SettingsPage from './pages/SettingsPage';
 
 export default function App() {
   return (
@@ -26,6 +27,14 @@ export default function App() {
             element={
               <ProtectedRoute roles={['superadmin', 'admin']}>
                 <UsersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute roles={['superadmin', 'admin']}>
+                <SettingsPage />
               </ProtectedRoute>
             }
           />
