@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# InfraLoom pre-commit hook — blocks commits that contain secrets.
+# Activated automatically via `npm install` (root package.json "prepare" script
+# sets git config core.hooksPath .githooks). No secrets should ever reach the
+# public repo — this is a hard requirement, not a suggestion.
+
+set -euo pipefail
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "⚠️  gitleaks is not installed — commit allowed, but secret scanning was SKIPPED."
+  echo "   Install it: https://github.com/gitleaks/gitleaks#installing"
+  exit 0
+fi
+
+echo "🔎 Running gitleaks on staged changes..."
+if ! gitleaks protect --staged --redact --config .gitleaks.toml; then
+  echo ""
+  echo "❌ Commit blocked: gitleaks found a potential secret in your staged changes."
+  echo "   Remove the secret, or add a justified allowlist entry in .gitleaks.toml."
+  exit 1
+fi
+
+echo "✅ No secrets detected."
+exit 0
