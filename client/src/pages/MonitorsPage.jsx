@@ -342,18 +342,28 @@ function Sparkline({ points, status }) {
   if (!points || points.length < 2) {
     return <div className="sparkline-empty" />;
   }
-  const width = 260;
-  const height = 40;
+  const width = 280;
+  const height = 52;
   const max = Math.max(...points, 1);
   const min = Math.min(...points, 0);
   const range = max - min || 1;
   const stepX = width / (points.length - 1);
-  const coords = points.map((v, i) => `${(i * stepX).toFixed(1)},${(height - ((v - min) / range) * height).toFixed(1)}`);
+  const lineCoords = points.map((v, i) => [Number((i * stepX).toFixed(1)), Number((height - ((v - min) / range) * (height - 6) - 3).toFixed(1))]);
+  const linePoints = lineCoords.map(([x, y]) => `${x},${y}`).join(' ');
+  const areaPoints = `0,${height} ${linePoints} ${width},${height}`;
   const color = status === 'down' ? '#ff6b6b' : status === 'degraded' ? '#facc15' : '#4ade80';
+  const gradientId = `spark-fill-${status}`;
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="sparkline" preserveAspectRatio="none">
-      <polyline points={coords.join(' ')} fill="none" stroke={color} strokeWidth="1.5" />
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={areaPoints} fill={`url(#${gradientId})`} />
+      <polyline points={linePoints} fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );
 }
@@ -375,7 +385,7 @@ function MonitorCard({ monitor: m, canEdit, canDelete, onEdit, onDelete }) {
         <span className={`status-dot status-dot-${m.last_status}`} />
         <div className="monitor-card-title">
           <strong>{m.label}</strong>
-          <span className="muted mono monitor-card-target">{m.target}</span>
+          <span className="monitor-card-target">{m.target}</span>
         </div>
         <span className={`status-badge status-${m.last_status}`}>{STATUS_LABEL[m.last_status] || m.last_status}</span>
         {canEdit && <button className="icon-btn" onClick={onEdit} title="Edit">✎</button>}

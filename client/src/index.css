@@ -590,14 +590,19 @@ label {
   background: #1a1d24;
   border: 1px solid #2a2e38;
   border-radius: 10px;
-  padding: 16px;
+  padding: 16px 18px;
+  transition: border-color 0.15s;
+}
+
+.monitor-card:hover {
+  border-color: #3a3f4c;
 }
 
 .monitor-card-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .monitor-card-title {
@@ -605,10 +610,16 @@ label {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 1px;
+}
+
+.monitor-card-title strong {
+  font-size: 14px;
 }
 
 .monitor-card-target {
-  font-size: 11px;
+  font-size: 12px;
+  color: #6ea8fe;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -619,49 +630,58 @@ label {
   height: 9px;
   border-radius: 50%;
   flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
 }
 
-.status-dot-up { background: #4ade80; }
-.status-dot-down { background: #ff6b6b; }
-.status-dot-degraded { background: #facc15; }
-.status-dot-unknown { background: #8b8f99; }
+.status-dot-up { background: #4ade80; color: #4ade80; }
+.status-dot-down { background: #ff6b6b; color: #ff6b6b; }
+.status-dot-degraded { background: #facc15; color: #facc15; }
+.status-dot-unknown { background: #8b8f99; color: #8b8f99; }
 
 .icon-btn {
   background: none;
   border: none;
   color: #6b6f79;
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 3px 5px;
   font-size: 13px;
   flex-shrink: 0;
+  border-radius: 4px;
 }
 
 .icon-btn:hover {
   color: #e6e6e6;
-  background: none;
+  background: #22252d;
 }
 
 .sparkline {
   width: 100%;
-  height: 40px;
+  height: 52px;
   display: block;
+  margin: 4px 0 10px;
 }
 
 .sparkline-empty {
-  height: 40px;
+  height: 52px;
+  margin: 4px 0 10px;
 }
 
 .monitor-card-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 8px;
   font-size: 12px;
+  color: #a9adb8;
 }
 
 .status-type {
-  background: rgba(139, 143, 153, 0.15);
-  color: #a9adb8;
+  border: 1px solid #2a2e38;
+  background: none;
+  color: #8b8f99;
+  padding: 2px 9px;
+  border-radius: 5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 .checkbox-label {
