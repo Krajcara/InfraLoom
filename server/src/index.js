@@ -58,12 +58,12 @@ app.use(
 
 // ── Health check — used by installer/update scripts and monitoring ─────
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, app: 'InfraLoom', phase: 0 });
+  res.json({ ok: true, app: 'InfraLoom', phase: 1 });
 });
 
-// Feature API routes (auth, users, settings, modules...) are mounted here
-// starting from Phase 1 onward. Phase 0 intentionally ships no business
-// logic beyond the encrypted DB, base schema, and this health check.
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/users', require('./routes/users'));
+app.use('/api/profile', require('./routes/profile'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');

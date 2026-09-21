@@ -9,7 +9,87 @@ body {
   color: #e6e6e6;
 }
 
-.phase0-shell {
+a {
+  color: #6ea8fe;
+  text-decoration: none;
+}
+
+input, select, button {
+  font-family: inherit;
+  font-size: 14px;
+}
+
+input, select {
+  background: #1a1d24;
+  border: 1px solid #2a2e38;
+  color: #e6e6e6;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 4px;
+}
+
+button {
+  background: #2b6cff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1f57d6;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn-link {
+  background: none;
+  color: #6ea8fe;
+  border: none;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.btn-link.danger {
+  color: #ff6b6b;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  color: #a9adb8;
+  gap: 2px;
+}
+
+.muted {
+  color: #8b8f99;
+  font-size: 14px;
+}
+
+.error {
+  color: #ff6b6b;
+  font-size: 14px;
+}
+
+.success {
+  color: #4ade80;
+  font-size: 14px;
+}
+
+.page-loading {
+  padding: 40px;
+  text-align: center;
+  color: #8b8f99;
+}
+
+/* ── Auth (Login) page ── */
+.auth-shell {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -18,25 +98,135 @@ body {
   gap: 24px;
 }
 
-.phase0-card {
+.auth-card {
   background: #1a1d24;
   border: 1px solid #2a2e38;
   border-radius: 12px;
-  padding: 40px 48px;
+  padding: 40px;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-card h1 {
+  margin: 0 0 8px;
+  font-size: 26px;
   text-align: center;
 }
 
-.phase0-card h1 {
-  margin: 0 0 12px;
-  font-size: 28px;
-}
-
-.muted {
-  color: #8b8f99;
-  font-size: 14px;
-}
-
-.phase0-footer {
+.auth-footer {
   color: #6b6f79;
   font-size: 13px;
+}
+
+.totp-qr {
+  width: 180px;
+  height: 180px;
+  align-self: center;
+  border-radius: 8px;
+  background: white;
+  padding: 8px;
+}
+
+.totp-secret code {
+  word-break: break-all;
+}
+
+/* ── App shell ── */
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 24px;
+  border-bottom: 1px solid #2a2e38;
+  background: #14161b;
+}
+
+.brand {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.topnav {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.whoami {
+  color: #8b8f99;
+  font-size: 13px;
+}
+
+.app-content {
+  flex: 1;
+  padding: 32px;
+}
+
+.page h1 {
+  margin-top: 0;
+}
+
+.card {
+  background: #1a1d24;
+  border: 1px solid #2a2e38;
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+  max-width: 640px;
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: 16px;
+}
+
+.form-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.table th, .table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2a2e38;
+  font-size: 13px;
+}
+
+.table th {
+  color: #8b8f99;
+  font-weight: 500;
+}
+
+.table .truncate {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table .actions {
+  display: flex;
+  gap: 8px;
 }

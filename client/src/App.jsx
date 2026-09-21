@@ -1,14 +1,36 @@
+import { Routes, Route } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import Layout from './components/Layout';
+import LoginPage from './pages/LoginPage';
+import HomePage from './pages/HomePage';
+import ProfilePage from './pages/ProfilePage';
+import UsersPage from './pages/UsersPage';
+
 export default function App() {
   return (
-    <div className="phase0-shell">
-      <div className="phase0-card">
-        <h1>InfraLoom</h1>
-        <p>Phase 0 skeleton installed successfully.</p>
-        <p className="muted">
-          The login screen and dashboard are built in the phases that follow.
-        </p>
-      </div>
-      <footer className="phase0-footer">Powered by Krajcara</footer>
-    </div>
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/" element={<HomePage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route
+            path="/users"
+            element={
+              <ProtectedRoute roles={['superadmin', 'admin']}>
+                <UsersPage />
+              </ProtectedRoute>
+            }
+          />
+        </Route>
+      </Routes>
+    </AuthProvider>
   );
 }

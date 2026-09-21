@@ -4,7 +4,15 @@ const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3-multiple-ciphers');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../../../data/infraloom.db');
+// Anchored to the project root (not process.cwd()) so the resolved path is
+// identical whether the process is started via `npm run` from a workspace,
+// directly with `node server/src/index.js`, or via systemd with a different
+// WorkingDirectory. A relative DB_PATH in .env is always relative to the
+// project root, matching the comment in .env.example.
+const PROJECT_ROOT = path.join(__dirname, '../../..');
+const DB_PATH = process.env.DB_PATH
+  ? path.resolve(PROJECT_ROOT, process.env.DB_PATH)
+  : path.join(PROJECT_ROOT, 'data/infraloom.db');
 const DB_ENCRYPTION_KEY = process.env.DB_ENCRYPTION_KEY;
 
 if (!DB_ENCRYPTION_KEY) {
@@ -36,6 +44,15 @@ try {
 
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+
+// Additive, non-destructive column helper — used when a later phase needs to
+// extend a table that already shipped. Never used for DROP/ALTER-modify.
+function ensureColumn(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
 
 // ── Phase 0 — base schema ───────────────────────────────────────────────
 db.exec(`
@@ -75,6 +92,39 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
   CREATE INDEX IF NOT EXISTS idx_audit_module  ON audit_log(module);
   CREATE INDEX IF NOT EXISTS idx_audit_user     ON audit_log(user_id);
+`);
+
+// ── Phase 1 — Auth & Users ──────────────────────────────────────────────
+ensureColumn('users', 'failed_attempts', "INTEGER NOT NULL DEFAULT 0");
+ensureColumn('users', 'locked_until', "TEXT");
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    id           TEXT PRIMARY KEY,
+    user_id      INTEGER NOT NULL,
+    ip_address   TEXT,
+    user_agent   TEXT,
+    created_at   TEXT DEFAULT (datetime('now')),
+    last_seen_at TEXT DEFAULT (datetime('now')),
+    expires_at   TEXT NOT NULL,
+    revoked_at   TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS api_keys (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL,
+    name         TEXT NOT NULL,
+    key_prefix   TEXT NOT NULL,
+    key_hash     TEXT NOT NULL,
+    created_at   TEXT DEFAULT (datetime('now')),
+    last_used_at TEXT,
+    revoked_at   TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_api_keys_user  ON api_keys(user_id);
 `);
 
 // Seed default settings only if they don't already exist.
