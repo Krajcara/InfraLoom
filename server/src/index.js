@@ -69,6 +69,8 @@ app.use('/api/update', require('./routes/update'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/audit-log', require('./routes/audit'));
 app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/licences', require('./routes/licences'));
+app.use('/api/entra-apps', require('./routes/entraApps'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
@@ -91,6 +93,10 @@ io.on('connection', (socket) => {
 server.listen(APP_PORT, () => {
   console.log(`InfraLoom server listening on port ${APP_PORT}`);
 });
+
+// Daily 03:00 — licence & Entra ID secret expiry digest notification.
+const cron = require('node-cron');
+cron.schedule('0 3 * * *', () => require('./services/expiryChecker').checkExpiries());
 
 process.on('SIGTERM', () => {
   server.close(() => process.exit(0));

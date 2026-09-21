@@ -139,6 +139,47 @@ db.exec(`
   );
 `);
 
+// ── Phase 4-5 — Inventory: Licences & Entra ID Apps ─────────────────────
+// NOTE: no cost/savings fields (price, currency, billing cycle, tax) —
+// deliberately dropped from the v1 design per project decision.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS licences (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendor            TEXT NOT NULL,
+    licence_type      TEXT NOT NULL,
+    licence_count     INTEGER DEFAULT 1,
+    licence_used      INTEGER DEFAULT 0,
+    purchase_date     TEXT,
+    expiry_date       TEXT,
+    assigned_to       TEXT DEFAULT '[]',
+    url               TEXT,
+    licence_username  TEXT,
+    licence_password  TEXT,
+    licence_mfa       INTEGER DEFAULT 0,
+    notes             TEXT,
+    hidden            INTEGER DEFAULT 0,
+    created_at        TEXT DEFAULT (datetime('now')),
+    updated_at        TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS entra_apps (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    app_name       TEXT NOT NULL,
+    app_id         TEXT,
+    client_secret  TEXT,
+    secret_expiry  TEXT,
+    assigned_to    TEXT,
+    project        TEXT,
+    notes          TEXT,
+    hidden         INTEGER DEFAULT 0,
+    created_at     TEXT DEFAULT (datetime('now')),
+    updated_at     TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_licences_expiry ON licences(expiry_date);
+  CREATE INDEX IF NOT EXISTS idx_entra_apps_expiry ON entra_apps(secret_expiry);
+`);
+
 // Seed default settings only if they don't already exist.
 const defaultSettings = {
   app_name: 'InfraLoom',

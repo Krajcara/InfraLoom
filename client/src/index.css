@@ -386,3 +386,44 @@ label {
   font-size: 13px;
   text-align: center;
 }
+
+.widget-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.checkbox-label {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px;
+}
+
+.checkbox-label input {
+  margin-top: 0;
+}
+
+.warning {
+  color: #facc15;
+}
+
+.row-dimmed {
+  opacity: 0.5;
+}
+
+textarea {
+  background: #1a1d24;
+  border: 1px solid #2a2e38;
+  color: #e6e6e6;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 4px;
+  width: 100%;
+  font-family: inherit;
+  resize: vertical;
+}

@@ -130,8 +130,37 @@ function SortableWidget({ widget, onHide }) {
         </button>
       </div>
       <div className="widget-body">
-        <p className="muted">Coming in Phase {widget.phase}.</p>
+        {widget.id === 'licences' ? <LicencesWidgetBody /> : <p className="muted">Coming in Phase {widget.phase}.</p>}
       </div>
     </div>
+  );
+}
+
+function LicencesWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, expiring: [], total: 0 });
+
+  useEffect(() => {
+    api
+      .get('/licences')
+      .then((data) => {
+        const expiring = data.licences.filter((l) => l.expiry_status === 'expiring' || l.expiry_status === 'expired');
+        setState({ loading: false, error: null, expiring, total: data.licences.length });
+      })
+      .catch((err) => setState({ loading: false, error: err.message, expiring: [], total: 0 }));
+  }, []);
+
+  if (state.loading) return <p className="muted">Loading...</p>;
+  if (state.error) return <p className="error">{state.error}</p>;
+  if (state.total === 0) return <p className="muted">No licences yet.</p>;
+  if (state.expiring.length === 0) return <p className="success">All {state.total} licences are within their term.</p>;
+
+  return (
+    <ul className="widget-list">
+      {state.expiring.slice(0, 5).map((l) => (
+        <li key={l.id} className={l.expiry_status === 'expired' ? 'error' : 'warning'}>
+          {l.vendor} {l.licence_type} — {l.expiry_status === 'expired' ? 'expired' : `${l.days_until_expiry}d left`}
+        </li>
+      ))}
+    </ul>
   );
 }

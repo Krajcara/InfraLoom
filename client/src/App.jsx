@@ -8,6 +8,8 @@ import ProfilePage from './pages/ProfilePage';
 import UsersPage from './pages/UsersPage';
 import SettingsPage from './pages/SettingsPage';
 import AuditLogPage from './pages/AuditLogPage';
+import LicencesPage from './pages/LicencesPage';
+import EntraAppsPage from './pages/EntraAppsPage';
 
 export default function App() {
   return (
@@ -22,6 +24,8 @@ export default function App() {
           }
         >
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/licences" element={<LicencesPage />} />
+          <Route path="/entra-apps" element={<EntraAppsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route
             path="/users"
