@@ -23,7 +23,23 @@ const io = new SocketIOServer(server, { cors: { origin: true, credentials: true 
 const APP_PORT = process.env.APP_PORT || 3000;
 
 // ── Security & core middleware ──────────────────────────────────────────
-app.use(helmet());
+// This app is served over plain HTTP in this phase (no TLS termination yet).
+// helmet()'s defaults include a CSP `upgrade-insecure-requests` directive and
+// HSTS, both of which tell the browser to force HTTPS — that breaks asset
+// loading here (ERR_SSL_PROTOCOL_ERROR), since there's no HTTPS to upgrade to.
+// Revisit this once a reverse proxy with TLS is in front of the app.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        upgradeInsecureRequests: null,
+      },
+    },
+    hsts: false,
+    originAgentCluster: false,
+  })
+);
 app.use(cors({ origin: true, credentials: true }));
 app.use(compression());
 app.use(cookieParser());
