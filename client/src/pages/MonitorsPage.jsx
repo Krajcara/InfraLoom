@@ -23,6 +23,18 @@ const emptyForm = {
 
 const STATUS_LABEL = { up: 'Up', down: 'Down', degraded: 'Degraded', unknown: 'Pending' };
 
+function timeAgo(dateStr) {
+  if (!dateStr) return 'never';
+  const seconds = Math.floor((Date.now() - new Date(dateStr.replace(' ', 'T') + 'Z')) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
 export default function MonitorsPage() {
   const { user } = useAuth();
   const canEdit = ['superadmin', 'admin', 'operator'].includes(user?.role);
@@ -33,6 +45,12 @@ export default function MonitorsPage() {
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
   const [newPushUrl, setNewPushUrl] = useState(null);
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('infraloom_monitor_view') || 'cards');
+
+  function changeView(mode) {
+    setViewMode(mode);
+    localStorage.setItem('infraloom_monitor_view', mode);
+  }
 
   async function load() {
     try {
@@ -122,12 +140,23 @@ export default function MonitorsPage() {
   return (
     <div className="page">
       <h1>Uptime Monitor</h1>
+      <p className="muted">{monitors.length} monitor{monitors.length === 1 ? '' : 's'}</p>
       {message && <p className="success">{message}</p>}
       {error && <p className="error">{error}</p>}
 
-      {canEdit && !form && (
+      <div className="monitor-summary">
+        <span className="summary-chip">Up: <strong className="success">{monitors.filter((m) => m.last_status === 'up').length}</strong></span>
+        <span className="summary-chip">Down: <strong className="error">{monitors.filter((m) => m.last_status === 'down').length}</strong></span>
+        <span className="summary-chip">Degraded: <strong className="warning">{monitors.filter((m) => m.last_status === 'degraded').length}</strong></span>
+      </div>
+
+      {!form && (
         <div className="filters">
-          <button onClick={openCreate}>+ New monitor</button>
+          {canEdit && <button onClick={openCreate}>+ New monitor</button>}
+          <div className="view-toggle">
+            <button className={viewMode === 'cards' ? 'active' : ''} onClick={() => changeView('cards')}>Cards</button>
+            <button className={viewMode === 'table' ? 'active' : ''} onClick={() => changeView('table')}>Table</button>
+          </div>
         </div>
       )}
 
@@ -246,7 +275,8 @@ export default function MonitorsPage() {
         </section>
       )}
 
-      <table className="table">
+      {viewMode === 'table' ? (
+        <table className="table">
         <thead>
           <tr>
             <th>Label</th>
@@ -290,6 +320,75 @@ export default function MonitorsPage() {
           ))}
         </tbody>
       </table>
+      ) : (
+        <div className="monitor-grid">
+          {monitors.map((m) => (
+            <MonitorCard
+              key={m.id}
+              monitor={m}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              onEdit={() => openEdit(m)}
+              onDelete={() => remove(m)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Sparkline({ points, status }) {
+  if (!points || points.length < 2) {
+    return <div className="sparkline-empty" />;
+  }
+  const width = 260;
+  const height = 40;
+  const max = Math.max(...points, 1);
+  const min = Math.min(...points, 0);
+  const range = max - min || 1;
+  const stepX = width / (points.length - 1);
+  const coords = points.map((v, i) => `${(i * stepX).toFixed(1)},${(height - ((v - min) / range) * height).toFixed(1)}`);
+  const color = status === 'down' ? '#ff6b6b' : status === 'degraded' ? '#facc15' : '#4ade80';
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="sparkline" preserveAspectRatio="none">
+      <polyline points={coords.join(' ')} fill="none" stroke={color} strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function MonitorCard({ monitor: m, canEdit, canDelete, onEdit, onDelete }) {
+  const [points, setPoints] = useState(null);
+
+  useEffect(() => {
+    api
+      .get(`/monitors/${m.id}/checks?hours=3`)
+      .then((data) => setPoints(data.checks.map((c) => c.latency_ms ?? 0)))
+      .catch(() => setPoints([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [m.id, m.last_checked_at]);
+
+  return (
+    <div className={`monitor-card${!m.enabled ? ' row-dimmed' : ''}`}>
+      <div className="monitor-card-header">
+        <span className={`status-dot status-dot-${m.last_status}`} />
+        <div className="monitor-card-title">
+          <strong>{m.label}</strong>
+          <span className="muted mono monitor-card-target">{m.target}</span>
+        </div>
+        <span className={`status-badge status-${m.last_status}`}>{STATUS_LABEL[m.last_status] || m.last_status}</span>
+        {canEdit && <button className="icon-btn" onClick={onEdit} title="Edit">✎</button>}
+        {canDelete && <button className="icon-btn" onClick={onDelete} title="Delete">🗑</button>}
+      </div>
+
+      <Sparkline points={points} status={m.last_status} />
+
+      <div className="monitor-card-footer">
+        <span>{m.last_latency_ms != null ? `${m.last_latency_ms}ms` : '—'}</span>
+        <span className="status-badge status-type">{TYPES.find((t) => t.value === m.type)?.label || m.type}</span>
+        <span className="muted">{timeAgo(m.last_checked_at)}</span>
+      </div>
     </div>
   );
 }
