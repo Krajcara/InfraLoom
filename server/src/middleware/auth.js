@@ -123,8 +123,13 @@ function requireApiKey(req, res, next) {
   return res.status(401).json({ error: 'Invalid API key' });
 }
 
-/** Roles that are required to have TOTP enabled before completing login. */
-const TOTP_MANDATORY_ROLES = ['superadmin', 'admin'];
+/**
+ * Roles that are required to have TOTP enabled before completing login.
+ * Currently empty — TOTP is optional for everyone and can be turned on
+ * voluntarily from Profile. Add role names back here if mandatory 2FA
+ * is reinstated later.
+ */
+const TOTP_MANDATORY_ROLES = [];
 
 module.exports = {
   requireAuth,
