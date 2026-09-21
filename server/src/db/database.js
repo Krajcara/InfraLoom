@@ -224,6 +224,39 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_monitor_checks_monitor ON monitor_checks(monitor_id, checked_at);
 `);
 
+// ── Phase 7 — Network: Routers / Switches / Access Points ───────────────
+// Identical schema for all three device types (separate tables per project
+// decision). Each device is backed by an 'icmp' row in `monitors` (ping is
+// mandatory) — this reuses the Uptime Monitor worker/history/notifications
+// instead of building a second polling system. SNMP is optional metadata
+// fetched on demand, not continuously polled.
+for (const table of ['routers', 'switches', 'access_points']) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ${table} (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      name                 TEXT NOT NULL,
+      brand                TEXT DEFAULT 'other',
+      model                TEXT,
+      ip_address           TEXT NOT NULL,
+      username             TEXT,
+      device_password      TEXT,
+      notes                TEXT,
+      monitor_id           INTEGER,
+      snmp_version         TEXT DEFAULT '2c',
+      snmp_community       TEXT DEFAULT 'public',
+      snmp_port            INTEGER DEFAULT 161,
+      snmp_username        TEXT,
+      snmp_auth_protocol   TEXT DEFAULT 'SHA',
+      snmp_auth_password   TEXT,
+      snmp_priv_protocol   TEXT DEFAULT 'AES',
+      snmp_priv_password   TEXT,
+      snmp_security_level  TEXT DEFAULT 'authPriv',
+      created_at           TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (monitor_id) REFERENCES monitors(id) ON DELETE SET NULL
+    );
+  `);
+}
+
 // Seed default settings only if they don't already exist.
 const defaultSettings = {
   app_name: 'InfraLoom',

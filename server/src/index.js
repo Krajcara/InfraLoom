@@ -73,6 +73,12 @@ app.use('/api/licences', require('./routes/licences'));
 app.use('/api/entra-apps', require('./routes/entraApps'));
 app.use('/api/monitors', require('./routes/monitors'));
 app.use('/api/status', require('./routes/status'));
+{
+  const { createDeviceRouter } = require('./routes/networkDeviceFactory');
+  app.use('/api/routers', createDeviceRouter('routers', 'routers'));
+  app.use('/api/switches', createDeviceRouter('switches', 'switches'));
+  app.use('/api/access-points', createDeviceRouter('access_points', 'access-points'));
+}
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');

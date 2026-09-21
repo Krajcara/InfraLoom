@@ -39,7 +39,7 @@ echo ""
 # ─── System packages ─────────────────────────────────────────────────────────
 info "Installing system packages (curl, git, build tools, nmap, arp-scan)..."
 apt-get update -qq
-apt-get install -y -qq curl git build-essential python3 nmap arp-scan sqlite3 ca-certificates openssl >/dev/null
+apt-get install -y -qq curl git build-essential python3 nmap arp-scan sqlite3 ca-certificates openssl iputils-ping >/dev/null
 success "System packages installed."
 
 # ─── Node.js via nvm ────────────────────────────────────────────────────────

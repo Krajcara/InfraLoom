@@ -13,6 +13,9 @@ import LicencesPage from './pages/LicencesPage';
 import EntraAppsPage from './pages/EntraAppsPage';
 import MonitorsPage from './pages/MonitorsPage';
 import StatusPage from './pages/StatusPage';
+import RoutersPage from './pages/RoutersPage';
+import SwitchesPage from './pages/SwitchesPage';
+import AccessPointsPage from './pages/AccessPointsPage';
 
 export default function App() {
   return (
@@ -31,6 +34,9 @@ export default function App() {
           <Route path="/licences" element={<LicencesPage />} />
           <Route path="/entra-apps" element={<EntraAppsPage />} />
           <Route path="/monitors" element={<MonitorsPage />} />
+          <Route path="/routers" element={<RoutersPage />} />
+          <Route path="/switches" element={<SwitchesPage />} />
+          <Route path="/access-points" element={<AccessPointsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route
             path="/users"

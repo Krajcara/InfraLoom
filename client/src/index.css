@@ -709,6 +709,12 @@ label {
   letter-spacing: 0.02em;
 }
 
+.snmp-fields {
+  border-left: 2px solid #2a2e38;
+  padding-left: 14px;
+  margin: 10px 0;
+}
+
 .checkbox-label {
   flex-direction: row !important;
   align-items: center;

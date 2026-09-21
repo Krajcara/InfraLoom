@@ -136,6 +136,8 @@ function SortableWidget({ widget, onHide }) {
           <UptimeWidgetBody />
         ) : widget.id === 'ssl' ? (
           <SslWidgetBody />
+        ) : widget.id === 'routers' ? (
+          <RoutersWidgetBody />
         ) : (
           <p className="muted">Coming in Phase {widget.phase}.</p>
         )}
@@ -172,6 +174,32 @@ function UptimeWidgetBody() {
         </ul>
       )}
     </div>
+  );
+}
+
+function RoutersWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, down: [], total: 0 });
+
+  useEffect(() => {
+    Promise.all([api.get('/routers'), api.get('/switches'), api.get('/access-points')])
+      .then(([r, s, a]) => {
+        const all = [...r.devices, ...s.devices, ...a.devices];
+        setState({ loading: false, error: null, down: all.filter((d) => d.last_status === 'down'), total: all.length });
+      })
+      .catch((err) => setState({ loading: false, error: err.message, down: [], total: 0 }));
+  }, []);
+
+  if (state.loading) return <p className="muted">Loading...</p>;
+  if (state.error) return <p className="error">{state.error}</p>;
+  if (state.total === 0) return <p className="muted">No devices yet.</p>;
+  if (state.down.length === 0) return <p className="success">All {state.total} devices online.</p>;
+
+  return (
+    <ul className="widget-list">
+      {state.down.slice(0, 5).map((d) => (
+        <li key={d.id} className="error">{d.name} — offline</li>
+      ))}
+    </ul>
   );
 }
 
