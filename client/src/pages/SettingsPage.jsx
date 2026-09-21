@@ -62,7 +62,7 @@ function GeneralSection() {
       <form onSubmit={save} className="form-row">
         <label>
           Application name
-          <input value={values.app_name || ''} onChange={(e) => set('app_name', e.target.value)} />
+          <input value={values.app_name || ''} onChange={(e) => set('app_name', e.target.value)} autoComplete="off" name="app_name_field" />
         </label>
         <label>
           Audit log retention (days)
@@ -72,6 +72,8 @@ function GeneralSection() {
             value={values.audit_retention_days || ''}
             onChange={(e) => set('audit_retention_days', e.target.value)}
             placeholder="unlimited"
+            autoComplete="off"
+            name="audit_retention_field"
           />
         </label>
         <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
@@ -127,18 +129,18 @@ function SmtpSection() {
   return (
     <section className="card">
       <h2>Email (SMTP)</h2>
-      <form onSubmit={save} className="form-row">
+      <form onSubmit={save} className="form-row" autoComplete="off">
         <label>
           Host
-          <input value={values.smtp_host || ''} onChange={(e) => set('smtp_host', e.target.value)} placeholder="smtp.example.com" />
+          <input value={values.smtp_host || ''} onChange={(e) => set('smtp_host', e.target.value)} placeholder="smtp.example.com" autoComplete="off" name="smtp_host_field" />
         </label>
         <label>
           Port
-          <input value={values.smtp_port || ''} onChange={(e) => set('smtp_port', e.target.value)} placeholder="587" />
+          <input value={values.smtp_port || ''} onChange={(e) => set('smtp_port', e.target.value)} placeholder="587" autoComplete="off" name="smtp_port_field" />
         </label>
         <label>
           Username
-          <input value={values.smtp_user || ''} onChange={(e) => set('smtp_user', e.target.value)} />
+          <input value={values.smtp_user || ''} onChange={(e) => set('smtp_user', e.target.value)} autoComplete="off" name="smtp_user_field" />
         </label>
         <label>
           Password
@@ -147,11 +149,13 @@ function SmtpSection() {
             value={values.smtp_pass || ''}
             onChange={(e) => set('smtp_pass', e.target.value)}
             placeholder={values.smtp_pass === '***' ? 'unchanged' : ''}
+            autoComplete="new-password"
+            name="smtp_pass_field"
           />
         </label>
         <label>
           From address
-          <input value={values.smtp_from || ''} onChange={(e) => set('smtp_from', e.target.value)} placeholder="infraloom@example.com" />
+          <input value={values.smtp_from || ''} onChange={(e) => set('smtp_from', e.target.value)} placeholder="infraloom@example.com" autoComplete="off" name="smtp_from_field" />
         </label>
         <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
         <button type="button" onClick={test} disabled={testing}>{testing ? 'Testing...' : 'Test connection'}</button>
@@ -212,7 +216,7 @@ function NotificationsSection() {
     <section className="card">
       <h2>Notification channels</h2>
       <p className="muted">Fill in a channel's fields and save to enable it. Leave blank to disable.</p>
-      <form onSubmit={save}>
+      <form onSubmit={save} autoComplete="off">
         {CHANNELS.map((c) => (
           <div key={c.key} className="channel-row">
             <strong>{c.label}</strong>
@@ -225,6 +229,8 @@ function NotificationsSection() {
                     value={values[key] || ''}
                     onChange={(e) => set(key, e.target.value)}
                     placeholder={values[key] === '***' ? 'unchanged' : ''}
+                    autoComplete={type === 'password' ? 'new-password' : 'off'}
+                    name={`${key}_field`}
                   />
                 </label>
               ))}
