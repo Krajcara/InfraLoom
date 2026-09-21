@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Env files — NEVER commit real secrets
+.env
+.env.local
+.env.*.local
+
+# Database & runtime data
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Backups
+backups/
+*.zip
+!docs/**/*.zip
+
+# Build output
+client/dist/
+server/dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# gitleaks report (local runs)
+gitleaks-report.json
