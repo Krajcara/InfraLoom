@@ -1,0 +1,18 @@
+[Unit]
+Description=InfraLoom Web Application
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/infraloom/server
+ExecStart=/usr/bin/node /opt/infraloom/server/src/index.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=infraloom
+EnvironmentFile=/opt/infraloom/.env
+
+[Install]
+WantedBy=multi-user.target
