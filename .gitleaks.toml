@@ -1,0 +1,13 @@
+title = "InfraLoom gitleaks config"
+
+# Use gitleaks' default, battle-tested detection rules as the base.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Files that are safe by design (placeholders, examples, lockfiles)"
+paths = [
+  '''\.env\.example$''',
+  '''package-lock\.json$''',
+  '''\.gitleaks\.toml$'''
+]
