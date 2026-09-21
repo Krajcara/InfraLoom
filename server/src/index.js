@@ -71,6 +71,8 @@ app.use('/api/audit-log', require('./routes/audit'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/licences', require('./routes/licences'));
 app.use('/api/entra-apps', require('./routes/entraApps'));
+app.use('/api/monitors', require('./routes/monitors'));
+app.use('/api/status', require('./routes/status'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
@@ -97,6 +99,11 @@ server.listen(APP_PORT, () => {
 // Daily 03:00 — licence & Entra ID secret expiry digest notification.
 const cron = require('node-cron');
 cron.schedule('0 3 * * *', () => require('./services/expiryChecker').checkExpiries());
+
+// Uptime Monitor: start the scheduler for all enabled monitors, and run a
+// daily 02:00 SSL certificate expiry check across https-capable monitors.
+require('./services/monitorWorker').initMonitorWorker();
+cron.schedule('0 2 * * *', () => require('./services/sslChecker').checkAllSSL());
 
 process.on('SIGTERM', () => {
   server.close(() => process.exit(0));

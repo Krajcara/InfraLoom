@@ -15,6 +15,11 @@ const NAV_GROUPS = [
     ],
   },
   {
+    key: 'network',
+    label: 'Network',
+    items: [{ to: '/monitors', label: 'Uptime Monitor' }],
+  },
+  {
     key: 'account',
     label: 'Account',
     items: [{ to: '/profile', label: 'Profile' }],

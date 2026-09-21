@@ -130,9 +130,76 @@ function SortableWidget({ widget, onHide }) {
         </button>
       </div>
       <div className="widget-body">
-        {widget.id === 'licences' ? <LicencesWidgetBody /> : <p className="muted">Coming in Phase {widget.phase}.</p>}
+        {widget.id === 'licences' ? (
+          <LicencesWidgetBody />
+        ) : widget.id === 'uptime' ? (
+          <UptimeWidgetBody />
+        ) : widget.id === 'ssl' ? (
+          <SslWidgetBody />
+        ) : (
+          <p className="muted">Coming in Phase {widget.phase}.</p>
+        )}
       </div>
     </div>
+  );
+}
+
+function UptimeWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, monitors: [] });
+
+  useEffect(() => {
+    api
+      .get('/monitors')
+      .then((data) => setState({ loading: false, error: null, monitors: data.monitors }))
+      .catch((err) => setState({ loading: false, error: err.message, monitors: [] }));
+  }, []);
+
+  if (state.loading) return <p className="muted">Loading...</p>;
+  if (state.error) return <p className="error">{state.error}</p>;
+  if (state.monitors.length === 0) return <p className="muted">No monitors yet.</p>;
+
+  const down = state.monitors.filter((m) => m.enabled && m.last_status === 'down');
+  return (
+    <div>
+      <p className={down.length === 0 ? 'success' : 'error'}>
+        {down.length === 0 ? `All ${state.monitors.length} monitors up` : `${down.length} monitor(s) down`}
+      </p>
+      {down.length > 0 && (
+        <ul className="widget-list">
+          {down.slice(0, 5).map((m) => (
+            <li key={m.id} className="error">{m.label}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function SslWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, expiring: [] });
+
+  useEffect(() => {
+    api
+      .get('/monitors')
+      .then((data) => {
+        const expiring = data.monitors.filter((m) => m.ssl_days != null && m.ssl_days <= 30);
+        setState({ loading: false, error: null, expiring });
+      })
+      .catch((err) => setState({ loading: false, error: err.message, expiring: [] }));
+  }, []);
+
+  if (state.loading) return <p className="muted">Loading...</p>;
+  if (state.error) return <p className="error">{state.error}</p>;
+  if (state.expiring.length === 0) return <p className="success">No certificates expiring soon.</p>;
+
+  return (
+    <ul className="widget-list">
+      {state.expiring.slice(0, 5).map((m) => (
+        <li key={m.id} className={m.ssl_days < 0 ? 'error' : 'warning'}>
+          {m.label} — {m.ssl_days < 0 ? 'expired' : `${m.ssl_days}d left`}
+        </li>
+      ))}
+    </ul>
   );
 }
 

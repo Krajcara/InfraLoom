@@ -180,6 +180,50 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_entra_apps_expiry ON entra_apps(secret_expiry);
 `);
 
+// ── Phase 6 — Network: Uptime Monitor ───────────────────────────────────
+// Types: http, https, tcp, icmp, dns (v1 base) + keyword, json_query, push,
+// docker (v2 additions, per Uptime Kuma).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS monitors (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    label            TEXT NOT NULL,
+    type             TEXT NOT NULL DEFAULT 'http',
+    target           TEXT NOT NULL,
+    port             INTEGER,
+    interval_s       INTEGER DEFAULT 60,
+    timeout_s        INTEGER DEFAULT 10,
+    keyword          TEXT,
+    json_path        TEXT,
+    json_expected    TEXT,
+    expected_status  INTEGER DEFAULT 200,
+    push_token       TEXT UNIQUE,
+    push_interval_s  INTEGER DEFAULT 60,
+    docker_container TEXT,
+    enabled          INTEGER DEFAULT 1,
+    last_status      TEXT DEFAULT 'unknown',
+    last_latency_ms  INTEGER,
+    last_checked_at  TEXT,
+    last_push_at     TEXT,
+    ssl_expiry       TEXT,
+    ssl_days         INTEGER,
+    ssl_error        TEXT,
+    created_at       TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS monitor_checks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    monitor_id  INTEGER NOT NULL,
+    status      TEXT NOT NULL,
+    latency_ms  INTEGER,
+    status_code INTEGER,
+    error_msg   TEXT,
+    checked_at  TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (monitor_id) REFERENCES monitors(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_monitor_checks_monitor ON monitor_checks(monitor_id, checked_at);
+`);
+
 // Seed default settings only if they don't already exist.
 const defaultSettings = {
   app_name: 'InfraLoom',

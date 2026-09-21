@@ -10,12 +10,15 @@ import SettingsPage from './pages/SettingsPage';
 import AuditLogPage from './pages/AuditLogPage';
 import LicencesPage from './pages/LicencesPage';
 import EntraAppsPage from './pages/EntraAppsPage';
+import MonitorsPage from './pages/MonitorsPage';
+import StatusPage from './pages/StatusPage';
 
 export default function App() {
   return (
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/status" element={<StatusPage />} />
         <Route
           element={
             <ProtectedRoute>
@@ -26,6 +29,7 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/licences" element={<LicencesPage />} />
           <Route path="/entra-apps" element={<EntraAppsPage />} />
+          <Route path="/monitors" element={<MonitorsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route
             path="/users"
