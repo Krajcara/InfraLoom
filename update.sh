@@ -19,7 +19,7 @@ git pull --ff-only
 success "Repository updated."
 
 info "Installing dependencies..."
-npm install --no-fund --no-audit
+npm install --no-fund --no-audit --include=dev
 
 info "Running database migration..."
 npm run migrate

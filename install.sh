@@ -5,11 +5,11 @@ set -euo pipefail
 # Usage: sudo bash install.sh [GITHUB_TOKEN]
 #
 # EDIT THESE before first use if you forked/renamed the repo:
-REPO_OWNER="Krajcara"
+REPO_OWNER="krajcara"
 REPO_NAME="InfraLoom"
 INSTALL_DIR="/opt/infraloom"
 SERVICE_NAME="infraloom"
-NODE_VERSION="20"
+NODE_VERSION="22"
 APP_PORT="3000"
 APP_VERSION="0.1.0"
 
@@ -88,12 +88,14 @@ else
   info ".env already exists — leaving it untouched."
 fi
 
-# shellcheck disable=SC1091
-set -a; source "$INSTALL_DIR/.env"; set +a
+# NOTE: we deliberately do NOT `source .env` here. The app itself loads .env
+# via dotenv at runtime (migrate.js/seed.js/index.js). Exporting NODE_ENV=
+# production into this installer's shell would make npm skip devDependencies
+# (vite, nodemon, ...) during install/build, breaking the frontend build.
 
 # ─── Install dependencies & build ──────────────────────────────────────────
 info "Installing dependencies (this can take a minute)..."
-npm install --no-fund --no-audit
+npm install --no-fund --no-audit --include=dev
 success "Dependencies installed."
 
 info "Building the frontend..."
