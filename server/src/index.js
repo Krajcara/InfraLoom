@@ -101,9 +101,12 @@ const cron = require('node-cron');
 cron.schedule('0 3 * * *', () => require('./services/expiryChecker').checkExpiries());
 
 // Uptime Monitor: start the scheduler for all enabled monitors, and run a
-// daily 02:00 SSL certificate expiry check across https-capable monitors.
+// daily 02:00 SSL certificate expiry check across https-capable monitors —
+// plus once immediately at startup, so a fresh install doesn't show an
+// empty SSL column for up to 24h before the first scheduled run.
 require('./services/monitorWorker').initMonitorWorker();
 cron.schedule('0 2 * * *', () => require('./services/sslChecker').checkAllSSL());
+setTimeout(() => require('./services/sslChecker').checkAllSSL(), 5000);
 
 process.on('SIGTERM', () => {
   server.close(() => process.exit(0));

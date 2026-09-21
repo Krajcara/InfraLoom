@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
@@ -25,7 +25,11 @@ const STATUS_LABEL = { up: 'Up', down: 'Down', degraded: 'Degraded', unknown: 'P
 
 function timeAgo(dateStr) {
   if (!dateStr) return 'never';
-  const seconds = Math.floor((Date.now() - new Date(dateStr.replace(' ', 'T') + 'Z')) / 1000);
+  const iso = dateStr.includes('T') ? dateStr : `${dateStr.replace(' ', 'T')}Z`;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'unknown';
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 0) return 'just now';
   if (seconds < 60) return 'just now';
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
@@ -339,6 +343,9 @@ export default function MonitorsPage() {
 }
 
 function Sparkline({ points, status }) {
+  const svgRef = useRef(null);
+  const [hover, setHover] = useState(null);
+
   if (!points || points.length < 2) {
     return <div className="sparkline-empty" />;
   }
@@ -348,23 +355,62 @@ function Sparkline({ points, status }) {
   const min = Math.min(...points, 0);
   const range = max - min || 1;
   const stepX = width / (points.length - 1);
-  const lineCoords = points.map((v, i) => [Number((i * stepX).toFixed(1)), Number((height - ((v - min) / range) * (height - 6) - 3).toFixed(1))]);
-  const linePoints = lineCoords.map(([x, y]) => `${x},${y}`).join(' ');
+  const coords = points.map((v, i) => [
+    Number((i * stepX).toFixed(1)),
+    Number((height - ((v - min) / range) * (height - 6) - 3).toFixed(1)),
+  ]);
+  const linePoints = coords.map(([x, y]) => `${x},${y}`).join(' ');
   const areaPoints = `0,${height} ${linePoints} ${width},${height}`;
   const color = status === 'down' ? '#ff6b6b' : status === 'degraded' ? '#facc15' : '#4ade80';
   const gradientId = `spark-fill-${status}`;
 
+  function handleMove(e) {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const relX = ((e.clientX - rect.left) / rect.width) * width;
+    let nearest = 0;
+    let minDist = Infinity;
+    coords.forEach(([x], i) => {
+      const d = Math.abs(x - relX);
+      if (d < minDist) {
+        minDist = d;
+        nearest = i;
+      }
+    });
+    setHover({ x: coords[nearest][0], y: coords[nearest][1], value: points[nearest] });
+  }
+
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="sparkline" preserveAspectRatio="none">
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon points={areaPoints} fill={`url(#${gradientId})`} />
-      <polyline points={linePoints} fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
+    <div className="sparkline-wrap">
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`}
+        className="sparkline"
+        preserveAspectRatio="none"
+        onMouseMove={handleMove}
+        onMouseLeave={() => setHover(null)}
+      >
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon points={areaPoints} fill={`url(#${gradientId})`} />
+        <polyline points={linePoints} fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" />
+        {hover && (
+          <>
+            <line x1={hover.x} y1="0" x2={hover.x} y2={height} className="sparkline-crosshair" />
+            <circle cx={hover.x} cy={hover.y} r="3" fill="#0f1115" stroke={color} strokeWidth="2" />
+          </>
+        )}
+      </svg>
+      {hover && (
+        <div className="sparkline-tooltip" style={{ left: `${Math.min(Math.max((hover.x / width) * 100, 15), 85)}%` }}>
+          Latency: {hover.value}ms
+        </div>
+      )}
+    </div>
   );
 }
 

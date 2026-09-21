@@ -659,6 +659,31 @@ label {
   height: 52px;
   display: block;
   margin: 4px 0 10px;
+  cursor: crosshair;
+}
+
+.sparkline-wrap {
+  position: relative;
+}
+
+.sparkline-crosshair {
+  stroke: #6b6f79;
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+.sparkline-tooltip {
+  position: absolute;
+  top: -4px;
+  transform: translate(-50%, -100%);
+  background: #0f1115;
+  border: 1px solid #2a2e38;
+  color: #4ade80;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .sparkline-empty {

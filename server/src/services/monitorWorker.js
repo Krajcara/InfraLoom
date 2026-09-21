@@ -196,6 +196,7 @@ async function runCheck(monitor) {
 function recordResult(monitor, result) {
   const prevStatus = monitor.last_status;
   const newStatus = result.status;
+  let checkedAt = null;
 
   try {
     db.prepare(
@@ -208,13 +209,18 @@ function recordResult(monitor, result) {
       result.latency_ms || null,
       monitor.id
     );
+    // Read back the exact stored value so the socket event matches the DB
+    // format ("YYYY-MM-DD HH:MM:SS") — using new Date().toISOString() here
+    // previously sent a different format than the initial REST payload,
+    // which broke client-side date parsing after a live update.
+    checkedAt = db.prepare('SELECT last_checked_at FROM monitors WHERE id = ?').get(monitor.id)?.last_checked_at;
   } catch (err) {
     console.error('[Monitor] DB write error:', err.message);
   }
 
   const io = global.io;
   if (io) {
-    io.emit('monitor:status', { monitorId: monitor.id, status: newStatus, latency_ms: result.latency_ms, checked_at: new Date().toISOString() });
+    io.emit('monitor:status', { monitorId: monitor.id, status: newStatus, latency_ms: result.latency_ms, checked_at: checkedAt });
   }
 
   if (prevStatus && prevStatus !== 'unknown' && prevStatus !== newStatus) {

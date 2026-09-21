@@ -102,6 +102,12 @@ router.post('/', requireRole('superadmin', 'admin', 'operator'), (req, res) => {
   const monitor = db.prepare('SELECT * FROM monitors WHERE id = ?').get(r.lastInsertRowid);
   getWorker()?.registerMonitor(monitor);
 
+  if (['http', 'https', 'keyword', 'json_query'].includes(type)) {
+    require('../services/sslChecker')
+      .checkAllSSL()
+      .catch((e) => console.error('[Monitor] Immediate SSL check failed:', e.message));
+  }
+
   writeAuditLog({
     user_id: req.user.id, username: req.user.username, action: 'monitor.create',
     entity_type: 'monitor', entity_id: r.lastInsertRowid, module: 'monitors',
