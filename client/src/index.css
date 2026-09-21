@@ -805,3 +805,462 @@ textarea {
   font-family: inherit;
   resize: vertical;
 }
+
+/* ── DNS page ── */
+.page-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #2a2e38;
+  margin-bottom: 20px;
+}
+
+.tab-bar button {
+  background: none;
+  color: #8b8f99;
+  border: none;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  padding: 10px 16px;
+  margin-bottom: -1px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.tab-bar button:hover {
+  background: none;
+  color: #e6e6e6;
+}
+
+.tab-bar button.active {
+  color: #6ea8fe;
+  border-bottom-color: #6ea8fe;
+}
+
+.tab-bar-compact {
+  border-bottom: none;
+  border: 1px solid #2a2e38;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tab-bar-compact button {
+  padding: 6px 12px;
+  font-size: 12px;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.tab-bar-compact button.active {
+  background: #2b6cff;
+  color: white;
+  border-bottom: none;
+}
+
+.dns-grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.dns-add-placeholder {
+  border: 2px dashed #2a2e38;
+  border-radius: 10px;
+  background: none;
+  color: #6b6f79;
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.dns-add-placeholder:hover {
+  border-color: #2b6cff;
+  color: #6ea8fe;
+  background: none;
+}
+
+.dns-add-placeholder-wide {
+  border: 2px dashed #2a2e38;
+  border-radius: 10px;
+  padding: 40px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.dns-server-card {
+  display: block;
+}
+
+.dns-server-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dns-server-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.role-chip {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.role-chip-primary {
+  background: rgba(43, 108, 255, 0.15);
+  color: #6ea8fe;
+}
+
+.role-chip-backup {
+  background: rgba(139, 143, 153, 0.15);
+  color: #a9adb8;
+}
+
+.dns-server-card-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.status-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-inline-up { color: #4ade80; }
+.status-inline-down { color: #ff6b6b; }
+
+.dns-server-ip {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.dns-server-type {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.dns-stats-block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #2a2e38;
+}
+
+.dns-stats-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #6b6f79;
+  margin: 0 0 8px;
+}
+
+.dns-stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.dns-stat-mini {
+  text-align: center;
+  background: #14161b;
+  border-radius: 8px;
+  padding: 8px 4px;
+}
+
+.stat-mini-value {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.stat-mini-value.blue { color: #6ea8fe; }
+.stat-mini-value.red { color: #ff6b6b; }
+.stat-mini-value.purple { color: #c084fc; }
+
+.dns-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #2a2e38;
+}
+
+/* ── Modal ── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-box {
+  background: #1a1d24;
+  border: 1px solid #2a2e38;
+  border-radius: 12px;
+  padding: 24px;
+  width: 400px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+.modal-box h2 {
+  margin-top: 0;
+  font-size: 16px;
+}
+
+.modal-box form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Record badges & zone cards ── */
+.record-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+
+.record-badge-ok {
+  background: rgba(74, 222, 128, 0.12);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.25);
+}
+
+.record-badge-missing {
+  background: rgba(255, 107, 107, 0.12);
+  color: #ff6b6b;
+  border: 1px solid rgba(255, 107, 107, 0.25);
+}
+
+.zone-card {
+  border: 1px solid #2a2e38;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.zone-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #14161b;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.zone-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zone-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.zone-card-detail {
+  padding: 12px 14px;
+  border-top: 1px solid #2a2e38;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.zone-card-detail code {
+  word-break: break-all;
+  color: #a9adb8;
+}
+
+.zone-list {
+  margin-top: 14px;
+}
+
+/* ── Cloudflare ── */
+.cloudflare-header-card {
+  margin-bottom: 16px;
+}
+
+.cloudflare-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.cloudflare-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-dot-unknown {
+  background: #6b6f79;
+}
+
+.cloudflare-setup-form {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #2a2e38;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dns-domains-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ── DNS Analytics ── */
+.analytics-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.analytics-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.analytics-stat-card {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-height: auto;
+}
+
+.analytics-stat-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.analytics-stat-icon-blue { background: rgba(110, 168, 254, 0.15); color: #6ea8fe; }
+.analytics-stat-icon-green { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+.analytics-stat-icon-purple { background: rgba(192, 132, 252, 0.15); color: #c084fc; }
+.analytics-stat-icon-red { background: rgba(255, 107, 107, 0.15); color: #ff6b6b; }
+.analytics-stat-icon-amber { background: rgba(250, 204, 21, 0.15); color: #facc15; }
+
+.analytics-top-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.analytics-extra-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.analytics-extra-card {
+  text-align: center;
+  align-items: center;
+  min-height: auto;
+}
+
+.top-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.top-list-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.top-list-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.top-list-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 70%;
+}
+
+.top-list-track {
+  height: 5px;
+  background: #14161b;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.top-list-bar {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.bar-blue { background: #6ea8fe; }
+.bar-purple { background: #c084fc; }
+.bar-red { background: #ff6b6b; }
