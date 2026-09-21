@@ -10,7 +10,7 @@ Self-hosted IT infrastructure management application. Runs on Ubuntu Linux.
 ## Installation
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/InfraLoom.git
+git clone https://github.com/krajcara/InfraLoom.git
 cd InfraLoom
 sudo bash install.sh
 ```
