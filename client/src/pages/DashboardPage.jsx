@@ -116,6 +116,7 @@ const WIDGET_LINKS = {
   uptime: '/monitors',
   ssl: '/monitors',
   routers: '/routers',
+  dns: '/dns',
 };
 
 function SortableWidget({ widget, onHide }) {
@@ -164,6 +165,8 @@ function SortableWidget({ widget, onHide }) {
           <SslWidgetBody />
         ) : widget.id === 'routers' ? (
           <RoutersWidgetBody />
+        ) : widget.id === 'dns' ? (
+          <DnsWidgetBody />
         ) : (
           <p className="muted">Coming in Phase {widget.phase}.</p>
         )}
@@ -200,6 +203,44 @@ function UptimeWidgetBody() {
         </ul>
       )}
     </div>
+  );
+}
+
+function DnsWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, servers: [] });
+
+  useEffect(() => {
+    api
+      .get('/dns/local')
+      .then(async (servers) => {
+        const withStatus = await Promise.all(
+          servers.map(async (s) => {
+            try {
+              const st = await api.get(`/dns/local/${s.id}/status`);
+              return { ...s, online: st.online };
+            } catch {
+              return { ...s, online: false };
+            }
+          })
+        );
+        setState({ loading: false, error: null, servers: withStatus });
+      })
+      .catch((err) => setState({ loading: false, error: err.message, servers: [] }));
+  }, []);
+
+  if (state.loading) return <p className="muted">Checking...</p>;
+  if (state.error) return <p className="error">{state.error}</p>;
+  if (state.servers.length === 0) return <p className="muted">No DNS servers configured.</p>;
+
+  const down = state.servers.filter((s) => !s.online);
+  if (down.length === 0) return <p className="success">All DNS servers online.</p>;
+
+  return (
+    <ul className="widget-list">
+      {down.map((s) => (
+        <li key={s.id} className="error">{s.role} ({s.ip}) — offline</li>
+      ))}
+    </ul>
   );
 }
 

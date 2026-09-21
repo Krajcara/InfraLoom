@@ -16,6 +16,8 @@ import StatusPage from './pages/StatusPage';
 import RoutersPage from './pages/RoutersPage';
 import SwitchesPage from './pages/SwitchesPage';
 import AccessPointsPage from './pages/AccessPointsPage';
+import DnsPage from './pages/DnsPage';
+import DnsAnalyticsPage from './pages/DnsAnalyticsPage';
 
 export default function App() {
   return (
@@ -37,6 +39,8 @@ export default function App() {
           <Route path="/routers" element={<RoutersPage />} />
           <Route path="/switches" element={<SwitchesPage />} />
           <Route path="/access-points" element={<AccessPointsPage />} />
+          <Route path="/dns" element={<DnsPage />} />
+          <Route path="/dns-analytics" element={<DnsAnalyticsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route
             path="/users"

@@ -79,6 +79,8 @@ app.use('/api/status', require('./routes/status'));
   app.use('/api/switches', createDeviceRouter('switches', 'switches'));
   app.use('/api/access-points', createDeviceRouter('access_points', 'access-points'));
 }
+app.use('/api/dns', require('./routes/dns'));
+app.use('/api/dns-analytics', require('./routes/dnsAnalytics'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');

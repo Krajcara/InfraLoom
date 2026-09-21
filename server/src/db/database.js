@@ -257,6 +257,27 @@ for (const table of ['routers', 'switches', 'access_points']) {
   `);
 }
 
+// ── Phase 8 — Network: DNS + DNS Analytics ──────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS dns_local (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    role       TEXT NOT NULL DEFAULT 'primary',
+    type       TEXT NOT NULL DEFAULT 'technitium',
+    ip         TEXT NOT NULL,
+    api_key    TEXT,
+    label      TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS dns_domains (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain     TEXT UNIQUE NOT NULL,
+    notes      TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
 // Seed default settings only if they don't already exist.
 const defaultSettings = {
   app_name: 'InfraLoom',

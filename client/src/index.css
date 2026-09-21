@@ -746,6 +746,36 @@ label {
   margin: 20px 0 4px;
 }
 
+.dns-server-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid #2a2e38;
+  flex-wrap: wrap;
+}
+
+.dns-server-row:last-of-type {
+  border-bottom: none;
+}
+
+.dns-role-label {
+  text-transform: capitalize;
+  width: 70px;
+}
+
+.dns-form {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #2a2e38;
+}
+
+.stat-number {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0;
+}
+
 .checkbox-label {
   flex-direction: row !important;
   align-items: center;
