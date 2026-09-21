@@ -7,6 +7,7 @@ import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
 import UsersPage from './pages/UsersPage';
 import SettingsPage from './pages/SettingsPage';
+import UpdatePage from './pages/UpdatePage';
 import AuditLogPage from './pages/AuditLogPage';
 import LicencesPage from './pages/LicencesPage';
 import EntraAppsPage from './pages/EntraAppsPage';
@@ -44,6 +45,14 @@ export default function App() {
             element={
               <ProtectedRoute roles={['superadmin', 'admin']}>
                 <SettingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/update"
+            element={
+              <ProtectedRoute roles={['superadmin', 'admin']}>
+                <UpdatePage />
               </ProtectedRoute>
             }
           />
