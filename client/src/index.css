@@ -133,37 +133,116 @@ label {
   word-break: break-all;
 }
 
-/* ── App shell ── */
-.app-shell {
+/* ── App shell (sidebar layout) ── */
+.app-shell-sidebar {
   min-height: 100vh;
   display: flex;
-  flex-direction: column;
 }
 
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 14px 24px;
-  border-bottom: 1px solid #2a2e38;
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
   background: #14161b;
-}
-
-.brand {
-  font-weight: 600;
-  font-size: 16px;
-}
-
-.topnav {
+  border-right: 1px solid #2a2e38;
   display: flex;
-  gap: 16px;
-  flex: 1;
+  flex-direction: column;
+  height: 100vh;
+  position: sticky;
+  top: 0;
 }
 
-.topbar-right {
+.sidebar-brand {
+  font-weight: 700;
+  font-size: 18px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #2a2e38;
+}
+
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-link {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: #a9adb8;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.sidebar-link:hover {
+  background: #1e2129;
+  color: #e6e6e6;
+}
+
+.sidebar-link.active {
+  background: #2b6cff;
+  color: white;
+}
+
+.sidebar-link.nested {
+  padding-left: 24px;
+  font-size: 13px;
+}
+
+.sidebar-group {
+  margin-top: 4px;
+}
+
+.sidebar-group-header {
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  background: none;
+  border: none;
+  color: #6b6f79;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sidebar-group-header:hover {
+  background: #1e2129;
+  color: #a9adb8;
+}
+
+.sidebar-group-header.active {
+  color: #6ea8fe;
+}
+
+.sidebar-group-header .chevron {
+  transition: transform 0.15s;
+  font-size: 10px;
+}
+
+.sidebar-group-header .chevron.open {
+  transform: rotate(180deg);
+}
+
+.sidebar-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.sidebar-footer {
+  padding: 14px 16px;
+  border-top: 1px solid #2a2e38;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .whoami {
@@ -174,6 +253,7 @@ label {
 .app-content {
   flex: 1;
   padding: 32px;
+  min-width: 0;
 }
 
 .page h1 {
