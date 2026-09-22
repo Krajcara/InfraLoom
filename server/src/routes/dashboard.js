@@ -19,6 +19,7 @@ const DEFAULT_WIDGETS = [
   { id: 'routers', title: 'Routers / Network Devices', phase: 7 },
   { id: 'dns', title: 'DNS Status', phase: 8 },
   { id: 'netspeed', title: 'Last Net Speed Test', phase: 9 },
+  { id: 'myip', title: 'My IP', phase: 10 },
 ];
 
 function defaultLayout() {

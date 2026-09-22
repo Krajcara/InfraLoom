@@ -1370,3 +1370,9 @@ textarea {
   border-bottom: none;
   padding-bottom: 0;
 }
+
+.myip-widget-ip {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+}

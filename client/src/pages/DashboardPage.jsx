@@ -118,6 +118,7 @@ const WIDGET_LINKS = {
   routers: '/routers',
   dns: '/dns',
   netspeed: '/netspeed',
+  myip: '/myip',
 };
 
 function SortableWidget({ widget, onHide }) {
@@ -170,6 +171,8 @@ function SortableWidget({ widget, onHide }) {
           <DnsWidgetBody />
         ) : widget.id === 'netspeed' ? (
           <NetSpeedWidgetBody />
+        ) : widget.id === 'myip' ? (
+          <MyIpWidgetBody />
         ) : (
           <p className="muted">Coming in Phase {widget.phase}.</p>
         )}
@@ -265,6 +268,31 @@ function NetSpeedWidgetBody() {
     <p className="muted">
       ↓ {state.test.download} Mbps · ↑ {state.test.upload} Mbps · {state.test.ping}ms
     </p>
+  );
+}
+
+function MyIpWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, result: null });
+
+  useEffect(() => {
+    api
+      .get('/myip/cards')
+      .then((data) => {
+        const ok = data.results.find((r) => !r.error);
+        setState({ loading: false, error: null, result: ok || null });
+      })
+      .catch((err) => setState({ loading: false, error: err.message, result: null }));
+  }, []);
+
+  if (state.loading) return <p className="muted">Looking up...</p>;
+  if (state.error) return <p className="error">{state.error}</p>;
+  if (!state.result) return <p className="muted">Could not determine public IP.</p>;
+
+  return (
+    <div>
+      <p className="mono myip-widget-ip">{state.result.ip}</p>
+      <p className="muted">{[state.result.city, state.result.country_name].filter(Boolean).join(', ') || state.result.org}</p>
+    </div>
   );
 }
 
