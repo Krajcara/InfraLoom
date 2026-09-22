@@ -60,7 +60,7 @@ function execInLXC(conn, vmid, command, { timeoutMs = 300000, onOutput } = {}) {
       })
       .on('error', (err) => {
         clearTimeout(timer);
-        reject(new Error(`SSH to Proxmox host failed: ${err.message}`));
+        reject(new Error(`SSH to Proxmox host (${host}:${port}) failed: ${err.message}`));
       })
       .connect({
         host, port,
