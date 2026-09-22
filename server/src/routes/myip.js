@@ -20,6 +20,13 @@ async function fetchWithTimeout(url, timeoutMs = 8000, options = {}) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error(`Timed out after ${timeoutMs}ms reaching ${new URL(url).hostname}`);
+    // Node's native fetch throws a generic "fetch failed" and buries the real
+    // reason (DNS failure, connection refused, ...) in err.cause — surface it.
+    const cause = err.cause;
+    const detail = cause ? `${cause.code || cause.name || ''} ${cause.message || ''}`.trim() : err.message;
+    throw new Error(`${detail || 'network error'} (${new URL(url).hostname})`);
   } finally {
     clearTimeout(timer);
   }
