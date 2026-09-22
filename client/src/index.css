@@ -1332,3 +1332,41 @@ textarea {
   margin-top: 10px;
   font-size: 12px;
 }
+
+/* ── MyIP ── */
+.myip-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.myip-card {
+  display: block;
+}
+
+.myip-ip {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 4px 0 12px;
+}
+
+.myip-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.myip-fields > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #2a2e38;
+}
+
+.myip-fields > div:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}

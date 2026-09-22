@@ -25,6 +25,7 @@ const NAV_GROUPS = [
       { to: '/dns', label: 'DNS' },
       { to: '/dns-analytics', label: 'DNS Analytics' },
       { to: '/netspeed', label: 'Net Speed' },
+      { to: '/myip', label: 'MyIP' },
     ],
   },
   {
