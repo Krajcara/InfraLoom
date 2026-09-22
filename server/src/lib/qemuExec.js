@@ -25,7 +25,7 @@ async function pveCall(conn, method, path, data) {
  * result only once the command has exited. */
 async function execInVM(conn, node, vmid, command, { timeoutMs = 300000, onOutput } = {}) {
   const start = await pveCall(conn, 'post', `/nodes/${node}/qemu/${vmid}/agent/exec`, {
-    command: ['/bin/bash', '-c', command],
+    command: ['/bin/sh', '-c', command],
   });
   const pid = start.pid;
   if (!pid) throw new Error('Guest agent did not return a PID — is the QEMU guest agent running in this VM?');

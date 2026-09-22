@@ -22,7 +22,7 @@ function execInLXC(conn, vmid, command, { timeoutMs = 300000, onOutput } = {}) {
     if (!/^\d+$/.test(String(vmid))) return reject(new Error(`Invalid LXC vmid: ${vmid}`));
 
     const shellEscaped = command.replace(/'/g, `'\\''`);
-    const fullCommand = `pct exec ${vmid} -- /bin/bash -c '${shellEscaped}'`;
+    const fullCommand = `pct exec ${vmid} -- /bin/sh -c '${shellEscaped}'`;
 
     const client = new SSHClient();
     const timer = setTimeout(() => {

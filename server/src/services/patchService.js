@@ -17,7 +17,13 @@ async function detectOsFamily(conn, guestType, node, vmid) {
     { timeoutMs: 20000 }
   );
   const family = r.stdout.trim();
-  return ['debian', 'rhel'].includes(family) ? family : 'unknown';
+  if (!['debian', 'rhel'].includes(family)) {
+    const detail = [r.stderr?.trim(), r.stdout?.trim()].filter(Boolean).join(' | ') || '(no output)';
+    const err = new Error(`Could not detect a supported OS (Debian/Ubuntu or RHEL/Fedora family) inside the guest — raw output: ${detail.slice(0, 300)}`);
+    err.osFamily = 'unknown';
+    throw err;
+  }
+  return family;
 }
 
 const DRY_RUN_COMMANDS = {
@@ -58,7 +64,6 @@ function parseRhelDryRun(output) {
  * 'awaiting_approval' with the package snapshot. Never mutates the guest. */
 async function runDryRun({ connectionId, conn, node, guestType, vmid, vmName, triggeredBy }) {
   const osFamily = await detectOsFamily(conn, guestType, node, vmid);
-  if (osFamily === 'unknown') throw new Error('Could not detect a supported OS (Debian/Ubuntu or RHEL/Fedora family) inside the guest');
 
   const cmd = DRY_RUN_COMMANDS[osFamily];
   const r = await execFor(conn, guestType, node, vmid, cmd, { timeoutMs: 120000 });

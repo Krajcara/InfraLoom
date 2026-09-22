@@ -16,6 +16,7 @@ export default function PatchManagementPage() {
   const [error, setError] = useState(null);
   const [activeRun, setActiveRun] = useState(null);
   const [history, setHistory] = useState([]);
+  const [checkingKey, setCheckingKey] = useState(null);
 
   useEffect(() => {
     api.get('/hypervisors/connections').then((d) => {
@@ -56,11 +57,15 @@ export default function PatchManagementPage() {
 
   async function startDryRun(guest) {
     setError(null);
+    const key = `${guest.type}-${guest.vmid}`;
+    setCheckingKey(key);
     try {
       const d = await api.post(`/patch-management/connections/${connId}/${guest.node}/${guest.type}/${guest.vmid}/dry-run`, { name: guest.name });
       setActiveRun(d.run);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setCheckingKey(null);
     }
   }
 
@@ -101,8 +106,8 @@ export default function PatchManagementPage() {
                     <td className="mono">{g.ip || '—'}</td>
                     <td className="actions">
                       {canRun && (
-                        <button onClick={() => startDryRun(g)}>
-                          <Play size={13} /> Check for updates
+                        <button onClick={() => startDryRun(g)} disabled={checkingKey === `${g.type}-${g.vmid}`}>
+                          <Play size={13} /> {checkingKey === `${g.type}-${g.vmid}` ? 'Checking... (this can take up to a minute)' : 'Check for updates'}
                         </button>
                       )}
                     </td>
@@ -154,6 +159,24 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
       if (data.runId === run.id) setRun((r) => ({ ...r, status: data.status }));
     },
   });
+
+  useEffect(() => {
+    if (run.status !== 'running') return;
+    const interval = setInterval(async () => {
+      try {
+        const d = await api.get(`/patch-management/runs/${run.id}`);
+        setRun((r) => ({ ...r, status: d.run.status }));
+        if (d.run.apply_output && d.run.apply_output.length > output.length) {
+          setOutput(d.run.apply_output);
+          setTimeout(() => outputRef.current?.scrollTo(0, outputRef.current.scrollHeight), 0);
+        }
+      } catch {
+        // transient — the next tick will retry
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.status, run.id]);
 
   async function approve() {
     setApproving(true);
