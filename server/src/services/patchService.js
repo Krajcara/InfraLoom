@@ -69,13 +69,14 @@ async function runDryRun({ connectionId, conn, node, guestType, vmid, vmName, tr
   const r = await execFor(conn, guestType, node, vmid, cmd, { timeoutMs: 120000 });
 
   const packages = osFamily === 'debian' ? parseDebianDryRun(r.stdout) : parseRhelDryRun(r.stdout);
+  const status = packages.length === 0 ? 'up_to_date' : 'awaiting_approval';
 
   const row = db
     .prepare(
-      `INSERT INTO patch_runs (connection_id, node, guest_type, vmid, vm_name, os_family, status, packages_affected, dry_run_output, triggered_by)
-       VALUES (?,?,?,?,?,?,'awaiting_approval',?,?,?)`
+      `INSERT INTO patch_runs (connection_id, node, guest_type, vmid, vm_name, os_family, status, packages_affected, dry_run_output, triggered_by, completed_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,${status === 'up_to_date' ? "datetime('now')" : 'NULL'})`
     )
-    .run(connectionId, node, guestType, String(vmid), vmName || null, osFamily, JSON.stringify(packages), r.stdout.slice(-20000), triggeredBy);
+    .run(connectionId, node, guestType, String(vmid), vmName || null, osFamily, status, JSON.stringify(packages), r.stdout.slice(-20000), triggeredBy);
 
   return db.prepare('SELECT * FROM patch_runs WHERE id = ?').get(row.lastInsertRowid);
 }

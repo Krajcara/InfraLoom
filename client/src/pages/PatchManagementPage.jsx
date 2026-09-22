@@ -211,7 +211,7 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
       {error && <p className="error">{error}</p>}
       <p className="muted">OS family: {run.os_family} · {run.packages_affected?.length || 0} package(s) would be updated</p>
 
-      {run.status === 'awaiting_approval' && (
+      {(run.status === 'awaiting_approval' || run.status === 'up_to_date') && (
         <>
           {run.packages_affected?.length > 0 ? (
             <table className="table">
@@ -227,9 +227,9 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
               </tbody>
             </table>
           ) : (
-            <p className="muted">No packages need updating — system is up to date.</p>
+            <p className="success">No packages need updating — system is up to date.</p>
           )}
-          {canApprove && run.packages_affected?.length > 0 && (
+          {canApprove && run.status === 'awaiting_approval' && run.packages_affected?.length > 0 && (
             <div className="form-row">
               <button onClick={approve} disabled={approving}><Check size={14} /> {approving ? 'Starting...' : 'Approve & apply'}</button>
               <button onClick={cancel}>Cancel</button>
@@ -250,6 +250,7 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
 function StatusChip({ status }) {
   const map = {
     awaiting_approval: ['status-degraded', 'Awaiting approval'],
+    up_to_date: ['status-up', 'Up to date'],
     running: ['status-degraded', 'Running'],
     completed: ['status-up', 'Completed'],
     failed: ['status-down', 'Failed'],
