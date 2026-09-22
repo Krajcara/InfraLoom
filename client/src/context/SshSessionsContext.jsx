@@ -1,4 +1,4 @@
-import { createContext, useContext, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { io } from 'socket.io-client';
 import { Terminal } from '@xterm/xterm';
@@ -20,8 +20,22 @@ export function SshSessionsProvider({ children }) {
   const [sessions, setSessions] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [dockNode, setDockNode] = useState(null);
-  const fallbackRef = useRef(null);
+  // Created once, synchronously, on first render (not via a ref that only
+  // exists after commit) — this guarantees the portal target is NEVER
+  // falsy, even for a single render. If it ever were, {target && portal}
+  // would render nothing for that tick, which unmounts every session pane
+  // and loses its socket/terminal — exactly the "asks to reconnect" bug.
+  const [fallbackNode] = useState(() => (typeof document !== 'undefined' ? document.createElement('div') : null));
   const closersRef = useRef(new Map()); // sessionId -> cleanup fn, set by each pane
+
+  useEffect(() => {
+    if (!fallbackNode) return;
+    fallbackNode.className = 'ssh-hidden-holder';
+    document.body.appendChild(fallbackNode);
+    return () => {
+      if (fallbackNode.parentNode) fallbackNode.parentNode.removeChild(fallbackNode);
+    };
+  }, [fallbackNode]);
 
   function addSession(opts) {
     const id = newId();
@@ -44,13 +58,11 @@ export function SshSessionsProvider({ children }) {
     closersRef.current.set(id, fn);
   }
 
-  const target = dockNode || fallbackRef.current;
+  const target = dockNode || fallbackNode;
 
   return (
     <SshSessionsContext.Provider value={{ sessions, activeId, setActiveId, addSession, closeSession, registerDock: setDockNode }}>
       {children}
-      {/* Always-mounted fallback so the portal target is never null even before the SSH page has ever registered a dock. */}
-      <div ref={fallbackRef} className="ssh-hidden-holder" />
       {target &&
         createPortal(
           <div className="ssh-panes">
@@ -74,10 +86,8 @@ function SshSessionPane({ session, active, registerCloser }) {
   const fitRef = useRef(null);
   const containerRef = useRef(null);
   const socketRef = useRef(null);
-  const initedRef = useRef(false);
 
-  if (!initedRef.current) {
-    initedRef.current = true;
+  useEffect(() => {
     if (connectionId && vmid) {
       api
         .get(`/hypervisors/connections/${connectionId}/vms/${vmid}/ssh-credentials`)
@@ -94,17 +104,19 @@ function SshSessionPane({ session, active, registerCloser }) {
       socketRef.current?.disconnect();
       termRef.current?.dispose();
     });
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Re-fit whenever this pane becomes the visible one — covers both switching
   // tabs within the SSH page and returning to the SSH page after navigating
   // away (the portal target re-registers, but this pane never unmounted).
-  if (active && fitRef.current && termRef.current) {
+  useEffect(() => {
+    if (!(active && fitRef.current && termRef.current)) return;
     requestAnimationFrame(() => {
       fitRef.current.fit();
       socketRef.current?.emit('resize', { rows: termRef.current.rows, cols: termRef.current.cols });
     });
-  }
+  }, [active]);
 
   async function connectWithSaved() {
     setError(null);
