@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { SshSessionsProvider } from './context/SshSessionsContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
@@ -26,6 +27,7 @@ import HypervisorsPage from './pages/HypervisorsPage';
 export default function App() {
   return (
     <AuthProvider>
+      <SshSessionsProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/status" element={<StatusPage />} />
@@ -91,6 +93,7 @@ export default function App() {
           />
         </Route>
       </Routes>
+      </SshSessionsProvider>
     </AuthProvider>
   );
 }

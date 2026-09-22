@@ -1655,3 +1655,17 @@ textarea {
 .ssh-pane .ssh-page-terminal {
   flex: 1;
 }
+
+.ssh-hidden-holder {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.ssh-dock {
+  flex: 1;
+  display: flex;
+  min-height: 60vh;
+}
