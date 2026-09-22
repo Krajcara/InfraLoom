@@ -139,6 +139,19 @@ export default function HypervisorsPage() {
   );
 }
 
+function UsageBar({ pct }) {
+  const v = Math.min(Math.max(pct || 0, 0), 100);
+  const colorClass = v > 90 ? 'usage-bar-red' : v > 75 ? 'usage-bar-yellow' : 'usage-bar-blue';
+  return (
+    <div className="usage-bar-row">
+      <div className="usage-bar-track">
+        <div className={`usage-bar-fill ${colorClass}`} style={{ width: `${v}%` }} />
+      </div>
+      <span className="mono muted usage-bar-pct">{v}%</span>
+    </div>
+  );
+}
+
 function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
   const [nodes, setNodes] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -226,12 +239,33 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
                   .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                   .map((vm) => (
                     <tr key={`${vm.type}-${vm.vmid}`}>
-                      <td>{vm.name} <span className="muted">#{vm.vmid}</span></td>
-                      <td className="muted">{vm.type.toUpperCase()}</td>
+                      <td>
+                        <span className={`hv-status-dot hv-status-dot-${vm.status}`} />
+                        {vm.name} <span className="muted">#{vm.vmid}</span>
+                      </td>
+                      <td><span className={`hv-type-badge hv-type-${vm.type}`}>{vm.type === 'lxc' ? 'LXC' : 'VM'}</span></td>
                       <td><span className={`status-badge ${vm.status === 'running' ? 'status-up' : 'status-down'}`}>{vm.status}</span></td>
-                      <td>{vm.status === 'running' ? `${vm.cpu_usage}%` : '—'}</td>
-                      <td>{vm.status === 'running' ? `${vm.mem_used_gb}/${vm.mem_max_gb} GB` : '—'}</td>
-                      <td>{vm.disk_used_gb ? `${vm.disk_used_gb}/${vm.disk_max_gb} GB` : '—'}</td>
+                      <td className="hv-usage-cell">{vm.status === 'running' ? <UsageBar pct={vm.cpu_usage} /> : <span className="muted">—</span>}</td>
+                      <td className="hv-usage-cell">
+                        {vm.status === 'running' ? (
+                          <>
+                            <UsageBar pct={vm.mem_usage} />
+                            <span className="muted hv-usage-detail">{vm.mem_used_gb}/{vm.mem_max_gb} GB</span>
+                          </>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td className="hv-usage-cell">
+                        {vm.disk_used_gb ? (
+                          <>
+                            <UsageBar pct={vm.disk_usage} />
+                            <span className="muted hv-usage-detail">{vm.disk_used_gb}/{vm.disk_max_gb} GB</span>
+                          </>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
                       <td className="mono">{vm.ip || '—'}</td>
                       <td className="muted">{vm.os || '—'}</td>
                       <td className="actions">
