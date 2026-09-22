@@ -4,7 +4,7 @@ import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power, ChevronRight, T
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
-const emptyForm = { type: 'proxmox', name: '', url: '', username: 'root@pam', token_id: '', api_token: '' };
+const emptyForm = { type: 'proxmox', name: '', url: '', username: 'root@pam', token_id: '', api_token: '', password: '', port: '' };
 
 export default function HypervisorsPage() {
   const { user } = useAuth();
@@ -39,7 +39,7 @@ export default function HypervisorsPage() {
   }
 
   function openEdit(c) {
-    setForm({ id: c.id, type: c.type, name: c.name, url: c.url, username: c.username, token_id: c.token_id || '', api_token: '' });
+    setForm({ id: c.id, type: c.type, name: c.name, url: c.url, username: c.username, token_id: c.token_id || '', api_token: '', password: '', port: c.port || '' });
   }
 
   async function save(e) {
@@ -72,7 +72,7 @@ export default function HypervisorsPage() {
   return (
     <div className="page">
       <h1>Hypervisors</h1>
-      <p className="muted">Proxmox VE — more hypervisor types arrive in later phases.</p>
+      <p className="muted">Proxmox VE, Hyper-V, and VMware ESXi.</p>
       {message && <p className="success">{message}</p>}
       {error && <p className="error">{error}</p>}
 
@@ -91,8 +91,8 @@ export default function HypervisorsPage() {
                 Type
                 <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} disabled={!!form.id}>
                   <option value="proxmox">Proxmox VE</option>
-                  <option value="vmware" disabled>VMware vSphere (coming soon)</option>
-                  <option value="hyperv" disabled>Hyper-V (coming soon)</option>
+                  <option value="esxi">VMware ESXi</option>
+                  <option value="hyperv">Hyper-V</option>
                 </select>
               </label>
               <label>
@@ -100,35 +100,78 @@ export default function HypervisorsPage() {
                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Main Cluster" required />
               </label>
               <label>
-                URL
-                <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://proxmox.local:8006" required />
-              </label>
-            </div>
-            <div className="form-row">
-              <label>
-                Username
-                <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="root@pam" autoComplete="off" name="pve_user_field" />
-              </label>
-              <label>
-                API Token ID
-                <input value={form.token_id} onChange={(e) => setForm({ ...form, token_id: e.target.value })} placeholder="infraloom" autoComplete="off" name="pve_tokenid_field" />
-              </label>
-              <label>
-                API Token Secret
+                {form.type === 'hyperv' ? 'Host / IP' : 'URL'}
                 <input
-                  type="password"
-                  value={form.api_token}
-                  onChange={(e) => setForm({ ...form, api_token: e.target.value })}
-                  placeholder={form.id ? 'unchanged' : ''}
-                  autoComplete="new-password"
-                  name="pve_secret_field"
+                  value={form.url}
+                  onChange={(e) => setForm({ ...form, url: e.target.value })}
+                  placeholder={form.type === 'proxmox' ? 'https://proxmox.local:8006' : form.type === 'esxi' ? 'https://esxi.local' : '192.168.1.50'}
+                  required
                 />
               </label>
             </div>
-            <p className="muted">
-              Create a token in Proxmox under <strong>Datacenter → Permissions → API Tokens</strong> (uncheck
-              "Privilege Separation" or grant it PVEAdmin/PVEVMAdmin as needed).
-            </p>
+            {form.type === 'proxmox' ? (
+              <div className="form-row">
+                <label>
+                  Username
+                  <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="root@pam" autoComplete="off" name="pve_user_field" />
+                </label>
+                <label>
+                  API Token ID
+                  <input value={form.token_id} onChange={(e) => setForm({ ...form, token_id: e.target.value })} placeholder="infraloom" autoComplete="off" name="pve_tokenid_field" />
+                </label>
+                <label>
+                  API Token Secret
+                  <input
+                    type="password"
+                    value={form.api_token}
+                    onChange={(e) => setForm({ ...form, api_token: e.target.value })}
+                    placeholder={form.id ? 'unchanged' : ''}
+                    autoComplete="new-password"
+                    name="pve_secret_field"
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="form-row">
+                <label>
+                  Username
+                  <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder={form.type === 'hyperv' ? 'Administrator' : 'root'} autoComplete="off" name="hv_user_field" required />
+                </label>
+                <label>
+                  Password
+                  <input
+                    type="password"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    placeholder={form.id ? 'unchanged' : ''}
+                    autoComplete="new-password"
+                    name="hv_pass_field"
+                    required={!form.id}
+                  />
+                </label>
+                <label>
+                  Port (optional)
+                  <input value={form.port} onChange={(e) => setForm({ ...form, port: e.target.value })} placeholder={form.type === 'hyperv' ? '5985' : '443'} />
+                </label>
+              </div>
+            )}
+            {form.type === 'proxmox' && (
+              <p className="muted">
+                Create a token in Proxmox under <strong>Datacenter → Permissions → API Tokens</strong> (uncheck
+                "Privilege Separation" or grant it PVEAdmin/PVEVMAdmin as needed).
+              </p>
+            )}
+            {form.type === 'hyperv' && (
+              <p className="muted">
+                Requires WinRM enabled on the host (<code>winrm quickconfig</code>) and the user must be a local
+                administrator. Uses HTTP port 5985 by default.
+              </p>
+            )}
+            {form.type === 'esxi' && (
+              <p className="muted">
+                Requires ESXi 7.0+ for the REST API used here. Standard root/administrative credentials.
+              </p>
+            )}
             <div className="form-row">
               <button type="submit">Save</button>
               <button type="button" onClick={() => setForm(null)}>Cancel</button>
@@ -271,8 +314,10 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
               <span className={`status-badge ${node.status === 'online' ? 'status-up' : 'status-down'}`}>{node.status}</span>
               {node.status === 'online' && (
                 <span className="muted hv-node-stats">
-                  CPU {node.cpu_usage}% · RAM {node.mem_used_gb}/{node.mem_max_gb} GB ({node.mem_usage}%) ·
-                  Disk {node.disk_usage}% · {node.vm_count} VM, {node.lxc_count} LXC
+                  {node.cpu_usage != null && <>CPU {node.cpu_usage}% · </>}
+                  {node.mem_max_gb != null && <>RAM {node.mem_used_gb}/{node.mem_max_gb} GB ({node.mem_usage}%) · </>}
+                  {node.disk_usage != null && <>Disk {node.disk_usage}% · </>}
+                  {node.vm_count} VM, {node.lxc_count} LXC
                 </span>
               )}
             </button>
@@ -296,19 +341,21 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
                       </td>
                       <td><span className={`hv-type-badge hv-type-${vm.type}`}>{vm.type === 'lxc' ? 'LXC' : 'VM'}</span></td>
                       <td><span className={`status-badge ${vm.status === 'running' ? 'status-up' : 'status-down'}`}>{vm.status}</span></td>
-                      <td className="hv-usage-cell">{vm.status === 'running' ? <UsageBar pct={vm.cpu_usage} /> : <span className="muted">—</span>}</td>
+                      <td className="hv-usage-cell">{vm.status === 'running' && vm.cpu_usage != null ? <UsageBar pct={vm.cpu_usage} /> : <span className="muted">—</span>}</td>
                       <td className="hv-usage-cell">
-                        {vm.status === 'running' ? (
+                        {vm.status === 'running' && vm.mem_usage != null ? (
                           <>
                             <UsageBar pct={vm.mem_usage} />
                             <span className="muted hv-usage-detail">{vm.mem_used_gb}/{vm.mem_max_gb} GB</span>
                           </>
+                        ) : vm.mem_max_gb ? (
+                          <span className="muted hv-usage-detail">{vm.mem_used_gb ?? '?'}/{vm.mem_max_gb} GB</span>
                         ) : (
                           <span className="muted">—</span>
                         )}
                       </td>
                       <td className="hv-usage-cell">
-                        {vm.disk_used_gb ? (
+                        {vm.disk_used_gb && vm.disk_usage != null ? (
                           <>
                             <UsageBar pct={vm.disk_usage} />
                             <span className="muted hv-usage-detail">{vm.disk_used_gb}/{vm.disk_max_gb} GB</span>

@@ -5,12 +5,16 @@ const db = require('../db/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
 const proxmox = require('../lib/proxmoxClient');
+const hyperv = require('../lib/hypervClient');
+const esxi = require('../lib/esxiClient');
 
 const router = express.Router();
 router.use(requireAuth);
 
+const VALID_TYPES = ['proxmox', 'hyperv', 'esxi'];
+
 function maskConnection(conn) {
-  return { ...conn, api_token: conn.api_token ? '***' : null };
+  return { ...conn, api_token: conn.api_token ? '***' : null, password: conn.password ? '***' : null };
 }
 
 function getConnection(id) {
@@ -18,8 +22,9 @@ function getConnection(id) {
 }
 
 function clientFor(type) {
-  // Only 'proxmox' exists in Phase 11 — VMware/Hyper-V register here in later phases.
   if (type === 'proxmox') return proxmox;
+  if (type === 'hyperv') return hyperv;
+  if (type === 'esxi') return esxi;
   return null;
 }
 
@@ -31,17 +36,20 @@ router.get('/connections', (req, res) => {
 
 // POST /api/hypervisors/connections
 router.post('/connections', requireRole('superadmin', 'admin'), (req, res) => {
-  const { type, name, url, username, token_id, api_token } = req.body || {};
+  const { type, name, url, username, token_id, api_token, password, port } = req.body || {};
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (!url?.trim()) return res.status(400).json({ error: 'url is required' });
-  if (type !== 'proxmox') return res.status(400).json({ error: 'Only the proxmox type is supported in this phase' });
+  if (!VALID_TYPES.includes(type)) return res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(', ')}` });
 
   const r = db
     .prepare(
-      `INSERT INTO hypervisor_connections (type, name, url, username, token_id, api_token)
-       VALUES (?,?,?,?,?,?)`
+      `INSERT INTO hypervisor_connections (type, name, url, username, token_id, api_token, password, port)
+       VALUES (?,?,?,?,?,?,?,?)`
     )
-    .run(type, name.trim(), url.trim().replace(/\/$/, ''), username || 'root@pam', token_id || null, api_token || null);
+    .run(
+      type, name.trim(), url.trim().replace(/\/$/, ''), username || (type === 'proxmox' ? 'root@pam' : ''),
+      token_id || null, api_token || null, password || null, port ? parseInt(port, 10) : null
+    );
 
   writeAuditLog({
     user_id: req.user.id, username: req.user.username, action: 'hypervisor.connection_create',
@@ -57,12 +65,13 @@ router.put('/connections/:id', requireRole('superadmin', 'admin'), (req, res) =>
   const existing = getConnection(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
-  const { name, url, username, token_id, api_token, enabled } = req.body || {};
+  const { name, url, username, token_id, api_token, password, port, enabled } = req.body || {};
   const newToken = api_token && api_token !== '***' ? api_token : existing.api_token;
+  const newPassword = password && password !== '***' ? password : existing.password;
 
   db.prepare(
     `UPDATE hypervisor_connections SET
-      name=?, url=?, username=?, token_id=?, api_token=?, enabled=?, updated_at=datetime('now')
+      name=?, url=?, username=?, token_id=?, api_token=?, password=?, port=?, enabled=?, updated_at=datetime('now')
      WHERE id=?`
   ).run(
     name?.trim() || existing.name,
@@ -70,6 +79,8 @@ router.put('/connections/:id', requireRole('superadmin', 'admin'), (req, res) =>
     username || existing.username,
     token_id !== undefined ? token_id || null : existing.token_id,
     newToken,
+    newPassword,
+    port !== undefined ? (port ? parseInt(port, 10) : null) : existing.port,
     enabled !== undefined ? (enabled ? 1 : 0) : existing.enabled,
     req.params.id
   );

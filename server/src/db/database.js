@@ -315,6 +315,8 @@ db.exec(`
     updated_at TEXT DEFAULT (datetime('now'))
   );
 `);
+ensureColumn('hypervisor_connections', 'password', 'TEXT');
+ensureColumn('hypervisor_connections', 'port', 'INTEGER');
 
 // ── Saved SSH credentials for Hypervisors VM terminal ───────────────────
 // Per (connection, vmid) — optional defaults; a session can always override
