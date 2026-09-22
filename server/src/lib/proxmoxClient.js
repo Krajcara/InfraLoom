@@ -223,7 +223,7 @@ async function fetchNodesSummary(conn) {
   const details = await Promise.all(
     nodes.map(async (node) => {
       if (node.status !== 'online') {
-        return { node: node.node, status: node.status, cpu_usage: 0, mem_usage: 0, disk_usage: 0, mem_used_gb: '0', mem_max_gb: '0', vm_count: 0, lxc_count: 0 };
+        return { node: node.node, status: node.status, cpu_usage: 0, mem_usage: 0, disk_usage: 0, mem_used_gb: '0', mem_max_gb: '0', vm_count: 0, lxc_count: 0, running_count: 0 };
       }
       const [vms, lxc] = await Promise.all([
         pveGet(baseUrl, `/nodes/${node.node}/qemu`, token).catch(() => []),
@@ -238,6 +238,7 @@ async function fetchNodesSummary(conn) {
         mem_max_gb: node.maxmem ? (node.maxmem / 1073741824).toFixed(1) : '0',
         maxcpu: node.maxcpu, uptime: node.uptime,
         vm_count: vms.length, lxc_count: lxc.length,
+        running_count: vms.filter((v) => v.status === 'running').length + lxc.filter((v) => v.status === 'running').length,
       };
     })
   );

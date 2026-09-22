@@ -153,8 +153,8 @@ router.get('/nodes', async (req, res) => {
     connections.map(async (conn) => {
       const client = clientFor(conn.type);
       if (!client) throw new Error(`Unsupported type: ${conn.type}`);
-      const nodes = await client.fetchNodes(conn);
-      return { connectionId: conn.id, connectionName: conn.name, nodes };
+      const nodes = await client.fetchNodesSummary(conn);
+      return { connectionId: conn.id, connectionName: conn.name, connectionType: conn.type, nodes };
     })
   );
 
@@ -162,7 +162,7 @@ router.get('/nodes', async (req, res) => {
     results: results.map((r, i) =>
       r.status === 'fulfilled'
         ? r.value
-        : { connectionId: connections[i].id, connectionName: connections[i].name, error: r.reason.message }
+        : { connectionId: connections[i].id, connectionName: connections[i].name, connectionType: connections[i].type, error: r.reason.message }
     ),
   });
 });

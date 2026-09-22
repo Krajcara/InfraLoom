@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext';
 
 const emptyForm = { type: 'proxmox', name: '', url: '', username: 'root@pam', token_id: '', api_token: '', password: '', port: '' };
 
+const HYPERVISOR_TYPE_LABELS = { proxmox: 'Proxmox VE', hyperv: 'Hyper-V', esxi: 'VMware ESXi' };
+
 export default function HypervisorsPage() {
   const { user } = useAuth();
   const canEdit = ['superadmin', 'admin'].includes(user?.role);
@@ -281,7 +283,9 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
     <section className="card hv-connection-card">
       <div className="hv-connection-header">
         <div>
-          <h2>{conn.name}</h2>
+          <h2>
+            {conn.name} <span className={`hv-type-connection-badge hv-type-connection-${conn.type}`}>{HYPERVISOR_TYPE_LABELS[conn.type] || conn.type}</span>
+          </h2>
           <p className="muted mono">{conn.url}</p>
         </div>
         <div className="form-row">

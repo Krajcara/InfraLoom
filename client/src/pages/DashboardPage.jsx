@@ -281,32 +281,41 @@ function NetSpeedWidgetBody() {
 }
 
 function HypervisorsWidgetBody() {
-  const [state, setState] = useState({ loading: true, error: null, running: 0, total: 0, connections: 0 });
+  const [state, setState] = useState({ loading: true, error: null, byType: {}, connections: 0 });
 
   useEffect(() => {
     api
       .get('/hypervisors/nodes')
       .then((data) => {
-        let running = 0;
-        let total = 0;
+        const byType = {};
         data.results.forEach((r) => {
+          const key = r.connectionType || 'unknown';
+          byType[key] = byType[key] || { running: 0, total: 0 };
           (r.nodes || []).forEach((n) => {
-            [...(n.vms || []), ...(n.lxc || [])].forEach((vm) => {
-              total++;
-              if (vm.status === 'running') running++;
-            });
+            byType[key].running += n.running_count || 0;
+            byType[key].total += (n.vm_count || 0) + (n.lxc_count || 0);
           });
         });
-        setState({ loading: false, error: null, running, total, connections: data.results.length });
+        setState({ loading: false, error: null, byType, connections: data.results.length });
       })
-      .catch((err) => setState({ loading: false, error: err.message, running: 0, total: 0, connections: 0 }));
+      .catch((err) => setState({ loading: false, error: err.message, byType: {}, connections: 0 }));
   }, []);
 
   if (state.loading) return <p className="muted">Loading...</p>;
   if (state.error) return <p className="error">{state.error}</p>;
   if (state.connections === 0) return <p className="muted">No hypervisor connections yet.</p>;
 
-  return <p className="muted">{state.running}/{state.total} VMs/LXC running across {state.connections} connection{state.connections === 1 ? '' : 's'}.</p>;
+  const typeLabels = { proxmox: 'Proxmox', hyperv: 'Hyper-V', esxi: 'ESXi' };
+
+  return (
+    <div>
+      {Object.entries(state.byType).map(([type, counts]) => (
+        <p key={type} className="muted">
+          {typeLabels[type] || type}: {counts.running}/{counts.total} running
+        </p>
+      ))}
+    </div>
+  );
 }
 
 function MyIpWidgetBody() {

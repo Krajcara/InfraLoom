@@ -32,7 +32,7 @@ $vmTotal = $vms.Count
 $uptime = [int]((Get-Date)-$os.LastBootUpTime).TotalSeconds
 [PSCustomObject]@{
   cpu_usage = $cpu; mem_usage = $memUsedPct; mem_used_gb = $memUsedGB; mem_max_gb = $memTotalGB
-  disk_usage = $diskPct; vm_count = $vmTotal; uptime = $uptime
+  disk_usage = $diskPct; vm_count = $vmTotal; running_count = $vmCount; uptime = $uptime
 } | ConvertTo-Json -Compress
 `;
   const r = await executeScript(conn, ps, 30);
@@ -46,7 +46,7 @@ $uptime = [int]((Get-Date)-$os.LastBootUpTime).TotalSeconds
       node: NODE_NAME, status: 'online',
       cpu_usage: data.cpu_usage || 0, mem_usage: data.mem_usage || 0, disk_usage: data.disk_usage || 0,
       mem_used_gb: String(data.mem_used_gb || 0), mem_max_gb: String(data.mem_max_gb || 0),
-      uptime: data.uptime || 0, vm_count: data.vm_count || 0, lxc_count: 0,
+      uptime: data.uptime || 0, vm_count: data.vm_count || 0, running_count: data.running_count || 0, lxc_count: 0,
     },
   ];
 }
