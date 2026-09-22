@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power } from 'lucide-react';
+import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power, ChevronRight } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
@@ -144,6 +144,7 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [expandedNode, setExpandedNode] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -194,26 +195,34 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
       {error && <p className="error">{error}</p>}
       {loading && !nodes && <p className="muted">Connecting...</p>}
 
-      {nodes?.map((node) => (
-        <div key={node.node} className="hv-node-block">
-          <div className="hv-node-header">
-            <Server size={16} />
-            <strong>{node.node}</strong>
-            <span className={`status-badge ${node.status === 'online' ? 'status-up' : 'status-down'}`}>{node.status}</span>
-            {node.status === 'online' && (
-              <span className="muted hv-node-stats">
-                CPU {node.cpu_usage}% · RAM {node.mem_used_gb}/{node.mem_max_gb} GB ({node.mem_usage}%) · {node.vm_count} VM, {node.lxc_count} LXC
-              </span>
-            )}
-          </div>
+      {nodes?.map((node) => {
+        const isOpen = expandedNode === node.node;
+        const guests = [...(node.vms || []), ...(node.lxc || [])];
+        return (
+          <div key={node.node} className="hv-node-block">
+            <button
+              className="hv-node-header hv-node-header-clickable"
+              onClick={() => setExpandedNode(isOpen ? null : node.node)}
+            >
+              <ChevronRight size={16} className={`hv-node-chevron${isOpen ? ' open' : ''}`} />
+              <Server size={16} />
+              <strong>{node.node}</strong>
+              <span className={`status-badge ${node.status === 'online' ? 'status-up' : 'status-down'}`}>{node.status}</span>
+              {node.status === 'online' && (
+                <span className="muted hv-node-stats">
+                  CPU {node.cpu_usage}% · RAM {node.mem_used_gb}/{node.mem_max_gb} GB ({node.mem_usage}%) ·
+                  Disk {node.disk_usage}% · {node.vm_count} VM, {node.lxc_count} LXC
+                </span>
+              )}
+            </button>
 
-          {[...(node.vms || []), ...(node.lxc || [])].length > 0 && (
+            {isOpen && guests.length > 0 && (
             <table className="table">
               <thead>
                 <tr><th>Name</th><th>Type</th><th>Status</th><th>CPU</th><th>RAM</th><th>Disk</th><th>IP</th><th>OS</th><th></th></tr>
               </thead>
               <tbody>
-                {[...node.vms, ...node.lxc]
+                {guests
                   .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                   .map((vm) => (
                     <tr key={`${vm.type}-${vm.vmid}`}>
@@ -252,19 +261,20 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
                   ))}
               </tbody>
             </table>
-          )}
+            )}
 
-          {node.storages?.length > 0 && (
-            <div className="hv-storage-row">
-              {node.storages.map((s) => (
-                <span key={s.storage} className="hv-storage-chip">
-                  {s.storage}: {s.used_gb || '0'}/{s.total_gb || '?'} GB {s.usage_pct != null && `(${s.usage_pct}%)`}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+            {isOpen && node.storages?.length > 0 && (
+              <div className="hv-storage-row">
+                {node.storages.map((s) => (
+                  <span key={s.storage} className="hv-storage-chip">
+                    {s.storage}: {s.used_gb || '0'}/{s.total_gb || '?'} GB {s.usage_pct != null && `(${s.usage_pct}%)`}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </section>
   );
 }
