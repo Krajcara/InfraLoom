@@ -2,27 +2,47 @@
 
 Self-hosted IT infrastructure management application. Runs on Ubuntu Linux.
 
-> **Status: Phase 1 complete — Auth & Users.** Encrypted database, authentication
-> (JWT sessions + optional TOTP two-factor), role-based user management, and
-> profile self-service are implemented and tested. Feature modules (Dashboard,
-> Network, Infrastructure, ...) are added phase by phase — see `PLAN.md` in the
-> project's internal planning docs for the full roadmap.
+> **Status: Phase 10 complete — Network section done.** Auth, admin tooling,
+> inventory, and the full Network domain (Uptime Monitor, Routers/Switches/
+> Access Points, DNS, Net Speed, MyIP) are implemented and tested. Next up:
+> Infrastructure (Hypervisors, Network Scanner, Patch Management). See
+> `PLAN.md` in the project's internal planning docs for the full roadmap.
 
 ## Features so far
 
+**Foundation**
 - **Encrypted database** — SQLCipher, key never leaves `.env`
 - **Authentication** — JWT sessions (httpOnly cookie), account lockout after
   repeated failed attempts, revocable active sessions
 - **Two-factor authentication (TOTP)** — optional, enabled per-user from
   Profile (QR code enrollment); not required to log in
-- **Role-based users** — `superadmin` / `admin` / `operator` / `viewer`, with
-  `admin` limited to managing `operator`/`viewer` accounts
-- **Users** — create, edit (role, status, full name, email), reset password,
-  unlock, delete — with safeguards against removing the last superadmin
-- **Profile** — change password, manage TOTP, view/revoke active sessions,
-  create/revoke API keys
-- **Audit log** — every auth and user-management action is recorded (viewer
-  UI arrives in Phase 2)
+- **Role-based users** — `superadmin` / `admin` / `operator` / `viewer`
+- **Profile** — change password, manage TOTP, active sessions, API keys
+- **Customizable Dashboard** — drag-and-reorder widget cards, per user
+
+**Admin**
+- **Settings** — app name, SMTP, notification channels (Telegram, Slack,
+  Discord, ntfy, Pushover) with per-event-type rules and quiet hours
+- **System Update** — checks GitHub, updates and restarts from the UI, with
+  a live progress bar and step status
+- **Audit Log** — filterable, CSV export
+
+**Inventory**
+- **Licences** — tracking, expiry alerts, credential reveal (audited)
+- **Entra ID Apps** — app registrations, secret expiry tracking, CSV export
+
+**Network**
+- **Uptime Monitor** — HTTP(S), TCP, ICMP, DNS, Keyword, JSON Query, Docker,
+  Push heartbeat; SSL certificate expiry tracking; public `/status` page
+- **Routers / Switches / Access Points** — ping-backed status, optional SNMP
+  (v1/v2c/v3) for interface stats
+- **DNS** — local DNS server monitoring (Technitium/Pi-hole/AdGuard/etc.),
+  SPF/DKIM/DMARC/MX domain checks, Cloudflare zone integration
+- **DNS Analytics** — Technitium query statistics and top-lists
+- **Net Speed** — Cloudflare, Ookla, and LibreSpeed providers; configurable
+  schedule and retention
+- **MyIP** — multi-source public IP lookup, IP query, DNS resolver
+  (18 public resolvers, UDP + DoH)
 
 ## Installation
 
@@ -47,6 +67,8 @@ On first login, two-factor authentication is optional — enable it later from
 ```bash
 sudo bash /opt/infraloom/update.sh
 ```
+
+Or from the app itself: **Admin → Update** (shows a live progress bar).
 
 ## Service management
 
