@@ -1380,6 +1380,7 @@ textarea {
 /* ── Hypervisors ── */
 .hv-connection-card {
   margin-bottom: 20px;
+  max-width: none;
 }
 
 .hv-connection-header {
