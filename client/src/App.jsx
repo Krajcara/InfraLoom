@@ -18,6 +18,7 @@ import SwitchesPage from './pages/SwitchesPage';
 import AccessPointsPage from './pages/AccessPointsPage';
 import DnsPage from './pages/DnsPage';
 import DnsAnalyticsPage from './pages/DnsAnalyticsPage';
+import NetSpeedPage from './pages/NetSpeedPage';
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/access-points" element={<AccessPointsPage />} />
           <Route path="/dns" element={<DnsPage />} />
           <Route path="/dns-analytics" element={<DnsAnalyticsPage />} />
+          <Route path="/netspeed" element={<NetSpeedPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route
             path="/users"

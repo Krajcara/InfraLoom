@@ -1264,3 +1264,44 @@ textarea {
 .bar-blue { background: #6ea8fe; }
 .bar-purple { background: #c084fc; }
 .bar-red { background: #ff6b6b; }
+
+/* ── Net Speed ── */
+.netspeed-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.netspeed-result-card {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-height: auto;
+}
+
+.netspeed-result-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.netspeed-result-icon.blue { background: rgba(110, 168, 254, 0.15); color: #6ea8fe; }
+.netspeed-result-icon.purple { background: rgba(192, 132, 252, 0.15); color: #c084fc; }
+.netspeed-result-icon.green { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+.netspeed-result-icon.amber { background: rgba(250, 204, 21, 0.15); color: #facc15; }
+
+.stat-number-sm {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.netspeed-cli-note {
+  margin-top: 10px;
+  font-size: 12px;
+}

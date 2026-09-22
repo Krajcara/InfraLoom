@@ -278,9 +278,30 @@ db.exec(`
   );
 `);
 
+// ── Phase 9 — Network: Net Speed ────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS speed_tests (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider     TEXT NOT NULL DEFAULT 'cloudflare',
+    download     REAL,
+    upload       REAL,
+    ping         REAL,
+    jitter       REAL,
+    server       TEXT,
+    triggered_by TEXT DEFAULT 'auto',
+    status       TEXT DEFAULT 'done',
+    error        TEXT,
+    created_at   TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_speed_tests_created ON speed_tests(created_at);
+`);
+
 // Seed default settings only if they don't already exist.
 const defaultSettings = {
   app_name: 'InfraLoom',
+  netspeed_provider: 'cloudflare',
+  netspeed_cron: '0 * * * *',
+  netspeed_retention_days: '90',
 };
 const insertSetting = db.prepare(
   'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING'

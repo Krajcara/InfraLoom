@@ -117,6 +117,7 @@ const WIDGET_LINKS = {
   ssl: '/monitors',
   routers: '/routers',
   dns: '/dns',
+  netspeed: '/netspeed',
 };
 
 function SortableWidget({ widget, onHide }) {
@@ -167,6 +168,8 @@ function SortableWidget({ widget, onHide }) {
           <RoutersWidgetBody />
         ) : widget.id === 'dns' ? (
           <DnsWidgetBody />
+        ) : widget.id === 'netspeed' ? (
+          <NetSpeedWidgetBody />
         ) : (
           <p className="muted">Coming in Phase {widget.phase}.</p>
         )}
@@ -241,6 +244,27 @@ function DnsWidgetBody() {
         <li key={s.id} className="error">{s.role} ({s.ip}) — offline</li>
       ))}
     </ul>
+  );
+}
+
+function NetSpeedWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, test: null });
+
+  useEffect(() => {
+    api
+      .get('/netspeed/status')
+      .then((data) => setState({ loading: false, error: null, test: data.last_test }))
+      .catch((err) => setState({ loading: false, error: err.message, test: null }));
+  }, []);
+
+  if (state.loading) return <p className="muted">Loading...</p>;
+  if (state.error) return <p className="error">{state.error}</p>;
+  if (!state.test || state.test.status !== 'done') return <p className="muted">No completed tests yet.</p>;
+
+  return (
+    <p className="muted">
+      ↓ {state.test.download} Mbps · ↑ {state.test.upload} Mbps · {state.test.ping}ms
+    </p>
   );
 }
 
