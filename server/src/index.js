@@ -89,6 +89,7 @@ app.use('/api/dns-analytics', require('./routes/dnsAnalytics'));
 app.use('/api/netspeed', require('./routes/netspeed'));
 app.use('/api/myip', require('./routes/myip'));
 app.use('/api/hypervisors', require('./routes/hypervisors'));
+app.use('/api/network-scanner', require('./routes/networkScanner'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
@@ -129,6 +130,7 @@ cron.schedule('0 3 * * *', () => require('./services/expiryChecker').checkExpiri
 require('./services/monitorWorker').initMonitorWorker();
 cron.schedule('0 2 * * *', () => require('./services/sslChecker').checkAllSSL());
 require('./services/netspeedService').initScheduler();
+require('./services/networkScanService').initScheduler();
 setTimeout(() => require('./services/sslChecker').checkAllSSL(false), 5000);
 
 process.on('SIGTERM', () => {

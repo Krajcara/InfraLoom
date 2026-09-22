@@ -122,6 +122,7 @@ const WIDGET_LINKS = {
   netspeed: '/netspeed',
   myip: '/myip',
   hypervisors: '/hypervisors',
+  netscan: '/network-scanner',
 };
 
 function SortableWidget({ widget, onHide }) {
@@ -182,6 +183,8 @@ function SortableWidget({ widget, onHide }) {
           <MyIpWidgetBody />
         ) : widget.id === 'hypervisors' ? (
           <HypervisorsWidgetBody />
+        ) : widget.id === 'netscan' ? (
+          <NetscanWidgetBody />
         ) : (
           <p className="muted">Coming in Phase {widget.phase}.</p>
         )}
@@ -278,6 +281,23 @@ function NetSpeedWidgetBody() {
       ↓ {state.test.download} Mbps · ↑ {state.test.upload} Mbps · {state.test.ping}ms
     </p>
   );
+}
+
+function NetscanWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, online: 0, total: 0 });
+
+  useEffect(() => {
+    api
+      .get('/network-scanner/status')
+      .then((data) => setState({ loading: false, error: null, online: data.online, total: data.total }))
+      .catch((err) => setState({ loading: false, error: err.message, online: 0, total: 0 }));
+  }, []);
+
+  if (state.loading) return <p className="muted">Loading...</p>;
+  if (state.error) return <p className="error">{state.error}</p>;
+  if (state.total === 0) return <p className="muted">No devices scanned yet.</p>;
+
+  return <p className="muted">{state.online}/{state.total} devices online.</p>;
 }
 
 function HypervisorsWidgetBody() {

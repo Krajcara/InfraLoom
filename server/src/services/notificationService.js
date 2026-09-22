@@ -11,6 +11,8 @@ const EVENT_TYPES = [
   { id: 'ssl_expiring', label: 'SSL certificate expiring/expired' },
   { id: 'licence_expiring', label: 'Licence expiring/expired' },
   { id: 'entra_expiring', label: 'Entra ID secret expiring/expired' },
+  { id: 'network_new_device', label: 'New device on the network' },
+  { id: 'network_device_offline', label: 'Known device went offline' },
 ];
 
 const CHANNEL_NAMES = ['telegram', 'slack', 'discord', 'ntfy', 'pushover'];

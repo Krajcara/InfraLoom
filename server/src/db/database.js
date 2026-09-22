@@ -338,12 +338,61 @@ db.exec(`
   );
 `);
 
+// ── Phase 12 — Infrastructure: Network Scanner ──────────────────────────
+// Pi.Alert-style persistent MAC-based inventory. `network_devices` is the
+// durable inventory (one row per MAC, survives across scan cycles);
+// `network_scan_events` logs connect/disconnect/new-device transitions;
+// `network_scan_results` holds on-demand nmap deep-scan output per device.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS network_devices (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    mac            TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    ip             TEXT,
+    name           TEXT,
+    vendor         TEXT,
+    first_seen     TEXT DEFAULT (datetime('now')),
+    last_seen      TEXT DEFAULT (datetime('now')),
+    is_online      INTEGER DEFAULT 1,
+    is_new         INTEGER DEFAULT 1,
+    is_favorite    INTEGER DEFAULT 0,
+    is_archived    INTEGER DEFAULT 0,
+    notes          TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_network_devices_mac ON network_devices(mac);
+  CREATE INDEX IF NOT EXISTS idx_network_devices_online ON network_devices(is_online);
+
+  CREATE TABLE IF NOT EXISTS network_scan_events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id  INTEGER NOT NULL,
+    mac        TEXT NOT NULL,
+    event_type TEXT NOT NULL, -- new_device | connected | disconnected
+    ip         TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (device_id) REFERENCES network_devices(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_scan_events_device ON network_scan_events(device_id);
+  CREATE INDEX IF NOT EXISTS idx_scan_events_created ON network_scan_events(created_at);
+
+  CREATE TABLE IF NOT EXISTS network_scan_results (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id    INTEGER NOT NULL,
+    ports        TEXT, -- JSON array: [{port, protocol, state, service, product, version}]
+    os_guess     TEXT,
+    scanned_at   TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (device_id) REFERENCES network_devices(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_scan_results_device ON network_scan_results(device_id);
+`);
+
 // Seed default settings only if they don't already exist.
 const defaultSettings = {
   app_name: 'InfraLoom',
   netspeed_provider: 'cloudflare',
   netspeed_cron: '0 * * * *',
   netspeed_retention_days: '90',
+  netscan_cron: '*/5 * * * *',
+  netscan_subnet: '',
+  netscan_last_run: '',
 };
 const insertSetting = db.prepare(
   'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING'

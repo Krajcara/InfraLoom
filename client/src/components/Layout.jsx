@@ -33,6 +33,7 @@ const NAV_GROUPS = [
     label: 'Infrastructure',
     items: [
       { to: '/hypervisors', label: 'Hypervisors' },
+      { to: '/network-scanner', label: 'Network Scanner' },
       { to: '/ssh', label: 'SSH', roles: ['superadmin', 'admin'] },
     ],
   },

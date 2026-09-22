@@ -42,6 +42,16 @@ apt-get update -qq
 apt-get install -y -qq curl git build-essential python3 nmap arp-scan sqlite3 ca-certificates openssl iputils-ping >/dev/null
 success "System packages installed."
 
+# arp-scan and nmap's SYN/UDP scan modes need raw-socket access, which
+# normally means running as root. Instead of running the whole app as root,
+# grant just these two binaries the specific Linux capability they need —
+# the InfraLoom service itself keeps running as an unprivileged user.
+info "Granting arp-scan/nmap raw-socket capability (Network Scanner)..."
+ARPSCAN_BIN="$(command -v arp-scan || true)"
+NMAP_BIN="$(command -v nmap || true)"
+[ -n "$ARPSCAN_BIN" ] && setcap cap_net_raw+ep "$ARPSCAN_BIN" 2>/dev/null || warn "Could not setcap arp-scan — Network Scanner will need sudo/root."
+[ -n "$NMAP_BIN" ] && setcap cap_net_raw,cap_net_admin+eip "$NMAP_BIN" 2>/dev/null || warn "Could not setcap nmap — deep scans will fall back to a slower connect scan."
+
 # ─── Node.js via nvm ────────────────────────────────────────────────────────
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -v)" != v${NODE_VERSION}.* ]]; then
   info "Installing Node.js ${NODE_VERSION} LTS via nvm..."
