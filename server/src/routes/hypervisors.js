@@ -239,7 +239,7 @@ router.post('/connections/:id/:node/:type/:vmid/:action', requireRole('superadmi
   if (!['start', 'stop', 'reboot', 'shutdown', 'reset', 'suspend', 'resume'].includes(action)) {
     return res.status(400).json({ error: 'Invalid action' });
   }
-  if (!['qemu', 'lxc'].includes(type)) return res.status(400).json({ error: 'Invalid type' });
+  if (!['qemu', 'lxc', 'vm'].includes(type)) return res.status(400).json({ error: 'Invalid type' });
 
   const conn = getConnection(req.params.id);
   if (!conn) return res.status(404).json({ error: 'Not found' });

@@ -270,7 +270,7 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
   async function doAction(node, type, vmid, action) {
     setBusy(`${vmid}-${action}`);
     try {
-      await api.post(`/hypervisors/connections/${conn.id}/${node}/${type}/${vmid}/${action}`);
+      await api.post(`/hypervisors/connections/${conn.id}/${encodeURIComponent(node)}/${type}/${encodeURIComponent(vmid)}/${action}`);
       setTimeout(() => loadNodeDetail(node), 1500);
     } catch (err) {
       setError(err.message);
