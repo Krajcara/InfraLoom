@@ -56,32 +56,79 @@ $uptime = [int]((Get-Date)-$os.LastBootUpTime).TotalSeconds
 async function fetchNodeDetail(conn) {
   const ps = `
 $ErrorActionPreference='SilentlyContinue'
+function Get-VMGuestKvp($vmName) {
+  try {
+    $cs = Get-CimInstance -Namespace root\\virtualization\\v2 -ClassName Msvm_ComputerSystem -Filter "ElementName='$vmName'"
+    if (-not $cs) { return $null }
+    $kvp = Get-CimAssociatedInstance -InputObject $cs -ResultClassName Msvm_KvpExchangeComponent
+    if (-not $kvp -or -not $kvp.GuestIntrinsicExchangeItems) { return $null }
+    $map = @{}
+    foreach ($item in $kvp.GuestIntrinsicExchangeItems) {
+      $xml = [xml]$item
+      $props = $xml.INSTANCE.PROPERTY
+      $n = ($props | Where-Object { $_.NAME -eq 'Name' }).VALUE
+      $v = ($props | Where-Object { $_.NAME -eq 'Data' }).VALUE
+      if ($n) { $map[$n] = $v }
+    }
+    return $map
+  } catch { return $null }
+}
+
 $vms = Get-VM
 $result = @()
 foreach ($vm in $vms) {
   $ip = $null
+  $os = $null
+
+  # Primary: KVP guest exchange (needs Hyper-V "Data Exchange" integration service running in the guest)
+  $kvp = Get-VMGuestKvp $vm.Name
+  if ($kvp) {
+    if ($kvp['OSName']) { $os = $kvp['OSName'] }
+    if ($kvp['NetworkAddressIPv4']) {
+      $ip = ($kvp['NetworkAddressIPv4'] -split ';' | Where-Object { $_ -and $_.Contains('.') -and -not $_.Contains(':') } | Select-Object -First 1)
+    }
+  }
+
+  # Fallback: VM network adapter reported addresses (needs "Guest Service Interface" instead)
+  if (-not $ip) {
+    try {
+      $adapters = Get-VMNetworkAdapter -VMName $vm.Name
+      foreach ($a in $adapters) {
+        $addr = $a.IPAddresses | Where-Object { $_ -and $_.Contains('.') -and -not $_.Contains(':') } | Select-Object -First 1
+        if ($addr) { $ip = $addr; break }
+      }
+    } catch {}
+  }
+
+  # Disk usage from attached VHD/VHDX files (host-side file size vs. provisioned size)
+  $diskUsedBytes = 0; $diskMaxBytes = 0
   try {
-    $adapters = Get-VMNetworkAdapter -VMName $vm.Name
-    foreach ($a in $adapters) {
-      $addr = $a.IPAddresses | Where-Object { $_ -match '^\\d+\\.\\d+\\.\\d+\\.\\d+$' } | Select-Object -First 1
-      if ($addr) { $ip = $addr; break }
+    $disks = Get-VMHardDiskDrive -VMName $vm.Name
+    foreach ($d in $disks) {
+      $vhd = Get-VHD -Path $d.Path
+      if ($vhd) { $diskUsedBytes += $vhd.FileSize; $diskMaxBytes += $vhd.Size }
     }
   } catch {}
+
   $cpuPct = 0
   if ($vm.State -eq 'Running' -and $vm.CPUUsage -ne $null) { $cpuPct = [math]::Round($vm.CPUUsage) }
+  $diskPct = if ($diskMaxBytes -gt 0) { [math]::Round(($diskUsedBytes/$diskMaxBytes)*100) } else { $null }
+
   $result += [PSCustomObject]@{
     vmid = $vm.Name; name = $vm.Name; status = if ($vm.State -eq 'Running') {'running'} else {'stopped'}
-    type = 'vm'; os = $null; ip = $ip
+    type = 'vm'; os = $os; ip = $ip
     cpu_usage = $cpuPct
     mem_used_gb = [math]::Round($vm.MemoryAssigned/1GB,2); mem_max_gb = [math]::Round($vm.MemoryStartup/1GB,2)
     mem_usage = if ($vm.MemoryStartup -gt 0) { [math]::Round(($vm.MemoryAssigned/$vm.MemoryStartup)*100) } else { 0 }
-    disk_used_gb = $null; disk_max_gb = $null; disk_usage = 0
+    disk_used_gb = if ($diskUsedBytes -gt 0) { [math]::Round($diskUsedBytes/1GB,1) } else { $null }
+    disk_max_gb = if ($diskMaxBytes -gt 0) { [math]::Round($diskMaxBytes/1GB,1) } else { $null }
+    disk_usage = $diskPct
     uptime_s = [int]$vm.Uptime.TotalSeconds; cpus = $vm.ProcessorCount
   }
 }
 $result | ConvertTo-Json -Compress
 `;
-  const r = await executeScript(conn, ps, 45);
+  const r = await executeScript(conn, ps, 60);
   if (r.exitCode !== 0) throw new Error(r.stderr || 'Failed to list Hyper-V VMs');
 
   let vms = parseJsonSafe(r.stdout.trim(), []);
