@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power, ChevronRight } from 'lucide-react';
+import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power, ChevronRight, TerminalSquare, MonitorSmartphone } from 'lucide-react';
+import SshTerminalModal from '../components/SshTerminalModal';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
@@ -152,12 +153,27 @@ function UsageBar({ pct }) {
   );
 }
 
+function downloadRdp(host, username) {
+  const lines = [`full address:s:${host}:3389`];
+  if (username) lines.push(`username:s:${username}`);
+  lines.push('prompt for credentials:i:1', 'authentication level:i:0');
+  const blob = new Blob([lines.join('\n')], { type: 'application/rdp' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${host}.rdp`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
   const [nodes, setNodes] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
   const [expandedNode, setExpandedNode] = useState(null);
+  const [nodeDetail, setNodeDetail] = useState({}); // { [nodeName]: { vms, lxc, storages } | 'loading' | error string }
+  const [sshModal, setSshModal] = useState(null); // { vmid, host, label } | null
 
   async function load() {
     setLoading(true);
@@ -177,11 +193,32 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conn.id]);
 
+  async function loadNodeDetail(nodeName) {
+    setNodeDetail((prev) => ({ ...prev, [nodeName]: 'loading' }));
+    try {
+      const data = await api.get(`/hypervisors/connections/${conn.id}/nodes/${nodeName}`);
+      setNodeDetail((prev) => ({ ...prev, [nodeName]: data }));
+    } catch (err) {
+      setNodeDetail((prev) => ({ ...prev, [nodeName]: { error: err.message } }));
+    }
+  }
+
+  function toggleNode(nodeName) {
+    if (expandedNode === nodeName) {
+      setExpandedNode(null);
+      return;
+    }
+    setExpandedNode(nodeName);
+    if (!nodeDetail[nodeName] || nodeDetail[nodeName]?.error) {
+      loadNodeDetail(nodeName);
+    }
+  }
+
   async function doAction(node, type, vmid, action) {
     setBusy(`${vmid}-${action}`);
     try {
       await api.post(`/hypervisors/connections/${conn.id}/${node}/${type}/${vmid}/${action}`);
-      setTimeout(load, 1500);
+      setTimeout(() => loadNodeDetail(node), 1500);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -210,12 +247,15 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
 
       {nodes?.map((node) => {
         const isOpen = expandedNode === node.node;
-        const guests = [...(node.vms || []), ...(node.lxc || [])];
+        const detail = nodeDetail[node.node];
+        const detailLoading = detail === 'loading';
+        const detailError = detail && typeof detail === 'object' && detail.error;
+        const guests = detail && typeof detail === 'object' && !detail.error ? [...(detail.vms || []), ...(detail.lxc || [])] : [];
         return (
           <div key={node.node} className="hv-node-block">
             <button
               className="hv-node-header hv-node-header-clickable"
-              onClick={() => setExpandedNode(isOpen ? null : node.node)}
+              onClick={() => toggleNode(node.node)}
             >
               <ChevronRight size={16} className={`hv-node-chevron${isOpen ? ' open' : ''}`} />
               <Server size={16} />
@@ -228,6 +268,9 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
                 </span>
               )}
             </button>
+
+            {isOpen && detailLoading && <p className="muted hv-node-detail-loading">Loading VMs and containers...</p>}
+            {isOpen && detailError && <p className="error hv-node-detail-loading">{detailError}</p>}
 
             {isOpen && guests.length > 0 && (
             <table className="table">
@@ -290,6 +333,19 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
                             )}
                           </>
                         )}
+                        {canEdit && vm.status === 'running' && vm.ip && (
+                          <>
+                            {(vm.os || '').toLowerCase().includes('windows') ? (
+                              <button className="icon-btn" title="Connect via RDP (downloads .rdp file)" onClick={() => downloadRdp(vm.ip)}>
+                                <MonitorSmartphone size={14} />
+                              </button>
+                            ) : (
+                              <button className="icon-btn" title="Open SSH terminal" onClick={() => setSshModal({ vmid: vm.vmid, host: vm.ip, label: `${vm.name} (${vm.ip})` })}>
+                                <TerminalSquare size={14} />
+                              </button>
+                            )}
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -297,9 +353,9 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
             </table>
             )}
 
-            {isOpen && node.storages?.length > 0 && (
+            {isOpen && detail?.storages?.length > 0 && (
               <div className="hv-storage-row">
-                {node.storages.map((s) => (
+                {detail.storages.map((s) => (
                   <span key={s.storage} className="hv-storage-chip">
                     {s.storage}: {s.used_gb || '0'}/{s.total_gb || '?'} GB {s.usage_pct != null && `(${s.usage_pct}%)`}
                   </span>
@@ -309,6 +365,16 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
           </div>
         );
       })}
+
+      {sshModal && (
+        <SshTerminalModal
+          connectionId={conn.id}
+          vmid={sshModal.vmid}
+          host={sshModal.host}
+          label={sshModal.label}
+          onClose={() => setSshModal(null)}
+        />
+      )}
     </section>
   );
 }

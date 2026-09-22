@@ -1433,6 +1433,10 @@ textarea {
   transform: rotate(90deg);
 }
 
+.hv-node-detail-loading {
+  padding: 12px 4px;
+}
+
 .hv-node-stats {
   font-size: 12px;
 }
@@ -1523,4 +1527,32 @@ textarea {
 .hv-type-lxc {
   background: rgba(192, 132, 252, 0.15);
   color: #c084fc;
+}
+
+/* ── SSH Terminal modal ── */
+.ssh-modal-box {
+  width: 720px;
+  max-width: calc(100vw - 40px);
+}
+
+.ssh-saved-block {
+  margin-bottom: 16px;
+}
+
+.ssh-terminal-container {
+  display: none;
+  height: 420px;
+  margin-top: 12px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0f1115;
+  padding: 8px;
+}
+
+.ssh-terminal-container.visible {
+  display: block;
+}
+
+.ssh-modal-footer {
+  margin-top: 12px;
 }

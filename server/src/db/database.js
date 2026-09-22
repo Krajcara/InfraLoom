@@ -316,6 +316,26 @@ db.exec(`
   );
 `);
 
+// ── Saved SSH credentials for Hypervisors VM terminal ───────────────────
+// Per (connection, vmid) — optional defaults; a session can always override
+// with a one-off username/password/key instead of using these.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ssh_credentials (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id INTEGER NOT NULL,
+    vmid          INTEGER NOT NULL,
+    port          INTEGER DEFAULT 22,
+    username      TEXT,
+    password      TEXT,
+    private_key   TEXT,
+    passphrase    TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT DEFAULT (datetime('now')),
+    UNIQUE(connection_id, vmid),
+    FOREIGN KEY (connection_id) REFERENCES hypervisor_connections(id) ON DELETE CASCADE
+  );
+`);
+
 // Seed default settings only if they don't already exist.
 const defaultSettings = {
   app_name: 'InfraLoom',

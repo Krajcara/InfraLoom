@@ -24,6 +24,7 @@ app.set('trust proxy', 1);
 const server = http.createServer(app);
 const io = new SocketIOServer(server, { cors: { origin: true, credentials: true } });
 global.io = io; // accessible to routes/services that need to push events (update, later monitors etc.)
+require('./services/sshTerminal').initSshTerminal(io);
 
 const APP_PORT = process.env.APP_PORT || 3000;
 

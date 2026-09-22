@@ -96,7 +96,7 @@ router.delete('/connections/:id', requireRole('superadmin', 'admin'), (req, res)
   res.json({ ok: true });
 });
 
-// GET /api/hypervisors/connections/:id/nodes
+// GET /api/hypervisors/connections/:id/nodes — fast summary, no guest-agent calls
 router.get('/connections/:id/nodes', async (req, res) => {
   const conn = getConnection(req.params.id);
   if (!conn) return res.status(404).json({ error: 'Not found' });
@@ -106,13 +106,32 @@ router.get('/connections/:id/nodes', async (req, res) => {
   if (!client) return res.status(400).json({ error: `Unsupported hypervisor type: ${conn.type}` });
 
   try {
-    const nodes = await client.fetchNodes(conn);
+    const nodes = await client.fetchNodesSummary(conn);
     res.json({ nodes });
   } catch (err) {
     const status = err.response?.status;
     let msg = err.response?.data?.errors?.[0]?.message || err.message;
     if (status === 401) msg = `Authentication failed — check Token ID "${conn.token_id}" and secret in Proxmox → Datacenter → API Tokens`;
     res.status(status === 401 || status === 403 ? 503 : status || 500).json({ error: msg });
+  }
+});
+
+// GET /api/hypervisors/connections/:id/nodes/:node — full VM/LXC/storage detail,
+// fetched only when a node is expanded (guest-agent calls make this the slow part).
+router.get('/connections/:id/nodes/:node', async (req, res) => {
+  const conn = getConnection(req.params.id);
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  if (!conn.enabled) return res.status(400).json({ error: 'Connection is disabled' });
+
+  const client = clientFor(conn.type);
+  if (!client) return res.status(400).json({ error: `Unsupported hypervisor type: ${conn.type}` });
+
+  try {
+    const detail = await client.fetchNodeDetail(conn, req.params.node);
+    res.json(detail);
+  } catch (err) {
+    const status = err.response?.status;
+    res.status(status || 500).json({ error: err.response?.data?.errors?.[0]?.message || err.message });
   }
 });
 
@@ -136,6 +155,72 @@ router.get('/nodes', async (req, res) => {
     ),
   });
 });
+
+// ── Saved SSH credentials (optional defaults per VM) ─────────────────────
+
+// GET /api/hypervisors/connections/:id/vms/:vmid/ssh-credentials
+router.get('/connections/:id/vms/:vmid/ssh-credentials', requireRole('superadmin', 'admin'), (req, res) => {
+  const row = db
+    .prepare('SELECT * FROM ssh_credentials WHERE connection_id = ? AND vmid = ?')
+    .get(req.params.id, req.params.vmid);
+  if (!row) return res.json({ saved: false });
+  res.json({
+    saved: true,
+    port: row.port,
+    username: row.username,
+    hasPassword: !!row.password,
+    hasPrivateKey: !!row.private_key,
+  });
+});
+
+// PUT /api/hypervisors/connections/:id/vms/:vmid/ssh-credentials
+router.put('/connections/:id/vms/:vmid/ssh-credentials', requireRole('superadmin', 'admin'), (req, res) => {
+  const { port, username, password, private_key, passphrase } = req.body || {};
+  if (!username?.trim()) return res.status(400).json({ error: 'username is required' });
+
+  const existing = db
+    .prepare('SELECT * FROM ssh_credentials WHERE connection_id = ? AND vmid = ?')
+    .get(req.params.id, req.params.vmid);
+
+  const newPassword = password && password !== '***' ? password : existing?.password || null;
+  const newKey = private_key && private_key !== '***' ? private_key : existing?.private_key || null;
+  const newPassphrase = passphrase && passphrase !== '***' ? passphrase : existing?.passphrase || null;
+
+  db.prepare(
+    `INSERT INTO ssh_credentials (connection_id, vmid, port, username, password, private_key, passphrase, updated_at)
+     VALUES (?,?,?,?,?,?,?,datetime('now'))
+     ON CONFLICT(connection_id, vmid) DO UPDATE SET
+       port=excluded.port, username=excluded.username, password=excluded.password,
+       private_key=excluded.private_key, passphrase=excluded.passphrase, updated_at=excluded.updated_at`
+  ).run(req.params.id, req.params.vmid, parseInt(port, 10) || 22, username.trim(), newPassword, newKey, newPassphrase);
+
+  writeAuditLog({
+    user_id: req.user.id, username: req.user.username, action: 'hypervisor.ssh_credentials_save',
+    module: 'hypervisors', details: { vmid: req.params.vmid }, ip_address: req.ip,
+  });
+
+  res.json({ ok: true });
+});
+
+// DELETE /api/hypervisors/connections/:id/vms/:vmid/ssh-credentials
+router.delete('/connections/:id/vms/:vmid/ssh-credentials', requireRole('superadmin', 'admin'), (req, res) => {
+  db.prepare('DELETE FROM ssh_credentials WHERE connection_id = ? AND vmid = ?').run(req.params.id, req.params.vmid);
+  res.json({ ok: true });
+});
+
+// POST /api/hypervisors/connections/:id/vms/:vmid/ssh-credentials/reveal — password only, audited
+router.post('/connections/:id/vms/:vmid/ssh-credentials/reveal', requireRole('superadmin', 'admin'), (req, res) => {
+  const row = db
+    .prepare('SELECT * FROM ssh_credentials WHERE connection_id = ? AND vmid = ?')
+    .get(req.params.id, req.params.vmid);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  writeAuditLog({
+    user_id: req.user.id, username: req.user.username, action: 'hypervisor.ssh_credentials_reveal',
+    module: 'hypervisors', details: { vmid: req.params.vmid }, ip_address: req.ip,
+  });
+  res.json({ username: row.username, password: row.password, private_key: row.private_key, passphrase: row.passphrase, port: row.port });
+});
+
 
 // POST /api/hypervisors/connections/:id/:node/:type/:vmid/:action
 router.post('/connections/:id/:node/:type/:vmid/:action', requireRole('superadmin', 'admin'), async (req, res) => {
