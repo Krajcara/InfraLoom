@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power, ChevronRight, TerminalSquare, MonitorSmartphone } from 'lucide-react';
-import SshTerminalModal from '../components/SshTerminalModal';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
@@ -166,6 +165,11 @@ function downloadRdp(host, username) {
   URL.revokeObjectURL(url);
 }
 
+function openSshTab(connectionId, vmid, host, label) {
+  const params = new URLSearchParams({ connectionId, vmid, host, label });
+  window.open(`/ssh-terminal?${params.toString()}`, '_blank', 'noopener');
+}
+
 function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
   const [nodes, setNodes] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -173,7 +177,6 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
   const [busy, setBusy] = useState(null);
   const [expandedNode, setExpandedNode] = useState(null);
   const [nodeDetail, setNodeDetail] = useState({}); // { [nodeName]: { vms, lxc, storages } | 'loading' | error string }
-  const [sshModal, setSshModal] = useState(null); // { vmid, host, label } | null
 
   async function load() {
     setLoading(true);
@@ -340,7 +343,7 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
                                 <MonitorSmartphone size={14} />
                               </button>
                             ) : (
-                              <button className="icon-btn" title="Open SSH terminal" onClick={() => setSshModal({ vmid: vm.vmid, host: vm.ip, label: `${vm.name} (${vm.ip})` })}>
+                              <button className="icon-btn" title="Open SSH terminal (new tab)" onClick={() => openSshTab(conn.id, vm.vmid, vm.ip, `${vm.name} (${vm.ip})`)}>
                                 <TerminalSquare size={14} />
                               </button>
                             )}
@@ -365,16 +368,6 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
           </div>
         );
       })}
-
-      {sshModal && (
-        <SshTerminalModal
-          connectionId={conn.id}
-          vmid={sshModal.vmid}
-          host={sshModal.host}
-          label={sshModal.label}
-          onClose={() => setSshModal(null)}
-        />
-      )}
     </section>
   );
 }

@@ -1530,30 +1530,45 @@ textarea {
   color: #c084fc;
 }
 
-/* ── SSH Terminal modal ── */
-.ssh-modal-box {
-  width: 720px;
-  max-width: calc(100vw - 40px);
+/* ── SSH Terminal page (opens in its own browser tab) ── */
+.ssh-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #0f1115;
+}
+
+.ssh-page-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid #2a2e38;
+  background: #14161b;
+  color: #e6e6e6;
+}
+
+.ssh-page-message {
+  padding: 24px;
+}
+
+.ssh-page-form-wrap {
+  max-width: 480px;
+  margin: 40px auto;
+  padding: 0 20px;
+  width: 100%;
 }
 
 .ssh-saved-block {
   margin-bottom: 16px;
 }
 
-.ssh-terminal-container {
+.ssh-page-terminal {
   display: none;
-  height: 420px;
-  margin-top: 12px;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #0f1115;
-  padding: 8px;
+  flex: 1;
+  padding: 12px;
 }
 
-.ssh-terminal-container.visible {
+.ssh-page-terminal.visible {
   display: block;
-}
-
-.ssh-modal-footer {
-  margin-top: 12px;
 }

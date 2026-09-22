@@ -224,7 +224,7 @@ function LocalDnsFormModal({ initial, onSave, onCancel }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
         <h2>{initial.id ? 'Edit' : `Add ${form.role === 'backup' ? 'Backup' : 'Primary'}`} DNS</h2>
         <form onSubmit={submit} autoComplete="off">

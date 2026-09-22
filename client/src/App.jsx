@@ -13,6 +13,7 @@ import LicencesPage from './pages/LicencesPage';
 import EntraAppsPage from './pages/EntraAppsPage';
 import MonitorsPage from './pages/MonitorsPage';
 import StatusPage from './pages/StatusPage';
+import SshTerminalPage from './pages/SshTerminalPage';
 import RoutersPage from './pages/RoutersPage';
 import SwitchesPage from './pages/SwitchesPage';
 import AccessPointsPage from './pages/AccessPointsPage';
@@ -28,6 +29,14 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/status" element={<StatusPage />} />
+        <Route
+          path="/ssh-terminal"
+          element={
+            <ProtectedRoute roles={['superadmin', 'admin']}>
+              <SshTerminalPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           element={
             <ProtectedRoute>
