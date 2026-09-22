@@ -191,7 +191,7 @@ export default function NetSpeedPage() {
 
 function ConfigSection() {
   const [config, setConfig] = useState(null);
-  const [customCron, setCustomCron] = useState('');
+  const [customMinutes, setCustomMinutes] = useState(60);
   const [isCustom, setIsCustom] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
@@ -202,7 +202,10 @@ function ConfigSection() {
       setConfig(data);
       const known = CRON_PRESETS.some(([v]) => v === data.cron);
       setIsCustom(!known);
-      if (!known) setCustomCron(data.cron);
+      if (!known) {
+        const m = data.cron.match(/^\*\/(\d+) \* \* \* \*$/);
+        setCustomMinutes(m ? parseInt(m[1], 10) : 60);
+      }
     });
   }, []);
 
@@ -212,7 +215,7 @@ function ConfigSection() {
     setMessage(null);
     setError(null);
     try {
-      const cron = isCustom ? customCron : config.cron;
+      const cron = isCustom ? `*/${Math.max(parseInt(customMinutes, 10) || 60, 1)} * * * *` : config.cron;
       await api.post('/netspeed/config', { provider: config.provider, cron, retention_days: config.retention_days });
       setMessage('Saved.');
     } catch (err) {
@@ -257,8 +260,8 @@ function ConfigSection() {
           </label>
           {isCustom && (
             <label>
-              Cron expression
-              <input className="mono" value={customCron} onChange={(e) => setCustomCron(e.target.value)} placeholder="0 * * * *" autoComplete="off" name="netspeed_cron_field" />
+              Every (minutes)
+              <input type="number" min="1" value={customMinutes} onChange={(e) => setCustomMinutes(e.target.value)} placeholder="60" autoComplete="off" name="netspeed_minutes_field" />
             </label>
           )}
           <label>
