@@ -116,6 +116,8 @@ const WIDGET_LINKS = {
   uptime: '/monitors',
   ssl: '/monitors',
   routers: '/routers',
+  switches: '/switches',
+  access_points: '/access-points',
   dns: '/dns',
   netspeed: '/netspeed',
   myip: '/myip',
@@ -166,7 +168,11 @@ function SortableWidget({ widget, onHide }) {
         ) : widget.id === 'ssl' ? (
           <SslWidgetBody />
         ) : widget.id === 'routers' ? (
-          <RoutersWidgetBody />
+          <DeviceTypeWidgetBody apiPath="routers" noun="routers" />
+        ) : widget.id === 'switches' ? (
+          <DeviceTypeWidgetBody apiPath="switches" noun="switches" />
+        ) : widget.id === 'access_points' ? (
+          <DeviceTypeWidgetBody apiPath="access-points" noun="access points" />
         ) : widget.id === 'dns' ? (
           <DnsWidgetBody />
         ) : widget.id === 'netspeed' ? (
@@ -296,22 +302,23 @@ function MyIpWidgetBody() {
   );
 }
 
-function RoutersWidgetBody() {
+function DeviceTypeWidgetBody({ apiPath, noun }) {
   const [state, setState] = useState({ loading: true, error: null, down: [], total: 0 });
 
   useEffect(() => {
-    Promise.all([api.get('/routers'), api.get('/switches'), api.get('/access-points')])
-      .then(([r, s, a]) => {
-        const all = [...r.devices, ...s.devices, ...a.devices];
-        setState({ loading: false, error: null, down: all.filter((d) => d.last_status === 'down'), total: all.length });
+    api
+      .get(`/${apiPath}`)
+      .then((data) => {
+        const devices = data.devices;
+        setState({ loading: false, error: null, down: devices.filter((d) => d.last_status === 'down'), total: devices.length });
       })
       .catch((err) => setState({ loading: false, error: err.message, down: [], total: 0 }));
-  }, []);
+  }, [apiPath]);
 
   if (state.loading) return <p className="muted">Loading...</p>;
   if (state.error) return <p className="error">{state.error}</p>;
-  if (state.total === 0) return <p className="muted">No devices yet.</p>;
-  if (state.down.length === 0) return <p className="success">All {state.total} devices online.</p>;
+  if (state.total === 0) return <p className="muted">No {noun} yet.</p>;
+  if (state.down.length === 0) return <p className="success">All {state.total} {noun} online.</p>;
 
   return (
     <ul className="widget-list">
