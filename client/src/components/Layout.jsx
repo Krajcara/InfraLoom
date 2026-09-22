@@ -29,6 +29,11 @@ const NAV_GROUPS = [
     ],
   },
   {
+    key: 'infrastructure',
+    label: 'Infrastructure',
+    items: [{ to: '/hypervisors', label: 'Hypervisors' }],
+  },
+  {
     key: 'account',
     label: 'Account',
     items: [{ to: '/profile', label: 'Profile' }],

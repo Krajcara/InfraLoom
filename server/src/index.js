@@ -87,6 +87,7 @@ app.use('/api/dns', require('./routes/dns'));
 app.use('/api/dns-analytics', require('./routes/dnsAnalytics'));
 app.use('/api/netspeed', require('./routes/netspeed'));
 app.use('/api/myip', require('./routes/myip'));
+app.use('/api/hypervisors', require('./routes/hypervisors'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');

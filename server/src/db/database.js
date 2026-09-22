@@ -296,6 +296,26 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_speed_tests_created ON speed_tests(created_at);
 `);
 
+// ── Phase 11 — Infrastructure: Hypervisors ──────────────────────────────
+// Generic connection table (type-based) so VMware/Hyper-V (later phases)
+// slot in without a schema change. Multiple connections supported from
+// day one, per project decision — even though Phase 11 only implements
+// the 'proxmox' type.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS hypervisor_connections (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    type       TEXT NOT NULL DEFAULT 'proxmox',
+    name       TEXT NOT NULL,
+    url        TEXT NOT NULL,
+    username   TEXT DEFAULT 'root@pam',
+    token_id   TEXT,
+    api_token  TEXT,
+    enabled    INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
 // Seed default settings only if they don't already exist.
 const defaultSettings = {
   app_name: 'InfraLoom',

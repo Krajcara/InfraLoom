@@ -1376,3 +1376,55 @@ textarea {
   font-weight: 700;
   margin: 0;
 }
+
+/* ── Hypervisors ── */
+.hv-connection-card {
+  margin-bottom: 20px;
+}
+
+.hv-connection-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.hv-connection-header h2 {
+  margin: 0 0 2px;
+}
+
+.hv-node-block {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #2a2e38;
+}
+
+.hv-node-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.hv-node-stats {
+  font-size: 12px;
+}
+
+.hv-storage-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.hv-storage-chip {
+  background: #14161b;
+  border: 1px solid #2a2e38;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #a9adb8;
+}

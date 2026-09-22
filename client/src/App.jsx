@@ -20,6 +20,7 @@ import DnsPage from './pages/DnsPage';
 import DnsAnalyticsPage from './pages/DnsAnalyticsPage';
 import NetSpeedPage from './pages/NetSpeedPage';
 import MyIpPage from './pages/MyIpPage';
+import HypervisorsPage from './pages/HypervisorsPage';
 
 export default function App() {
   return (
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/dns-analytics" element={<DnsAnalyticsPage />} />
           <Route path="/netspeed" element={<NetSpeedPage />} />
           <Route path="/myip" element={<MyIpPage />} />
+          <Route path="/hypervisors" element={<HypervisorsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route
             path="/users"

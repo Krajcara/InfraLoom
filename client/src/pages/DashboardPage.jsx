@@ -121,6 +121,7 @@ const WIDGET_LINKS = {
   dns: '/dns',
   netspeed: '/netspeed',
   myip: '/myip',
+  hypervisors: '/hypervisors',
 };
 
 function SortableWidget({ widget, onHide }) {
@@ -179,6 +180,8 @@ function SortableWidget({ widget, onHide }) {
           <NetSpeedWidgetBody />
         ) : widget.id === 'myip' ? (
           <MyIpWidgetBody />
+        ) : widget.id === 'hypervisors' ? (
+          <HypervisorsWidgetBody />
         ) : (
           <p className="muted">Coming in Phase {widget.phase}.</p>
         )}
@@ -275,6 +278,35 @@ function NetSpeedWidgetBody() {
       ↓ {state.test.download} Mbps · ↑ {state.test.upload} Mbps · {state.test.ping}ms
     </p>
   );
+}
+
+function HypervisorsWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, running: 0, total: 0, connections: 0 });
+
+  useEffect(() => {
+    api
+      .get('/hypervisors/nodes')
+      .then((data) => {
+        let running = 0;
+        let total = 0;
+        data.results.forEach((r) => {
+          (r.nodes || []).forEach((n) => {
+            [...(n.vms || []), ...(n.lxc || [])].forEach((vm) => {
+              total++;
+              if (vm.status === 'running') running++;
+            });
+          });
+        });
+        setState({ loading: false, error: null, running, total, connections: data.results.length });
+      })
+      .catch((err) => setState({ loading: false, error: err.message, running: 0, total: 0, connections: 0 }));
+  }, []);
+
+  if (state.loading) return <p className="muted">Loading...</p>;
+  if (state.error) return <p className="error">{state.error}</p>;
+  if (state.connections === 0) return <p className="muted">No hypervisor connections yet.</p>;
+
+  return <p className="muted">{state.running}/{state.total} VMs/LXC running across {state.connections} connection{state.connections === 1 ? '' : 's'}.</p>;
 }
 
 function MyIpWidgetBody() {
