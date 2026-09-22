@@ -317,6 +317,13 @@ db.exec(`
 `);
 ensureColumn('hypervisor_connections', 'password', 'TEXT');
 ensureColumn('hypervisor_connections', 'port', 'INTEGER');
+// SSH access to the Proxmox HOST itself (not a guest) — needed only for LXC
+// patch management, since Proxmox's REST API has no exec endpoint for
+// containers the way it does for QEMU's guest agent; `pct exec` is a
+// node-local command, so LXC patching requires shelling into the host.
+ensureColumn('hypervisor_connections', 'patch_ssh_username', 'TEXT');
+ensureColumn('hypervisor_connections', 'patch_ssh_password', 'TEXT');
+ensureColumn('hypervisor_connections', 'patch_ssh_port', 'INTEGER');
 
 // ── Saved SSH credentials for Hypervisors VM terminal ───────────────────
 // Per (connection, vmid) — optional defaults; a session can always override
@@ -382,6 +389,37 @@ db.exec(`
     FOREIGN KEY (device_id) REFERENCES network_devices(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_scan_results_device ON network_scan_results(device_id);
+`);
+
+// ── Phase 13 — Infrastructure: Patch Management ─────────────────────────
+// One row per dry-run/apply cycle. `packages_affected` is a JSON snapshot
+// captured at dry-run time: [{name, current_version, new_version}]. Applying
+// patches re-uses that same snapshot rather than re-simulating, so what the
+// admin approved is exactly what runs.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS patch_runs (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id      INTEGER NOT NULL,
+    node               TEXT NOT NULL,
+    guest_type         TEXT NOT NULL, -- qemu | lxc
+    vmid               TEXT NOT NULL,
+    vm_name            TEXT,
+    os_family          TEXT,          -- debian | rhel | unknown
+    status             TEXT NOT NULL DEFAULT 'dry_run', -- dry_run | awaiting_approval | approved | running | completed | failed | cancelled
+    packages_affected  TEXT,          -- JSON array
+    dry_run_output     TEXT,
+    apply_output       TEXT,
+    error              TEXT,
+    triggered_by       TEXT,
+    approved_by        TEXT,
+    created_at         TEXT DEFAULT (datetime('now')),
+    started_at         TEXT,
+    completed_at       TEXT,
+    FOREIGN KEY (connection_id) REFERENCES hypervisor_connections(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_patch_runs_connection ON patch_runs(connection_id);
+  CREATE INDEX IF NOT EXISTS idx_patch_runs_status ON patch_runs(status);
+  CREATE INDEX IF NOT EXISTS idx_patch_runs_created ON patch_runs(created_at);
 `);
 
 // Seed default settings only if they don't already exist.

@@ -123,6 +123,7 @@ const WIDGET_LINKS = {
   myip: '/myip',
   hypervisors: '/hypervisors',
   netscan: '/network-scanner',
+  patches: '/patch-management',
 };
 
 function SortableWidget({ widget, onHide }) {
@@ -185,6 +186,8 @@ function SortableWidget({ widget, onHide }) {
           <HypervisorsWidgetBody />
         ) : widget.id === 'netscan' ? (
           <NetscanWidgetBody />
+        ) : widget.id === 'patches' ? (
+          <PatchesWidgetBody />
         ) : (
           <p className="muted">Coming in Phase {widget.phase}.</p>
         )}
@@ -281,6 +284,23 @@ function NetSpeedWidgetBody() {
       ↓ {state.test.download} Mbps · ↑ {state.test.upload} Mbps · {state.test.ping}ms
     </p>
   );
+}
+
+function PatchesWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, pending: 0 });
+
+  useEffect(() => {
+    api
+      .get('/patch-management/runs?status=awaiting_approval&limit=100')
+      .then((data) => setState({ loading: false, error: null, pending: data.runs.length }))
+      .catch((err) => setState({ loading: false, error: err.message, pending: 0 }));
+  }, []);
+
+  if (state.loading) return <p className="muted">Loading...</p>;
+  if (state.error) return <p className="error">{state.error}</p>;
+  if (state.pending === 0) return <p className="success">No pending patch approvals.</p>;
+
+  return <p className="muted">{state.pending} run{state.pending === 1 ? '' : 's'} awaiting approval.</p>;
 }
 
 function NetscanWidgetBody() {

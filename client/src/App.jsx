@@ -24,6 +24,7 @@ import NetSpeedPage from './pages/NetSpeedPage';
 import MyIpPage from './pages/MyIpPage';
 import HypervisorsPage from './pages/HypervisorsPage';
 import NetworkScannerPage from './pages/NetworkScannerPage';
+import PatchManagementPage from './pages/PatchManagementPage';
 
 export default function App() {
   return (
@@ -52,6 +53,7 @@ export default function App() {
           <Route path="/myip" element={<MyIpPage />} />
           <Route path="/hypervisors" element={<HypervisorsPage />} />
           <Route path="/network-scanner" element={<NetworkScannerPage />} />
+          <Route path="/patch-management" element={<PatchManagementPage />} />
           <Route
             path="/ssh"
             element={

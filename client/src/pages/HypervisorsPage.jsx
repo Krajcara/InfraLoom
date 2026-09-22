@@ -4,7 +4,7 @@ import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power, ChevronRight, T
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
-const emptyForm = { type: 'proxmox', name: '', url: '', username: 'root@pam', token_id: '', api_token: '', password: '', port: '' };
+const emptyForm = { type: 'proxmox', name: '', url: '', username: 'root@pam', token_id: '', api_token: '', password: '', port: '', patch_ssh_username: '', patch_ssh_password: '', patch_ssh_port: '' };
 
 const HYPERVISOR_TYPE_LABELS = { proxmox: 'Proxmox VE', hyperv: 'Hyper-V', esxi: 'VMware ESXi' };
 
@@ -41,7 +41,7 @@ export default function HypervisorsPage() {
   }
 
   function openEdit(c) {
-    setForm({ id: c.id, type: c.type, name: c.name, url: c.url, username: c.username, token_id: c.token_id || '', api_token: '', password: '', port: c.port || '' });
+    setForm({ id: c.id, type: c.type, name: c.name, url: c.url, username: c.username, token_id: c.token_id || '', api_token: '', password: '', port: c.port || '', patch_ssh_username: c.patch_ssh_username || '', patch_ssh_password: '', patch_ssh_port: c.patch_ssh_port || '' });
   }
 
   async function save(e) {
@@ -173,6 +173,31 @@ export default function HypervisorsPage() {
               <p className="muted">
                 Requires ESXi 7.0+ for the REST API used here. Standard root/administrative credentials.
               </p>
+            )}
+            {form.type === 'proxmox' && (
+              <>
+                <h3 className="patch-ssh-heading">Patch Management (LXC) — optional</h3>
+                <p className="muted">
+                  Proxmox has no REST API for running commands inside containers, so LXC patching needs SSH
+                  access to the <strong>host itself</strong> (not a container) to run <code>pct exec</code>.
+                  This is broader access than the API token above — leave blank to skip LXC patch support (VM
+                  patching via the QEMU guest agent doesn't need this).
+                </p>
+                <div className="form-row">
+                  <label>
+                    Host SSH username
+                    <input value={form.patch_ssh_username} onChange={(e) => setForm({ ...form, patch_ssh_username: e.target.value })} placeholder="root" autoComplete="off" name="patch_ssh_user_field" />
+                  </label>
+                  <label>
+                    Host SSH password
+                    <input type="password" value={form.patch_ssh_password} onChange={(e) => setForm({ ...form, patch_ssh_password: e.target.value })} placeholder={form.id ? 'unchanged' : ''} autoComplete="new-password" name="patch_ssh_pass_field" />
+                  </label>
+                  <label>
+                    SSH port
+                    <input value={form.patch_ssh_port} onChange={(e) => setForm({ ...form, patch_ssh_port: e.target.value })} placeholder="22" />
+                  </label>
+                </div>
+              </>
             )}
             <div className="form-row">
               <button type="submit">Save</button>

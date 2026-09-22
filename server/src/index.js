@@ -90,6 +90,7 @@ app.use('/api/netspeed', require('./routes/netspeed'));
 app.use('/api/myip', require('./routes/myip'));
 app.use('/api/hypervisors', require('./routes/hypervisors'));
 app.use('/api/network-scanner', require('./routes/networkScanner'));
+app.use('/api/patch-management', require('./routes/patchManagement'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
