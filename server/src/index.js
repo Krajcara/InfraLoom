@@ -17,6 +17,10 @@ const { Server: SocketIOServer } = require('socket.io');
 const db = require('./db/database'); // eslint-disable-line no-unused-vars -- ensures schema exists on boot
 
 const app = express();
+// Trusts exactly one hop in front of Node (a reverse proxy / load balancer,
+// if one is present) so express-rate-limit and req.ip read the real client
+// IP from X-Forwarded-For instead of logging a warning on every request.
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const io = new SocketIOServer(server, { cors: { origin: true, credentials: true } });
 global.io = io; // accessible to routes/services that need to push events (update, later monitors etc.)
@@ -90,7 +94,13 @@ if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
   app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Not found' });
-    res.sendFile(path.join(clientDist, 'index.html'));
+    res.sendFile(path.join(clientDist, 'index.html'), (err) => {
+      // client/dist is briefly missing mid-rebuild during an update — that's
+      // expected, not a real error; avoid printing a raw ENOENT stack trace.
+      if (err && !res.headersSent) {
+        res.status(503).send('InfraLoom is updating — this page will be back in a moment.');
+      }
+    });
   });
 } else {
   app.get('/', (req, res) => {
@@ -120,5 +130,19 @@ require('./services/netspeedService').initScheduler();
 setTimeout(() => require('./services/sslChecker').checkAllSSL(false), 5000);
 
 process.on('SIGTERM', () => {
+  console.log('SIGTERM received — shutting down...');
+
+  // socket.io keeps WebSocket connections open indefinitely by design; a
+  // connected browser tab won't close its end just because the server is
+  // stopping, so server.close()'s callback could otherwise wait for the
+  // client to notice and disconnect on its own (tens of seconds). Force
+  // every socket closed immediately so shutdown isn't held hostage by it.
+  io.close();
+
   server.close(() => process.exit(0));
+
+  // Failsafe: exit anyway if something else keeps an HTTP connection open
+  // past a reasonable grace period, so `systemctl restart` (and therefore
+  // the in-app update flow) never has to wait out systemd's full timeout.
+  setTimeout(() => process.exit(0), 3000).unref();
 });
