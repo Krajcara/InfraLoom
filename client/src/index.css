@@ -1749,3 +1749,8 @@ textarea {
 .netscan-events-block {
   margin-top: 14px;
 }
+
+.channel-note {
+  margin-top: 8px;
+  font-size: 12px;
+}

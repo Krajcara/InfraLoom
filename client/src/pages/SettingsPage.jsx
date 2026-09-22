@@ -170,6 +170,17 @@ const CHANNELS = [
   { key: 'discord', label: 'Discord', fields: [['discord_webhook_url', 'Webhook URL', 'password']] },
   { key: 'ntfy', label: 'ntfy', fields: [['ntfy_url', 'Server URL', 'text'], ['ntfy_topic', 'Topic', 'text']] },
   { key: 'pushover', label: 'Pushover', fields: [['pushover_app_token', 'App token', 'password'], ['pushover_user_key', 'User key', 'password']] },
+  {
+    key: 'email',
+    label: 'Email (Microsoft Graph)',
+    fields: [
+      ['graph_tenant_id', 'Tenant ID', 'text'],
+      ['graph_client_id', 'App (client) ID', 'text'],
+      ['graph_client_secret', 'Client secret', 'password'],
+      ['graph_from_email', 'Send from (mailbox)', 'text'],
+      ['notification_email_to', 'Send to (comma-separated)', 'text'],
+    ],
+  },
 ];
 
 function NotificationsSection() {
@@ -237,6 +248,13 @@ function NotificationsSection() {
                 {testingChannel === c.key ? 'Sending...' : 'Send test'}
               </button>
             </div>
+            {c.key === 'email' && (
+              <p className="muted channel-note">
+                Requires an Azure app registration with the <strong>Mail.Send</strong> Application permission
+                (admin-consented) under Azure Portal → App registrations → API permissions, and the "Send from"
+                mailbox must be one the app is allowed to send as.
+              </p>
+            )}
           </div>
         ))}
         <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save all channels'}</button>

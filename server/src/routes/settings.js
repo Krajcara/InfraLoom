@@ -18,6 +18,7 @@ const SECRET_KEYS = [
   'discord_webhook_url',
   'pushover_app_token',
   'pushover_user_key',
+  'graph_client_secret',
 ];
 
 const ALL_KEYS = [
@@ -37,6 +38,11 @@ const ALL_KEYS = [
   'ntfy_topic',
   'pushover_app_token',
   'pushover_user_key',
+  'graph_tenant_id',
+  'graph_client_id',
+  'graph_client_secret',
+  'graph_from_email',
+  'notification_email_to',
   'quiet_hours_enabled',
   'quiet_hours_start',
   'quiet_hours_end',

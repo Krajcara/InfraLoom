@@ -15,7 +15,7 @@ const EVENT_TYPES = [
   { id: 'network_device_offline', label: 'Known device went offline' },
 ];
 
-const CHANNEL_NAMES = ['telegram', 'slack', 'discord', 'ntfy', 'pushover'];
+const CHANNEL_NAMES = ['telegram', 'slack', 'discord', 'ntfy', 'pushover', 'email'];
 
 function getRawSettings() {
   const rows = db.prepare('SELECT key, value FROM settings').all();
@@ -123,12 +123,67 @@ async function sendPushover(s, message) {
   if (!res.ok) throw new Error(`Pushover API returned ${res.status}`);
 }
 
+async function getGraphAccessToken(s) {
+  const url = `https://login.microsoftonline.com/${s.graph_tenant_id}/oauth2/v2.0/token`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: s.graph_client_id,
+      client_secret: s.graph_client_secret,
+      scope: 'https://graph.microsoft.com/.default',
+    }),
+  });
+  const raw = await res.text();
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(`Microsoft identity platform returned a non-JSON response (HTTP ${res.status}): ${raw.slice(0, 200)}`);
+  }
+  if (!res.ok) throw new Error(data.error_description || `Microsoft identity platform returned ${res.status}`);
+  return data.access_token;
+}
+
+async function sendGraphEmail(s, message) {
+  if (!s.graph_tenant_id || !s.graph_client_id || !s.graph_client_secret || !s.graph_from_email) {
+    throw new Error('Microsoft Graph email is not configured');
+  }
+  if (!s.notification_email_to) throw new Error('No recipient email configured (notification_email_to)');
+
+  const token = await getGraphAccessToken(s);
+  const recipients = s.notification_email_to
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean)
+    .map((address) => ({ emailAddress: { address } }));
+
+  const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(s.graph_from_email)}/sendMail`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: {
+        subject: 'InfraLoom notification',
+        body: { contentType: 'Text', content: message },
+        toRecipients: recipients,
+      },
+      saveToSentItems: false,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error?.message || `Microsoft Graph sendMail returned ${res.status}`);
+  }
+}
+
 const SENDERS = {
   telegram: sendTelegram,
   slack: sendSlack,
   discord: sendDiscord,
   ntfy: sendNtfy,
   pushover: sendPushover,
+  email: sendGraphEmail,
 };
 
 /**
