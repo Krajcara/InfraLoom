@@ -269,6 +269,13 @@ label {
   max-width: 640px;
 }
 
+/* A card wrapping a table needs room for its columns — the 640px cap above
+   is meant for forms/settings blocks, not data tables. Applies automatically
+   to every current and future page, so this class of bug can't recur. */
+.card:has(.table) {
+  max-width: none;
+}
+
 .card h2 {
   margin-top: 0;
   font-size: 16px;
