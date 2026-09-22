@@ -1572,3 +1572,86 @@ textarea {
 .ssh-page-terminal.visible {
   display: block;
 }
+
+.ssh-manager-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.ssh-tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid #2a2e38;
+  padding-bottom: 0;
+  margin: 12px 0 16px;
+  overflow-x: auto;
+}
+
+.ssh-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 14px;
+  border-radius: 6px 6px 0 0;
+  background: #14161b;
+  color: #a9adb8;
+  border: 1px solid #2a2e38;
+  border-bottom: none;
+  font-size: 13px;
+  white-space: nowrap;
+  margin-bottom: -1px;
+}
+
+.ssh-tab.active {
+  background: #1a1d24;
+  color: #e6e6e6;
+  border-color: #3a3f4c;
+}
+
+.ssh-tab-close {
+  display: flex;
+  color: #6b6f79;
+  padding: 2px;
+  border-radius: 3px;
+}
+
+.ssh-tab-close:hover {
+  color: #ff6b6b;
+}
+
+.ssh-tab-add {
+  padding: 7px 12px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  color: #6ea8fe;
+  border: 1px dashed #2a2e38;
+}
+
+.ssh-tab-add:hover {
+  background: #14161b;
+}
+
+.ssh-panes {
+  flex: 1;
+  display: flex;
+  min-height: 60vh;
+}
+
+.ssh-pane {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ssh-pane.active {
+  display: flex;
+}
+
+.ssh-pane .ssh-page-terminal {
+  flex: 1;
+}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power, ChevronRight, TerminalSquare, MonitorSmartphone } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -87,6 +88,14 @@ export default function HypervisorsPage() {
           <form onSubmit={save} autoComplete="off">
             <div className="form-row">
               <label>
+                Type
+                <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} disabled={!!form.id}>
+                  <option value="proxmox">Proxmox VE</option>
+                  <option value="vmware" disabled>VMware vSphere (coming soon)</option>
+                  <option value="hyperv" disabled>Hyper-V (coming soon)</option>
+                </select>
+              </label>
+              <label>
                 Name
                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Main Cluster" required />
               </label>
@@ -165,12 +174,8 @@ function downloadRdp(host, username) {
   URL.revokeObjectURL(url);
 }
 
-function openSshTab(connectionId, vmid, host, label) {
-  const params = new URLSearchParams({ connectionId, vmid, host, label });
-  window.open(`/ssh-terminal?${params.toString()}`, '_blank', 'noopener');
-}
-
 function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
+  const navigate = useNavigate();
   const [nodes, setNodes] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -343,7 +348,7 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
                                 <MonitorSmartphone size={14} />
                               </button>
                             ) : (
-                              <button className="icon-btn" title="Open SSH terminal (new tab)" onClick={() => openSshTab(conn.id, vm.vmid, vm.ip, `${vm.name} (${vm.ip})`)}>
+                              <button className="icon-btn" title="Open SSH session" onClick={() => navigate(`/ssh?${new URLSearchParams({ connectionId: conn.id, vmid: vm.vmid, host: vm.ip, label: `${vm.name} (${vm.ip})` }).toString()}`)}>
                                 <TerminalSquare size={14} />
                               </button>
                             )}
