@@ -213,7 +213,9 @@ async function enrichLXC(baseUrl, token, node, ct) {
 }
 
 /** Fetches nodes with enriched VM/LXC/storage detail for one Proxmox connection. */
-async function fetchNodes(conn) {
+/** Fast node summary: status, CPU/mem/disk, VM/LXC counts — no guest-agent
+ * calls, so this is quick even with many VMs. Used for the node list view. */
+async function fetchNodesSummary(conn) {
   const baseUrl = conn.url;
   const token = buildToken(conn);
   const nodes = await pveGet(baseUrl, '/nodes', token);
@@ -221,29 +223,12 @@ async function fetchNodes(conn) {
   const details = await Promise.all(
     nodes.map(async (node) => {
       if (node.status !== 'online') {
-        return {
-          node: node.node, status: node.status, cpu_usage: 0, mem_usage: 0, disk_usage: 0,
-          mem_used_gb: '0', mem_max_gb: '0', vms: [], lxc: [], storages: [], vm_count: 0, lxc_count: 0,
-        };
+        return { node: node.node, status: node.status, cpu_usage: 0, mem_usage: 0, disk_usage: 0, mem_used_gb: '0', mem_max_gb: '0', vm_count: 0, lxc_count: 0 };
       }
-
-      const [vms, lxc, storages] = await Promise.all([
+      const [vms, lxc] = await Promise.all([
         pveGet(baseUrl, `/nodes/${node.node}/qemu`, token).catch(() => []),
         pveGet(baseUrl, `/nodes/${node.node}/lxc`, token).catch(() => []),
-        pveGet(baseUrl, `/nodes/${node.node}/storage`, token).catch(() => []),
       ]);
-
-      const enrichedVMs = await Promise.all(vms.map((vm) => enrichVM(baseUrl, token, node.node, vm)));
-      const enrichedLXC = await Promise.all(lxc.map((ct) => enrichLXC(baseUrl, token, node.node, ct)));
-      const enrichedStorages = storages.map((s) => ({
-        storage: s.storage, type: s.type,
-        status: s.active ? 'active' : 'inactive',
-        total_gb: s.total ? (s.total / 1073741824).toFixed(1) : null,
-        used_gb: s.used ? (s.used / 1073741824).toFixed(1) : null,
-        avail_gb: s.avail ? (s.avail / 1073741824).toFixed(1) : null,
-        usage_pct: s.total && s.used ? Math.round((s.used / s.total) * 100) : null,
-      }));
-
       return {
         node: node.node, status: node.status,
         cpu_usage: node.cpu != null ? Math.round(node.cpu * 100) : 0,
@@ -252,15 +237,56 @@ async function fetchNodes(conn) {
         mem_used_gb: node.mem ? (node.mem / 1073741824).toFixed(1) : '0',
         mem_max_gb: node.maxmem ? (node.maxmem / 1073741824).toFixed(1) : '0',
         maxcpu: node.maxcpu, uptime: node.uptime,
-        vms: enrichedVMs.sort((a, b) => (a.name || '').localeCompare(b.name || '')),
-        lxc: enrichedLXC.sort((a, b) => (a.name || '').localeCompare(b.name || '')),
-        storages: enrichedStorages,
         vm_count: vms.length, lxc_count: lxc.length,
       };
     })
   );
 
   return details.sort((a, b) => a.node.localeCompare(b.node));
+}
+
+/** Full enriched VM/LXC/storage detail for ONE node — the expensive,
+ * guest-agent-backed call. Fetch this only when the node is expanded. */
+async function fetchNodeDetail(conn, nodeName) {
+  const baseUrl = conn.url;
+  const token = buildToken(conn);
+
+  const [vms, lxc, storages] = await Promise.all([
+    pveGet(baseUrl, `/nodes/${nodeName}/qemu`, token).catch(() => []),
+    pveGet(baseUrl, `/nodes/${nodeName}/lxc`, token).catch(() => []),
+    pveGet(baseUrl, `/nodes/${nodeName}/storage`, token).catch(() => []),
+  ]);
+
+  const enrichedVMs = await Promise.all(vms.map((vm) => enrichVM(baseUrl, token, nodeName, vm)));
+  const enrichedLXC = await Promise.all(lxc.map((ct) => enrichLXC(baseUrl, token, nodeName, ct)));
+  const enrichedStorages = storages.map((s) => ({
+    storage: s.storage, type: s.type,
+    status: s.active ? 'active' : 'inactive',
+    total_gb: s.total ? (s.total / 1073741824).toFixed(1) : null,
+    used_gb: s.used ? (s.used / 1073741824).toFixed(1) : null,
+    avail_gb: s.avail ? (s.avail / 1073741824).toFixed(1) : null,
+    usage_pct: s.total && s.used ? Math.round((s.used / s.total) * 100) : null,
+  }));
+
+  return {
+    vms: enrichedVMs.sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+    lxc: enrichedLXC.sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+    storages: enrichedStorages,
+  };
+}
+
+/** @deprecated kept for the aggregated dashboard-summary endpoint, which
+ * only needs counts — prefer fetchNodesSummary + fetchNodeDetail for the UI. */
+async function fetchNodes(conn) {
+  const summary = await fetchNodesSummary(conn);
+  const withDetail = await Promise.all(
+    summary.map(async (node) => {
+      if (node.status !== 'online') return { ...node, vms: [], lxc: [], storages: [] };
+      const detail = await fetchNodeDetail(conn, node.node);
+      return { ...node, ...detail };
+    })
+  );
+  return withDetail;
 }
 
 async function powerAction(conn, node, type, vmid, action) {
@@ -273,4 +299,4 @@ async function powerAction(conn, node, type, vmid, action) {
   );
 }
 
-module.exports = { fetchNodes, powerAction, buildToken };
+module.exports = { fetchNodes, fetchNodesSummary, fetchNodeDetail, powerAction, buildToken };
