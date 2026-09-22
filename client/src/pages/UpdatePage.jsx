@@ -14,15 +14,30 @@ export default function UpdatePage() {
   );
 }
 
+const STEP_PROGRESS = {
+  'Starting update': 5,
+  'Checking for updates': 10,
+  'Pulling latest code': 20,
+  'Installing dependencies': 40,
+  'Running database migration': 65,
+  'Rebuilding frontend': 80,
+  'Restarting service': 92,
+  'Waiting for server to respond': 96,
+};
+
 function UpdateSection({ canInstall }) {
   const [checking, setChecking] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [info, setInfo] = useState(null);
   const [phase, setPhase] = useState('idle'); // idle | running | waiting | done | error
   const [message, setMessage] = useState(null);
-  const [pollCount, setPollCount] = useState(0);
+  const [currentStep, setCurrentStep] = useState(null);
+  const [elapsed, setElapsed] = useState(0);
   const pollRef = useRef(null);
   const pollAttempts = useRef(0);
+  const progressPollRef = useRef(null);
+  const elapsedRef = useRef(null);
+  const startTimeRef = useRef(null);
 
   useSocket({
     'system:updating': ({ message: msg }) => {
@@ -32,34 +47,73 @@ function UpdateSection({ canInstall }) {
     },
   });
 
+  function startElapsedTimer() {
+    stopElapsedTimer();
+    startTimeRef.current = Date.now();
+    setElapsed(0);
+    elapsedRef.current = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
+  }
+
+  function stopElapsedTimer() {
+    if (elapsedRef.current) {
+      clearInterval(elapsedRef.current);
+      elapsedRef.current = null;
+    }
+  }
+
+  function startProgressPolling() {
+    stopProgressPolling();
+    progressPollRef.current = setInterval(async () => {
+      try {
+        const data = await api.get('/update/progress');
+        if (data.step) setCurrentStep(data.step);
+      } catch {
+        // Server may be mid-restart right now — just keep showing the last known step.
+      }
+    }, 2000);
+  }
+
+  function stopProgressPolling() {
+    if (progressPollRef.current) {
+      clearInterval(progressPollRef.current);
+      progressPollRef.current = null;
+    }
+  }
+
   function stopPolling() {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
     pollAttempts.current = 0;
-    setPollCount(0);
   }
 
   function startPolling() {
     stopPolling();
-    // Wait 10s before the first check — the service needs time to go down and come back.
+    startProgressPolling();
+    // Wait 10s before the first health check — the service needs time to go down and come back.
     setTimeout(() => {
       pollRef.current = setInterval(async () => {
         pollAttempts.current += 1;
-        setPollCount(pollAttempts.current);
         try {
           await api.get('/health');
           stopPolling();
+          stopProgressPolling();
+          stopElapsedTimer();
           setPhase('done');
           setUpdating(false);
           setInfo(null);
+          setCurrentStep('Done');
           setMessage({ type: 'success', text: 'Update complete! Page will reload in 3 seconds...' });
           setTimeout(() => window.location.reload(), 3000);
         } catch {
           // Still down — keep polling. Give up after ~3.5 minutes (40 attempts).
           if (pollAttempts.current > 40) {
             stopPolling();
+            stopProgressPolling();
+            stopElapsedTimer();
             setPhase('error');
             setUpdating(false);
             setMessage({ type: 'error', text: 'Update timed out. Check server logs: sudo journalctl -u infraloom -n 50' });
@@ -69,7 +123,11 @@ function UpdateSection({ canInstall }) {
     }, 10000);
   }
 
-  useEffect(() => () => stopPolling(), []);
+  useEffect(() => () => {
+    stopPolling();
+    stopProgressPolling();
+    stopElapsedTimer();
+  }, []);
 
   async function check() {
     setChecking(true);
@@ -88,6 +146,9 @@ function UpdateSection({ canInstall }) {
     setUpdating(true);
     setMessage(null);
     setPhase('running');
+    setCurrentStep('Starting update');
+    startElapsedTimer();
+    startProgressPolling();
     try {
       await api.post('/update/run');
       setMessage({ type: 'info', text: 'Update started. Waiting for the server to restart...' });
@@ -97,11 +158,14 @@ function UpdateSection({ canInstall }) {
     } catch (err) {
       setPhase('error');
       setUpdating(false);
+      stopProgressPolling();
+      stopElapsedTimer();
       setMessage({ type: 'error', text: err.message || 'Update failed' });
     }
   }
 
   const isActive = phase === 'running' || phase === 'waiting';
+  const progressPct = currentStep ? STEP_PROGRESS[currentStep] || 5 : 5;
 
   return (
     <section className="card">
@@ -142,9 +206,15 @@ function UpdateSection({ canInstall }) {
       )}
 
       {isActive && (
-        <div className="muted">
-          <p>The server will restart automatically. This page will reload when the update is complete.</p>
-          <p className="mono">Polling for server... ({pollCount} attempts)</p>
+        <div className="update-progress-block">
+          <div className="update-progress-bar-track">
+            <div className="update-progress-bar-fill" style={{ width: `${progressPct}%` }} />
+          </div>
+          <div className="update-progress-status-row">
+            <span>{currentStep || 'Working...'}</span>
+            <span className="mono muted">{elapsed}s elapsed</span>
+          </div>
+          <p className="muted">The server will restart automatically. This page will reload when the update is complete.</p>
         </div>
       )}
 

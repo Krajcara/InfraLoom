@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { execSync, exec } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
@@ -9,6 +10,7 @@ const { writeAuditLog } = require('../middleware/audit');
 const router = express.Router();
 
 const INSTALL_DIR = process.env.INSTALL_DIR || '/opt/infraloom';
+const PROGRESS_FILE = '/tmp/infraloom-update-progress.json';
 
 // GET /api/update/check
 router.get('/check', requireAuth, requireRole('superadmin', 'admin'), async (req, res) => {
@@ -84,6 +86,19 @@ router.post('/run', requireAuth, requireRole('superadmin'), (req, res) => {
       // If it succeeded, the service has already restarted — nothing more to do here.
     });
   }, 500);
+});
+
+// GET /api/update/progress — current step, written by update.sh as it runs.
+// Public-ish within the app (still requires auth) since it's read right
+// after the server may have restarted and needs to work with a fresh session.
+router.get('/progress', requireAuth, requireRole('superadmin', 'admin'), (req, res) => {
+  try {
+    if (!fs.existsSync(PROGRESS_FILE)) return res.json({ step: null });
+    const data = JSON.parse(fs.readFileSync(PROGRESS_FILE, 'utf8'));
+    res.json(data);
+  } catch {
+    res.json({ step: null });
+  }
 });
 
 module.exports = router;

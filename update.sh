@@ -17,6 +17,12 @@ success() { echo -e "${GREEN}[OK]${NC} $1"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
+PROGRESS_FILE="/tmp/infraloom-update-progress.json"
+progress() {
+  printf '{"step":"%s","updated_at":"%s"}' "$1" "$(date -u +%FT%TZ)" > "$PROGRESS_FILE"
+}
+progress "Starting update"
+
 [[ $EUID -ne 0 ]] && error "Run as root: sudo bash update.sh"
 [ -d "$INSTALL_DIR/.git" ] || error "InfraLoom not found at ${INSTALL_DIR}."
 
@@ -43,6 +49,7 @@ fi
 info "Installed version: $CURRENT_VERSION"
 
 # ─── Check GitHub for latest release ───────────────────────────────────────────
+progress "Checking for updates"
 info "Checking GitHub for latest release..."
 CURL_AUTH=""
 [ -n "$GITHUB_TOKEN" ] && CURL_AUTH="-H \"Authorization: token ${GITHUB_TOKEN}\""
@@ -59,11 +66,13 @@ if [ -z "$LATEST_JSON" ]; then
 
   if [ -z "$REMOTE_SHA" ]; then
     warn "Cannot reach GitHub. Check your internet connection."
+    rm -f "$PROGRESS_FILE"
     exit 0
   fi
 
   if [ "$REMOTE_SHA" = "$LOCAL_SHA" ]; then
     success "Already up to date (commit: $LOCAL_SHA)"
+    rm -f "$PROGRESS_FILE"
     exit 0
   fi
 
@@ -74,6 +83,7 @@ else
 
   if [ -z "$LATEST_VERSION" ]; then
     warn "Could not parse latest release version."
+    rm -f "$PROGRESS_FILE"
     exit 0
   fi
 
@@ -81,11 +91,13 @@ else
 
   if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
     success "Already on latest version ($CURRENT_VERSION)"
+    rm -f "$PROGRESS_FILE"
     exit 0
   fi
 fi
 
 # ─── Pull latest code ───────────────────────────────────────────────────────────
+progress "Pulling latest code"
 info "Updating to $LATEST_VERSION..."
 
 if [ -n "$GITHUB_TOKEN" ]; then
@@ -106,21 +118,30 @@ cd "$INSTALL_DIR"
 # ─── Reinstall dependencies ───────────────────────────────────────────────────
 # NOTE: deliberately do NOT source .env here — NODE_ENV=production would make
 # npm skip devDependencies (vite, ...) and break the build. See install.sh.
+# Run at lower CPU/IO priority (nice/ionice) — this used to compete directly
+# with the still-running live server for CPU on smaller VPS instances, making
+# the whole app feel sluggish/stuck during an update.
+progress "Installing dependencies"
 info "Updating dependencies..."
 unset NODE_ENV
-npm install --no-fund --no-audit --include=dev 2>&1 | tail -5
+NICE_CMD="nice -n 15"
+command -v ionice >/dev/null 2>&1 && NICE_CMD="ionice -c2 -n7 nice -n 15"
+$NICE_CMD npm install --no-fund --no-audit --include=dev 2>&1 | tail -5
 
 # ─── Database migration ────────────────────────────────────────────────────────
+progress "Running database migration"
 info "Running database migration..."
 npm run migrate 2>&1 | tail -5
 
 # ─── Rebuild frontend ───────────────────────────────────────────────────────────
+progress "Rebuilding frontend"
 info "Rebuilding frontend..."
-npm run build 2>&1 | tail -5
+$NICE_CMD npm run build 2>&1 | tail -5
 [ -d "$INSTALL_DIR/client/dist" ] || error "Frontend build failed"
 success "Frontend rebuilt"
 
 # ─── Restart service ────────────────────────────────────────────────────────────
+progress "Restarting service"
 info "Restarting service..."
 systemctl restart "$SERVICE_NAME"
 sleep 6
@@ -132,11 +153,13 @@ else
 fi
 
 # ─── Health check ───────────────────────────────────────────────────────────────
+progress "Waiting for server to respond"
 for i in $(seq 1 10); do
   if curl -sf "http://localhost:${APP_PORT}/api/health" > /dev/null 2>&1; then
     echo ""
     success "InfraLoom updated and running on port ${APP_PORT}"
     echo ""
+    rm -f "$PROGRESS_FILE"
     exit 0
   fi
   sleep 3

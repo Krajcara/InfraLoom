@@ -356,6 +356,33 @@ label {
   margin-top: 16px;
 }
 
+.update-progress-block {
+  margin: 12px 0;
+}
+
+.update-progress-bar-track {
+  height: 8px;
+  background: #14161b;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.update-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2b6cff, #6ea8fe);
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+
+.update-progress-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
 .channel-row {
   margin-bottom: 16px;
   padding-bottom: 16px;
