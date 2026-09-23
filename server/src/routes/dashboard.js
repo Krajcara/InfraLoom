@@ -23,6 +23,7 @@ const DEFAULT_WIDGETS = [
   { id: 'netspeed', title: 'Last Net Speed Test', phase: 9 },
   { id: 'myip', title: 'My IP', phase: 10 },
   { id: 'netscan', title: 'Network Devices', phase: 12 },
+  { id: 'patches', title: 'Pending Patches', phase: 13 },
 ];
 
 function defaultLayout() {
