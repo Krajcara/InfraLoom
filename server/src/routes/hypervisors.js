@@ -65,7 +65,7 @@ router.put('/connections/:id', requireRole('superadmin', 'admin'), (req, res) =>
   const existing = getConnection(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
-  const { name, url, username, token_id, api_token, password, port, enabled, patch_ssh_username, patch_ssh_password, patch_ssh_port } = req.body || {};
+  const { name, url, username, token_id, api_token, password, port, enabled, patch_ssh_username, patch_ssh_password, patch_ssh_port, patch_ssh_host } = req.body || {};
   const newToken = api_token && api_token !== '***' ? api_token : existing.api_token;
   const newPassword = password && password !== '***' ? password : existing.password;
   const newPatchSshPassword = patch_ssh_password && patch_ssh_password !== '***' ? patch_ssh_password : existing.patch_ssh_password;
@@ -73,7 +73,7 @@ router.put('/connections/:id', requireRole('superadmin', 'admin'), (req, res) =>
   db.prepare(
     `UPDATE hypervisor_connections SET
       name=?, url=?, username=?, token_id=?, api_token=?, password=?, port=?, enabled=?,
-      patch_ssh_username=?, patch_ssh_password=?, patch_ssh_port=?, updated_at=datetime('now')
+      patch_ssh_username=?, patch_ssh_password=?, patch_ssh_port=?, patch_ssh_host=?, updated_at=datetime('now')
      WHERE id=?`
   ).run(
     name?.trim() || existing.name,
@@ -87,6 +87,7 @@ router.put('/connections/:id', requireRole('superadmin', 'admin'), (req, res) =>
     patch_ssh_username !== undefined ? patch_ssh_username || null : existing.patch_ssh_username,
     newPatchSshPassword,
     patch_ssh_port !== undefined ? (patch_ssh_port ? parseInt(patch_ssh_port, 10) : null) : existing.patch_ssh_port,
+    patch_ssh_host !== undefined ? patch_ssh_host || null : existing.patch_ssh_host,
     req.params.id
   );
 

@@ -4,7 +4,7 @@ import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power, ChevronRight, T
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
-const emptyForm = { type: 'proxmox', name: '', url: '', username: 'root@pam', token_id: '', api_token: '', password: '', port: '', patch_ssh_username: '', patch_ssh_password: '', patch_ssh_port: '' };
+const emptyForm = { type: 'proxmox', name: '', url: '', username: 'root@pam', token_id: '', api_token: '', password: '', port: '', patch_ssh_username: '', patch_ssh_password: '', patch_ssh_port: '', patch_ssh_host: '' };
 
 const HYPERVISOR_TYPE_LABELS = { proxmox: 'Proxmox VE', hyperv: 'Hyper-V', esxi: 'VMware ESXi' };
 
@@ -41,7 +41,7 @@ export default function HypervisorsPage() {
   }
 
   function openEdit(c) {
-    setForm({ id: c.id, type: c.type, name: c.name, url: c.url, username: c.username, token_id: c.token_id || '', api_token: '', password: '', port: c.port || '', patch_ssh_username: c.patch_ssh_username || '', patch_ssh_password: '', patch_ssh_port: c.patch_ssh_port || '' });
+    setForm({ id: c.id, type: c.type, name: c.name, url: c.url, username: c.username, token_id: c.token_id || '', api_token: '', password: '', port: c.port || '', patch_ssh_username: c.patch_ssh_username || '', patch_ssh_password: '', patch_ssh_port: c.patch_ssh_port || '', patch_ssh_host: c.patch_ssh_host || '' });
   }
 
   async function save(e) {
@@ -182,6 +182,17 @@ export default function HypervisorsPage() {
                   access to the <strong>host itself</strong> (not a container) to run <code>pct exec</code>.
                   This is broader access than the API token above — leave blank to skip LXC patch support (VM
                   patching via the QEMU guest agent doesn't need this).
+                </p>
+                <div className="form-row">
+                  <label>
+                    Host SSH address (if different from the URL above)
+                    <input value={form.patch_ssh_host} onChange={(e) => setForm({ ...form, patch_ssh_host: e.target.value })} placeholder="Only needed if the URL above goes through a reverse proxy" />
+                  </label>
+                </div>
+                <p className="muted channel-note">
+                  If the URL above is reached through a reverse proxy (e.g. Nginx Proxy Manager, Cloudflare
+                  Tunnel), SSH won't follow it — that traffic isn't proxied the same way HTTPS is. Enter the
+                  Proxmox host's real IP or hostname here so <code>pct exec</code> reaches the right machine.
                 </p>
                 <div className="form-row">
                   <label>

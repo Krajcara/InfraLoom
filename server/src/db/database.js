@@ -324,6 +324,10 @@ ensureColumn('hypervisor_connections', 'port', 'INTEGER');
 ensureColumn('hypervisor_connections', 'patch_ssh_username', 'TEXT');
 ensureColumn('hypervisor_connections', 'patch_ssh_password', 'TEXT');
 ensureColumn('hypervisor_connections', 'patch_ssh_port', 'INTEGER');
+// Optional — if the API URL goes through a reverse proxy (e.g. Nginx Proxy
+// Manager) that doesn't forward SSH, the real host for `pct exec` needs to
+// be entered separately here; falls back to the API URL's host if blank.
+ensureColumn('hypervisor_connections', 'patch_ssh_host', 'TEXT');
 
 // ── Saved SSH credentials for Hypervisors VM terminal ───────────────────
 // Per (connection, vmid) — optional defaults; a session can always override

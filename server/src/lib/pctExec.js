@@ -13,7 +13,9 @@ function execInLXC(conn, vmid, command, { timeoutMs = 300000, onOutput } = {}) {
     if (!conn.patch_ssh_username || !conn.patch_ssh_password) {
       return reject(new Error("LXC patch management requires a Proxmox host SSH username/password (see the connection's Patch Management settings)"));
     }
-    const host = conn.url.replace(/^https?:\/\//, '').split(':')[0].split('/')[0];
+    const host = conn.patch_ssh_host?.trim()
+      ? conn.patch_ssh_host.trim().replace(/^https?:\/\//, '').split(':')[0].split('/')[0]
+      : conn.url.replace(/^https?:\/\//, '').split(':')[0].split('/')[0];
     const port = conn.patch_ssh_port || 22;
 
     // vmid is only ever a value we generated ourselves (from the Proxmox API
