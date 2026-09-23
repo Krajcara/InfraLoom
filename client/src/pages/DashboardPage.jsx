@@ -287,20 +287,68 @@ function NetSpeedWidgetBody() {
 }
 
 function PatchesWidgetBody() {
-  const [state, setState] = useState({ loading: true, error: null, pending: 0 });
+  const [state, setState] = useState({ loading: true, error: null, counts: null, topGuest: null });
 
   useEffect(() => {
     api
-      .get('/patch-management/runs?status=awaiting_approval&limit=100')
-      .then((data) => setState({ loading: false, error: null, pending: data.runs.length }))
-      .catch((err) => setState({ loading: false, error: err.message, pending: 0 }));
+      .get('/patch-management/overview')
+      .then((data) => {
+        const counts = { pending: 0, failed: 0, neverChecked: 0, upToDate: 0 };
+        let topGuest = null;
+
+        for (const conn of data.connections) {
+          if (conn.error || !conn.supported) continue;
+          for (const node of conn.nodes) {
+            for (const g of node.guests || []) {
+              const status = g.lastRun?.status;
+              if (!g.lastRun) counts.neverChecked++;
+              else if (status === 'awaiting_approval') {
+                counts.pending++;
+                if (!topGuest || g.lastRun.packages > topGuest.packages) {
+                  topGuest = { name: g.name, packages: g.lastRun.packages };
+                }
+              } else if (status === 'failed') counts.failed++;
+              else if (status === 'up_to_date' || status === 'completed') counts.upToDate++;
+            }
+          }
+        }
+        setState({ loading: false, error: null, counts, topGuest });
+      })
+      .catch((err) => setState({ loading: false, error: err.message, counts: null, topGuest: null }));
   }, []);
 
   if (state.loading) return <p className="muted">Loading...</p>;
   if (state.error) return <p className="error">{state.error}</p>;
-  if (state.pending === 0) return <p className="success">No pending patch approvals.</p>;
 
-  return <p className="muted">{state.pending} run{state.pending === 1 ? '' : 's'} awaiting approval.</p>;
+  const { counts, topGuest } = state;
+  const nothingTracked = counts.pending + counts.failed + counts.neverChecked + counts.upToDate === 0;
+  if (nothingTracked) return <p className="muted">No guests tracked yet.</p>;
+
+  return (
+    <div className="patch-widget">
+      <div className="patch-widget-row">
+        <span className="patch-widget-stat">
+          <span className="status-badge status-degraded">{counts.pending}</span> pending
+        </span>
+        <span className="patch-widget-stat">
+          <span className="status-badge status-down">{counts.failed}</span> failed
+        </span>
+      </div>
+      <div className="patch-widget-row">
+        <span className="patch-widget-stat">
+          <span className="status-badge">{counts.neverChecked}</span> never checked
+        </span>
+        <span className="patch-widget-stat">
+          <span className="status-badge status-up">{counts.upToDate}</span> up to date
+        </span>
+      </div>
+      {topGuest && (
+        <p className="muted patch-widget-top">
+          Most updates pending: <strong>{topGuest.name}</strong> ({topGuest.packages})
+        </p>
+      )}
+    </div>
+  );
 }
 
 function NetscanWidgetBody() {
