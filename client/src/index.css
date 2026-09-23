@@ -1784,3 +1784,17 @@ textarea {
   padding-top: 12px;
   border-top: 1px solid #2a2e38;
 }
+
+.hv-node-ssh-override {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #2a2e38;
+}
+
+.hv-node-ssh-status {
+  font-size: 12px;
+}
+
+.hv-node-ssh-form {
+  margin-top: 8px;
+}

@@ -6,17 +6,20 @@ const { Client: SSHClient } = require('ssh2');
  * HOST (not the container) and invoking `pct exec <vmid> -- ...`. This is
  * the only way to execute arbitrary commands in a container remotely —
  * Proxmox's REST API has no container equivalent of the QEMU guest-agent
- * exec endpoint. Requires `conn.patch_ssh_username`/`patch_ssh_password` to
- * be configured (a separate, host-level credential from the API token). */
-function execInLXC(conn, vmid, command, { timeoutMs = 300000, onOutput } = {}) {
+ * exec endpoint.
+ *
+ * `creds` is the already-resolved SSH target for whichever node the
+ * container lives on — { host, username, password, port } — since a
+ * cluster's nodes can have different root passwords. Resolving which
+ * credentials apply is patchService's job (per-node override, falling back
+ * to the connection's default), not this module's. */
+function execInLXC(creds, vmid, command, { timeoutMs = 300000, onOutput } = {}) {
   return new Promise((resolve, reject) => {
-    if (!conn.patch_ssh_username || !conn.patch_ssh_password) {
-      return reject(new Error("LXC patch management requires a Proxmox host SSH username/password (see the connection's Patch Management settings)"));
+    if (!creds?.username || !creds?.password) {
+      return reject(new Error("LXC patch management requires a Proxmox host SSH username/password (see the connection's Patch Management settings, or this node's SSH override)"));
     }
-    const host = conn.patch_ssh_host?.trim()
-      ? conn.patch_ssh_host.trim().replace(/^https?:\/\//, '').split(':')[0].split('/')[0]
-      : conn.url.replace(/^https?:\/\//, '').split(':')[0].split('/')[0];
-    const port = conn.patch_ssh_port || 22;
+    const host = creds.host;
+    const port = creds.port || 22;
 
     // vmid is only ever a value we generated ourselves (from the Proxmox API
     // response), but validate it's numeric anyway before it goes into a
@@ -66,8 +69,8 @@ function execInLXC(conn, vmid, command, { timeoutMs = 300000, onOutput } = {}) {
       })
       .connect({
         host, port,
-        username: conn.patch_ssh_username,
-        password: conn.patch_ssh_password,
+        username: creds.username,
+        password: creds.password,
         readyTimeout: 15000,
       });
   });

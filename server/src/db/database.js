@@ -426,6 +426,24 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_patch_runs_created ON patch_runs(created_at);
 `);
 
+// Per-node SSH override for LXC patch management — a Proxmox cluster can
+// have multiple nodes with different root passwords, so one connection-level
+// credential isn't always enough. A node without a row here falls back to
+// the connection's own patch_ssh_* fields.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS hypervisor_node_ssh (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id INTEGER NOT NULL,
+    node          TEXT NOT NULL,
+    ssh_host      TEXT,
+    ssh_username  TEXT,
+    ssh_password  TEXT,
+    ssh_port      INTEGER,
+    UNIQUE(connection_id, node),
+    FOREIGN KEY (connection_id) REFERENCES hypervisor_connections(id) ON DELETE CASCADE
+  );
+`);
+
 // Seed default settings only if they don't already exist.
 const defaultSettings = {
   app_name: 'InfraLoom',

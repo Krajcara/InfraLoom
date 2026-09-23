@@ -4,9 +4,25 @@ const db = require('../db/database');
 const { execInVM } = require('../lib/qemuExec');
 const { execInLXC } = require('../lib/pctExec');
 
+/** Per-node override first (a cluster's nodes can have different root
+ * passwords), falling back to the connection's own patch_ssh_* fields. */
+function resolveSshCreds(conn, node) {
+  const override = db.prepare('SELECT * FROM hypervisor_node_ssh WHERE connection_id = ? AND node = ?').get(conn.id, node);
+
+  const rawHost = (override?.ssh_host?.trim() || conn.patch_ssh_host?.trim() || conn.url) || '';
+  const host = rawHost.replace(/^https?:\/\//, '').split(':')[0].split('/')[0];
+
+  return {
+    host,
+    port: override?.ssh_port || conn.patch_ssh_port || 22,
+    username: override?.ssh_username || conn.patch_ssh_username,
+    password: override?.ssh_password || conn.patch_ssh_password,
+  };
+}
+
 function execFor(conn, guestType, node, vmid, command, opts) {
   if (guestType === 'qemu') return execInVM(conn, node, vmid, command, opts);
-  if (guestType === 'lxc') return execInLXC(conn, vmid, command, opts);
+  if (guestType === 'lxc') return execInLXC(resolveSshCreds(conn, node), vmid, command, opts);
   throw new Error(`Unsupported guest type: ${guestType}`);
 }
 

@@ -265,4 +265,46 @@ router.post('/connections/:id/:node/:type/:vmid/:action', requireRole('superadmi
   }
 });
 
+// ── Per-node SSH override (LXC patch management on multi-node clusters) ──
+
+// GET /api/hypervisors/connections/:id/nodes/:node/ssh
+router.get('/connections/:id/nodes/:node/ssh', requireRole('superadmin', 'admin'), (req, res) => {
+  const row = db.prepare('SELECT * FROM hypervisor_node_ssh WHERE connection_id = ? AND node = ?').get(req.params.id, req.params.node);
+  if (!row) return res.json({ configured: false });
+  res.json({
+    configured: true,
+    ssh_host: row.ssh_host,
+    ssh_username: row.ssh_username,
+    ssh_port: row.ssh_port,
+    hasPassword: !!row.ssh_password,
+  });
+});
+
+// PUT /api/hypervisors/connections/:id/nodes/:node/ssh
+router.put('/connections/:id/nodes/:node/ssh', requireRole('superadmin', 'admin'), (req, res) => {
+  const { ssh_host, ssh_username, ssh_password, ssh_port } = req.body || {};
+  const existing = db.prepare('SELECT * FROM hypervisor_node_ssh WHERE connection_id = ? AND node = ?').get(req.params.id, req.params.node);
+  const newPassword = ssh_password && ssh_password !== '***' ? ssh_password : existing?.ssh_password || null;
+
+  db.prepare(
+    `INSERT INTO hypervisor_node_ssh (connection_id, node, ssh_host, ssh_username, ssh_password, ssh_port)
+     VALUES (?,?,?,?,?,?)
+     ON CONFLICT(connection_id, node) DO UPDATE SET
+       ssh_host=excluded.ssh_host, ssh_username=excluded.ssh_username,
+       ssh_password=excluded.ssh_password, ssh_port=excluded.ssh_port`
+  ).run(req.params.id, req.params.node, ssh_host || null, ssh_username || null, newPassword, ssh_port ? parseInt(ssh_port, 10) : null);
+
+  writeAuditLog({
+    user_id: req.user.id, username: req.user.username, action: 'hypervisor.node_ssh_save',
+    module: 'hypervisors', details: { node: req.params.node }, ip_address: req.ip,
+  });
+  res.json({ ok: true });
+});
+
+// DELETE /api/hypervisors/connections/:id/nodes/:node/ssh — clear override, fall back to connection default
+router.delete('/connections/:id/nodes/:node/ssh', requireRole('superadmin', 'admin'), (req, res) => {
+  db.prepare('DELETE FROM hypervisor_node_ssh WHERE connection_id = ? AND node = ?').run(req.params.id, req.params.node);
+  res.json({ ok: true });
+});
+
 module.exports = router;

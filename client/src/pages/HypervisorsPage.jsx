@@ -181,7 +181,9 @@ export default function HypervisorsPage() {
                   Proxmox has no REST API for running commands inside containers, so LXC patching needs SSH
                   access to the <strong>host itself</strong> (not a container) to run <code>pct exec</code>.
                   This is broader access than the API token above — leave blank to skip LXC patch support (VM
-                  patching via the QEMU guest agent doesn't need this).
+                  patching via the QEMU guest agent doesn't need this). These fields are the <strong>default</strong>
+                  used for any node without its own override — set per-node credentials from that node's row on
+                  this page if your cluster's hosts have different passwords.
                 </p>
                 <div className="form-row">
                   <label>
@@ -225,6 +227,84 @@ export default function HypervisorsPage() {
       {connections.map((c) => (
         <ConnectionBrowser key={c.id} conn={c} canEdit={canEdit} onEdit={() => openEdit(c)} onDelete={() => remove(c)} />
       ))}
+    </div>
+  );
+}
+
+function NodeSshOverride({ connectionId, node }) {
+  const [state, setState] = useState(null); // { configured, ssh_host, ssh_username, ssh_port, hasPassword }
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ ssh_host: '', ssh_username: '', ssh_password: '', ssh_port: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api.get(`/hypervisors/connections/${connectionId}/nodes/${node}/ssh`).then((d) => {
+      setState(d);
+      if (d.configured) setForm({ ssh_host: d.ssh_host || '', ssh_username: d.ssh_username || '', ssh_password: '', ssh_port: d.ssh_port || '' });
+    });
+  }, [connectionId, node]);
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await api.put(`/hypervisors/connections/${connectionId}/nodes/${node}/ssh`, form);
+      const d = await api.get(`/hypervisors/connections/${connectionId}/nodes/${node}/ssh`);
+      setState(d);
+      setEditing(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function clear() {
+    if (!confirm(`Remove the SSH override for node "${node}"? It will fall back to the connection's default patch SSH credentials.`)) return;
+    await api.del(`/hypervisors/connections/${connectionId}/nodes/${node}/ssh`);
+    setState({ configured: false });
+    setForm({ ssh_host: '', ssh_username: '', ssh_password: '', ssh_port: '' });
+  }
+
+  if (!state) return null;
+
+  return (
+    <div className="hv-node-ssh-override">
+      {!editing ? (
+        <p className="muted hv-node-ssh-status">
+          LXC patch SSH: {state.configured ? (
+            <>node-specific ({state.ssh_username}@{state.ssh_host || 'default host'}) <button className="btn-link" onClick={() => setEditing(true)}>Edit</button> · <button className="btn-link danger" onClick={clear}>Clear</button></>
+          ) : (
+            <>using connection default <button className="btn-link" onClick={() => setEditing(true)}>Set override for this node</button></>
+          )}
+        </p>
+      ) : (
+        <form onSubmit={save} autoComplete="off" className="hv-node-ssh-form">
+          {error && <p className="error">{error}</p>}
+          <div className="form-row">
+            <label>
+              SSH host
+              <input value={form.ssh_host} onChange={(e) => setForm({ ...form, ssh_host: e.target.value })} placeholder={`e.g. IP of node "${node}"`} />
+            </label>
+            <label>
+              Username
+              <input value={form.ssh_username} onChange={(e) => setForm({ ...form, ssh_username: e.target.value })} placeholder="root" autoComplete="off" name={`node_ssh_user_${node}`} />
+            </label>
+            <label>
+              Password
+              <input type="password" value={form.ssh_password} onChange={(e) => setForm({ ...form, ssh_password: e.target.value })} placeholder={state.hasPassword ? 'unchanged' : ''} autoComplete="new-password" name={`node_ssh_pass_${node}`} />
+            </label>
+            <label>
+              Port
+              <input value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: e.target.value })} placeholder="22" />
+            </label>
+            <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+            <button type="button" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }
@@ -457,6 +537,8 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
                 ))}
               </div>
             )}
+
+            {isOpen && canEdit && conn.type === 'proxmox' && <NodeSshOverride connectionId={conn.id} node={node.node} />}
           </div>
         );
       })}
