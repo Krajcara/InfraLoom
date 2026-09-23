@@ -1,8 +1,12 @@
 'use strict';
 
 const db = require('../db/database');
-const { execInVM } = require('../lib/qemuExec');
+const { execInVM, getOsInfo } = require('../lib/qemuExec');
 const { execInLXC } = require('../lib/pctExec');
+
+const WINDOWS_QGA_ID = 'mswindows';
+const DEBIAN_LIKE_IDS = new Set(['ubuntu', 'debian']);
+const RHEL_LIKE_IDS = new Set(['centos', 'fedora', 'rhel', 'rocky', 'almalinux', 'ol']);
 
 /** Per-node override first (a cluster's nodes can have different root
  * passwords), falling back to the connection's own patch_ssh_* fields. */
@@ -20,13 +24,26 @@ function resolveSshCreds(conn, node) {
   };
 }
 
-function execFor(conn, guestType, node, vmid, command, opts) {
-  if (guestType === 'qemu') return execInVM(conn, node, vmid, command, opts);
+function execFor(conn, guestType, node, vmid, command, opts = {}) {
+  if (guestType === 'qemu') {
+    return execInVM(conn, node, vmid, command, { ...opts, osType: opts.osFamily === 'windows' ? 'windows' : 'linux' });
+  }
   if (guestType === 'lxc') return execInLXC(resolveSshCreds(conn, node), vmid, command, opts);
   throw new Error(`Unsupported guest type: ${guestType}`);
 }
 
 async function detectOsFamily(conn, guestType, node, vmid) {
+  if (guestType === 'qemu') {
+    // The dedicated get-osinfo guest-agent call is faster and more reliable
+    // than probing with a shell script — and it's the only way to even ask
+    // the question on a Windows guest, which has no /bin/sh to probe with.
+    const osInfo = await getOsInfo(conn, node, vmid);
+    if (osInfo?.id === WINDOWS_QGA_ID) return 'windows';
+    if (osInfo?.id && DEBIAN_LIKE_IDS.has(osInfo.id)) return 'debian';
+    if (osInfo?.id && RHEL_LIKE_IDS.has(osInfo.id)) return 'rhel';
+    // Unrecognized/older guest agent — fall through to the shell probe below.
+  }
+
   const r = await execFor(
     conn, guestType, node, vmid,
     "if [ -f /etc/debian_version ]; then echo debian; elif [ -f /etc/redhat-release ]; then echo rhel; else echo unknown; fi",
@@ -35,7 +52,7 @@ async function detectOsFamily(conn, guestType, node, vmid) {
   const family = r.stdout.trim();
   if (!['debian', 'rhel'].includes(family)) {
     const detail = [r.stderr?.trim(), r.stdout?.trim()].filter(Boolean).join(' | ') || '(no output)';
-    const err = new Error(`Could not detect a supported OS (Debian/Ubuntu or RHEL/Fedora family) inside the guest — raw output: ${detail.slice(0, 300)}`);
+    const err = new Error(`Could not detect a supported OS (Debian/Ubuntu, RHEL/Fedora, or Windows) inside the guest — raw output: ${detail.slice(0, 300)}`);
     err.osFamily = 'unknown';
     throw err;
   }
@@ -45,11 +62,47 @@ async function detectOsFamily(conn, guestType, node, vmid) {
 const DRY_RUN_COMMANDS = {
   debian: 'export DEBIAN_FRONTEND=noninteractive; apt-get update -qq 2>&1; apt-get -s upgrade 2>&1',
   rhel: '(command -v dnf >/dev/null && dnf check-update || yum check-update) 2>&1; true',
+  windows: `
+$ErrorActionPreference = 'SilentlyContinue'
+$session = New-Object -ComObject Microsoft.Update.Session
+$searcher = $session.CreateUpdateSearcher()
+$result = $searcher.Search("IsInstalled=0 and Type='Software'")
+foreach ($u in $result.Updates) {
+  $kb = if ($u.KBArticleIDs.Count -gt 0) { "KB$($u.KBArticleIDs[0])" } else { 'N/A' }
+  Write-Output "$kb|$($u.Title)"
+}
+`.trim(),
 };
 
 const APPLY_COMMANDS = {
   debian: 'export DEBIAN_FRONTEND=noninteractive; apt-get update -qq 2>&1; apt-get -y upgrade 2>&1; echo "___EXIT_$?___"',
   rhel: '(command -v dnf >/dev/null && dnf -y upgrade || yum -y upgrade) 2>&1; echo "___EXIT_$?___"',
+  windows: `
+$ErrorActionPreference = 'Continue'
+$session = New-Object -ComObject Microsoft.Update.Session
+$searcher = $session.CreateUpdateSearcher()
+$result = $searcher.Search("IsInstalled=0 and Type='Software'")
+if ($result.Updates.Count -eq 0) { Write-Output 'No updates to install'; Write-Output '___EXIT_0___'; exit }
+$toInstall = New-Object -ComObject Microsoft.Update.UpdateColl
+foreach ($u in $result.Updates) {
+  if (-not $u.EulaAccepted) { $u.AcceptEula() | Out-Null }
+  $toInstall.Add($u) | Out-Null
+  Write-Output "Queued: $($u.Title)"
+}
+$downloader = $session.CreateUpdateDownloader()
+$downloader.Updates = $toInstall
+Write-Output 'Downloading updates...'
+$downloadResult = $downloader.Download()
+Write-Output "Download result code: $($downloadResult.ResultCode)"
+$installer = $session.CreateUpdateInstaller()
+$installer.Updates = $toInstall
+Write-Output 'Installing updates...'
+$installResult = $installer.Install()
+Write-Output "Install result code: $($installResult.ResultCode)"
+if ($installResult.RebootRequired) { Write-Output 'REBOOT REQUIRED to finish installing updates.' }
+$exitCode = if ($installResult.ResultCode -eq 2) { 0 } else { 1 }
+Write-Output "___EXIT_\${exitCode}___"
+`.trim(),
 };
 
 function parseDebianDryRun(output) {
@@ -76,15 +129,25 @@ function parseRhelDryRun(output) {
   return packages;
 }
 
+function parseWindowsDryRun(output) {
+  // Our own dry-run script prints one "KBxxxxxxx|Title" line per update.
+  const packages = [];
+  for (const line of output.split('\n')) {
+    const m = line.match(/^(KB\d+|N\/A)\|(.+)$/);
+    if (m) packages.push({ name: m[2].trim(), current_version: null, new_version: m[1] });
+  }
+  return packages;
+}
+
 /** Runs the dry-run simulation and stores a patch_runs row in
  * 'awaiting_approval' with the package snapshot. Never mutates the guest. */
 async function runDryRun({ connectionId, conn, node, guestType, vmid, vmName, triggeredBy }) {
   const osFamily = await detectOsFamily(conn, guestType, node, vmid);
 
   const cmd = DRY_RUN_COMMANDS[osFamily];
-  const r = await execFor(conn, guestType, node, vmid, cmd, { timeoutMs: 120000 });
+  const r = await execFor(conn, guestType, node, vmid, cmd, { timeoutMs: osFamily === 'windows' ? 240000 : 120000, osFamily });
 
-  const packages = osFamily === 'debian' ? parseDebianDryRun(r.stdout) : parseRhelDryRun(r.stdout);
+  const packages = osFamily === 'debian' ? parseDebianDryRun(r.stdout) : osFamily === 'rhel' ? parseRhelDryRun(r.stdout) : parseWindowsDryRun(r.stdout);
   const status = packages.length === 0 ? 'up_to_date' : 'awaiting_approval';
 
   const row = db
@@ -123,7 +186,7 @@ async function applyPatches(runId, approvedBy) {
   try {
     const cmd = APPLY_COMMANDS[run.os_family];
     if (!cmd) throw new Error(`No apply command for OS family: ${run.os_family}`);
-    const result = await execFor(conn, run.guest_type, run.node, run.vmid, cmd, { timeoutMs: 1800000, onOutput });
+    const result = await execFor(conn, run.guest_type, run.node, run.vmid, cmd, { timeoutMs: run.os_family === 'windows' ? 3600000 : 1800000, onOutput, osFamily: run.os_family });
 
     const exitMatch = result.stdout.match(/___EXIT_(\d+)___/);
     const exitCode = exitMatch ? parseInt(exitMatch[1], 10) : result.exitCode;

@@ -19,14 +19,31 @@ async function pveCall(conn, method, path, data) {
   return res.data.data;
 }
 
-/** Runs a shell command inside a QEMU VM via the guest agent, polling until
- * it exits (guest-agent exec has no push-streaming — the caller polls this
+/** Dedicated QEMU guest-agent command that returns OS metadata directly —
+ * faster and more reliable than probing with a shell script, and critically
+ * works on Windows guests too (which have no /bin/sh to run a probe in). */
+async function getOsInfo(conn, node, vmid) {
+  try {
+    const data = await pveCall(conn, 'get', `/nodes/${node}/qemu/${vmid}/agent/get-osinfo`);
+    return data?.result || null; // { id: 'mswindows' | 'ubuntu' | 'debian' | ..., name, version, ... }
+  } catch {
+    return null; // guest agent not ready / doesn't support this call yet
+  }
+}
+
+/** Runs a command inside a QEMU VM via the guest agent, polling until it
+ * exits (guest-agent exec has no push-streaming — the caller polls this
  * repeatedly for a "live" feel; see patchService.js). Returns the full
- * result only once the command has exited. */
-async function execInVM(conn, node, vmid, command, { timeoutMs = 300000, onOutput } = {}) {
-  const start = await pveCall(conn, 'post', `/nodes/${node}/qemu/${vmid}/agent/exec`, {
-    command: ['/bin/sh', '-c', command],
-  });
+ * result only once the command has exited.
+ *
+ * `osType: 'windows'` wraps the command with powershell.exe instead of
+ * /bin/sh -c, since Windows guests have no POSIX shell. */
+async function execInVM(conn, node, vmid, command, { timeoutMs = 300000, onOutput, osType = 'linux' } = {}) {
+  const execCommand = osType === 'windows'
+    ? ['powershell.exe', '-NonInteractive', '-NoProfile', '-Command', command]
+    : ['/bin/sh', '-c', command];
+
+  const start = await pveCall(conn, 'post', `/nodes/${node}/qemu/${vmid}/agent/exec`, { command: execCommand });
   const pid = start.pid;
   if (!pid) throw new Error('Guest agent did not return a PID — is the QEMU guest agent running in this VM?');
 
@@ -62,4 +79,4 @@ async function execInVM(conn, node, vmid, command, { timeoutMs = 300000, onOutpu
   throw new Error('Command timed out inside the guest');
 }
 
-module.exports = { execInVM };
+module.exports = { execInVM, getOsInfo };

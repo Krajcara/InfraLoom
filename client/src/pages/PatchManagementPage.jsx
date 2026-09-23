@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
 
 const HYPERVISOR_TYPE_LABELS = { proxmox: 'Proxmox VE', hyperv: 'Hyper-V', esxi: 'VMware ESXi' };
-const OS_LABELS = { debian: 'Debian / Ubuntu', rhel: 'RHEL / Fedora' };
+const OS_LABELS = { debian: 'Debian / Ubuntu', rhel: 'RHEL / Fedora', windows: 'Windows' };
 
 export default function PatchManagementPage() {
   const { user } = useAuth();
