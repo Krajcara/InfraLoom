@@ -115,7 +115,9 @@ $ErrorActionPreference = 'Stop'
 try {
   $session = New-Object -ComObject Microsoft.Update.Session
   $searcher = $session.CreateUpdateSearcher()
-  Write-Output "Searching for updates..."
+  $searcher.Online = $true
+  $searcher.ServerSelection = 2
+  Write-Output "Searching for updates (online, direct to Windows Update)..."
   $result = $searcher.Search("IsInstalled=0 and Type='Software'")
   Write-Output "SearchComplete. ResultCode=$($result.ResultCode) UpdatesFound=$($result.Updates.Count)"
   foreach ($u in $result.Updates) {
@@ -137,6 +139,8 @@ $ErrorActionPreference = 'Stop'
 try {
   $session = New-Object -ComObject Microsoft.Update.Session
   $searcher = $session.CreateUpdateSearcher()
+  $searcher.Online = $true
+  $searcher.ServerSelection = 2
   $result = $searcher.Search("IsInstalled=0 and Type='Software'")
   if ($result.Updates.Count -eq 0) { Write-Output 'No updates to install'; Write-Output '___EXIT_0___'; exit }
   $toInstall = New-Object -ComObject Microsoft.Update.UpdateColl
