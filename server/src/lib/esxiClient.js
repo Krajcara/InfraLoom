@@ -11,35 +11,56 @@ function baseUrl(conn) {
   return `https://${host}`;
 }
 
+function describeAxiosError(err, context) {
+  if (err.response) {
+    const body = typeof err.response.data === 'string' ? err.response.data : JSON.stringify(err.response.data);
+    return new Error(`${context} — ESXi returned ${err.response.status}: ${(body || '(empty body)').slice(0, 300)}`);
+  }
+  if (err.request) return new Error(`${context} — no response from ESXi host (${err.code || err.message})`);
+  return new Error(`${context} — ${err.message}`);
+}
+
 /** Authenticates and returns a session ID, valid for subsequent requests via
  * the `vmware-api-session-id` header. ESXi 7.0+ uses the unprefixed /api/
  * endpoints (the older /rest/ prefix is vCenter-oriented and deprecated). */
 async function getSessionId(conn) {
   const auth = Buffer.from(`${conn.username}:${conn.password}`).toString('base64');
-  const res = await axios.post(`${baseUrl(conn)}/api/session`, null, {
-    headers: { Authorization: `Basic ${auth}` },
-    httpsAgent,
-    timeout: 10000,
-  });
-  return res.data; // a plain JSON string (the session id)
+  try {
+    const res = await axios.post(`${baseUrl(conn)}/api/session`, null, {
+      headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+      httpsAgent,
+      timeout: 10000,
+    });
+    return res.data; // a plain JSON string (the session id)
+  } catch (err) {
+    throw describeAxiosError(err, 'ESXi login failed');
+  }
 }
 
 async function apiGet(conn, sessionId, path) {
-  const res = await axios.get(`${baseUrl(conn)}${path}`, {
-    headers: { 'vmware-api-session-id': sessionId },
-    httpsAgent,
-    timeout: 15000,
-  });
-  return res.data;
+  try {
+    const res = await axios.get(`${baseUrl(conn)}${path}`, {
+      headers: { 'vmware-api-session-id': sessionId },
+      httpsAgent,
+      timeout: 15000,
+    });
+    return res.data;
+  } catch (err) {
+    throw describeAxiosError(err, `ESXi request failed (GET ${path})`);
+  }
 }
 
 async function apiPost(conn, sessionId, path, body) {
-  const res = await axios.post(`${baseUrl(conn)}${path}`, body ?? null, {
-    headers: { 'vmware-api-session-id': sessionId, 'Content-Type': 'application/json' },
-    httpsAgent,
-    timeout: 15000,
-  });
-  return res.data;
+  try {
+    const res = await axios.post(`${baseUrl(conn)}${path}`, body ?? null, {
+      headers: { 'vmware-api-session-id': sessionId, 'Content-Type': 'application/json' },
+      httpsAgent,
+      timeout: 15000,
+    });
+    return res.data;
+  } catch (err) {
+    throw describeAxiosError(err, `ESXi request failed (POST ${path})`);
+  }
 }
 
 /** Fast summary: since standalone ESXi's REST API doesn't expose live host
