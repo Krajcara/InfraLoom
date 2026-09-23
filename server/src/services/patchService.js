@@ -39,28 +39,41 @@ function resolveGuestSshCreds(conn, vmid, guestHost) {
  * into the guest OS itself, distinct from the host-level WinRM connection
  * used to manage the VM (Start-VM etc.). */
 function resolveGuestWinrmCreds(conn, vmid, guestHost) {
-  const row = db.prepare('SELECT * FROM guest_winrm_credentials WHERE connection_id = ? AND vmid = ?').get(conn.id, vmid);
+  const row = db.prepare('SELECT * FROM guest_winrm_credentials WHERE connection_id = ? AND vmid = ?').get(conn.id, String(vmid));
   return { url: row?.host || guestHost, port: row?.port || 5985, username: row?.username, password: row?.password };
+}
+
+/** Runs a command in a Windows guest via WinRM directly to its own IP,
+ * using saved per-guest credentials. Used for BOTH Hyper-V Windows VMs
+ * (which have no other way in) and Proxmox Windows VMs specifically for
+ * patch commands — QEMU guest-agent exec runs as SYSTEM, and the Windows
+ * Update Agent COM API can behave differently (return stale/empty results)
+ * under that context versus a real interactive-equivalent admin account. */
+function execWindowsGuest(conn, vmid, command, opts) {
+  const creds = resolveGuestWinrmCreds(conn, vmid, opts.guestHost);
+  if (!creds.username || !creds.password) {
+    throw new Error('No saved WinRM credentials for this Windows guest — set them from the "Credentials" button next to it in Patch Management');
+  }
+  return winrmExecuteScript(creds, command, Math.round((opts.timeoutMs || 60000) / 1000)).then((r) => {
+    if (r.exitCode !== 0) throw new Error(r.stderr || `WinRM command failed (exit ${r.exitCode})`);
+    if (opts.onOutput) opts.onOutput(r.stdout);
+    return { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr };
+  });
 }
 
 function execFor(conn, guestType, node, vmid, command, opts = {}) {
   if (guestType === 'qemu') {
-    return execInVM(conn, node, vmid, command, { ...opts, osType: opts.osFamily === 'windows' ? 'windows' : 'linux' });
+    // OS detection still goes through the guest agent (getOsInfo) regardless
+    // — only the actual patch commands for Windows are redirected to WinRM.
+    if (opts.osFamily === 'windows') return execWindowsGuest(conn, vmid, command, opts);
+    return execInVM(conn, node, vmid, command, { ...opts, osType: 'linux' });
   }
   if (guestType === 'lxc') return execInLXC(resolveSshCreds(conn, node), vmid, command, opts);
   if (guestType === 'vm') {
     // Hyper-V's generic guest type — command has to reach the GUEST OS, not
     // the host, so this needs its own per-VM credentials rather than the
     // host-level WinRM connection used elsewhere for this same connection.
-    if (opts.osFamily === 'windows') {
-      const creds = resolveGuestWinrmCreds(conn, vmid, opts.guestHost);
-      if (!creds.username || !creds.password) throw new Error('No saved WinRM credentials for this guest');
-      return winrmExecuteScript(creds, command, Math.round((opts.timeoutMs || 60000) / 1000)).then((r) => {
-        if (r.exitCode !== 0) throw new Error(r.stderr || `WinRM command failed (exit ${r.exitCode})`);
-        if (opts.onOutput) opts.onOutput(r.stdout);
-        return { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr };
-      });
-    }
+    if (opts.osFamily === 'windows') return execWindowsGuest(conn, vmid, command, opts);
     const creds = resolveGuestSshCreds(conn, vmid, opts.guestHost);
     return execInGuest(creds, command, opts);
   }

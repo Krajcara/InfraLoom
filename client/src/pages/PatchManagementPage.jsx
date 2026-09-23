@@ -254,7 +254,7 @@ function OsGroup({ osKey, guests, conn, node, canRun, onCheckGuest, onCheckAll, 
                   {g.lastRun ? (
                     <button className="btn-link" onClick={() => onOpenRun(g.lastRun)}>View</button>
                   ) : null}
-                  {canRun && g.type === 'vm' && (
+                  {canRun && (g.type === 'vm' || g.type === 'qemu') && (
                     <button className="btn-link" onClick={() => setCredGuest(credGuest === g.vmid ? null : g.vmid)}>
                       {credGuest === g.vmid ? 'Cancel' : 'Credentials'}
                     </button>
@@ -282,7 +282,10 @@ function OsGroup({ osKey, guests, conn, node, canRun, onCheckGuest, onCheckAll, 
 }
 
 function GuestCredentialsForm({ connectionId, guest, onSaved }) {
-  const isWindows = (guest.os || '').toLowerCase().includes('windows');
+  const knownOs = (guest.os || '').toLowerCase();
+  const osKnown = knownOs.length > 0;
+  const [credType, setCredType] = useState(knownOs.includes('windows') ? 'winrm' : 'ssh');
+  const isWindows = credType === 'winrm';
   const [form, setForm] = useState({ host: guest.ip || '', username: '', password: '', port: isWindows ? 5985 : 22 });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -292,10 +295,11 @@ function GuestCredentialsForm({ connectionId, guest, onSaved }) {
       ? `/hypervisors/connections/${connectionId}/vms/${guest.vmid}/winrm-credentials`
       : `/hypervisors/connections/${connectionId}/vms/${guest.vmid}/ssh-credentials`;
     api.get(path).then((d) => {
-      if (d.saved) setForm((f) => ({ ...f, host: d.host || f.host, username: d.username || '', port: d.port || f.port }));
+      if (d.saved) setForm((f) => ({ ...f, host: d.host || f.host, username: d.username || '', port: d.port || (isWindows ? 5985 : 22) }));
+      else setForm((f) => ({ ...f, port: isWindows ? 5985 : 22 }));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [credType]);
 
   async function save(e) {
     e.preventDefault();
@@ -317,8 +321,20 @@ function GuestCredentialsForm({ connectionId, guest, onSaved }) {
   return (
     <div className="patch-cred-form">
       <p className="muted">
-        {isWindows ? 'WinRM' : 'SSH'} credentials for connecting directly to this guest (needed to check/apply updates on Hyper-V VMs).
+        {isWindows ? 'WinRM' : 'SSH'} credentials for connecting directly to this guest — needed for Hyper-V VMs
+        always, and for Windows VMs on Proxmox (Windows Update behaves more reliably run as a real admin account
+        than via the guest agent's SYSTEM context).
       </p>
+      {!osKnown && (
+        <div className="form-row patch-cred-type-toggle">
+          <label>
+            <input type="radio" checked={!isWindows} onChange={() => setCredType('ssh')} /> Linux (SSH)
+          </label>
+          <label>
+            <input type="radio" checked={isWindows} onChange={() => setCredType('winrm')} /> Windows (WinRM)
+          </label>
+        </div>
+      )}
       <form onSubmit={save} autoComplete="off">
         {error && <p className="error">{error}</p>}
         <div className="form-row">
