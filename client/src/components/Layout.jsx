@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import NotificationBell from './NotificationBell';
 
 // Dashboard is always visible, ungrouped. Everything else lives in a
 // collapsible group — new modules from later phases just get added to the
@@ -132,6 +133,9 @@ export default function Layout() {
       </aside>
 
       <main className="app-content">
+        <div className="app-topbar">
+          <NotificationBell />
+        </div>
         <Outlet />
       </main>
     </div>

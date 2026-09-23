@@ -65,7 +65,7 @@ router.put('/connections/:id', requireRole('superadmin', 'admin'), (req, res) =>
   const existing = getConnection(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
-  const { name, url, username, token_id, api_token, password, port, enabled, patch_ssh_username, patch_ssh_password, patch_ssh_port, patch_ssh_host } = req.body || {};
+  const { name, url, username, token_id, api_token, password, port, enabled, patch_ssh_username, patch_ssh_password, patch_ssh_port, patch_ssh_host, health_check_enabled } = req.body || {};
   const newToken = api_token && api_token !== '***' ? api_token : existing.api_token;
   const newPassword = password && password !== '***' ? password : existing.password;
   const newPatchSshPassword = patch_ssh_password && patch_ssh_password !== '***' ? patch_ssh_password : existing.patch_ssh_password;
@@ -73,7 +73,7 @@ router.put('/connections/:id', requireRole('superadmin', 'admin'), (req, res) =>
   db.prepare(
     `UPDATE hypervisor_connections SET
       name=?, url=?, username=?, token_id=?, api_token=?, password=?, port=?, enabled=?,
-      patch_ssh_username=?, patch_ssh_password=?, patch_ssh_port=?, patch_ssh_host=?, updated_at=datetime('now')
+      patch_ssh_username=?, patch_ssh_password=?, patch_ssh_port=?, patch_ssh_host=?, health_check_enabled=?, updated_at=datetime('now')
      WHERE id=?`
   ).run(
     name?.trim() || existing.name,
@@ -88,6 +88,7 @@ router.put('/connections/:id', requireRole('superadmin', 'admin'), (req, res) =>
     newPatchSshPassword,
     patch_ssh_port !== undefined ? (patch_ssh_port ? parseInt(patch_ssh_port, 10) : null) : existing.patch_ssh_port,
     patch_ssh_host !== undefined ? patch_ssh_host || null : existing.patch_ssh_host,
+    health_check_enabled !== undefined ? (health_check_enabled ? 1 : 0) : existing.health_check_enabled,
     req.params.id
   );
 
@@ -304,6 +305,26 @@ router.put('/connections/:id/nodes/:node/ssh', requireRole('superadmin', 'admin'
 // DELETE /api/hypervisors/connections/:id/nodes/:node/ssh — clear override, fall back to connection default
 router.delete('/connections/:id/nodes/:node/ssh', requireRole('superadmin', 'admin'), (req, res) => {
   db.prepare('DELETE FROM hypervisor_node_ssh WHERE connection_id = ? AND node = ?').run(req.params.id, req.params.node);
+  res.json({ ok: true });
+});
+
+// ── Background health check configuration ────────────────────────────────
+
+// GET /api/hypervisors/health-check/config
+router.get('/health-check/config', (req, res) => {
+  const cron = db.prepare("SELECT value FROM settings WHERE key = 'hypervisor_health_cron'").get()?.value || '*/5 * * * *';
+  res.json({ cron });
+});
+
+// POST /api/hypervisors/health-check/config
+router.post('/health-check/config', requireRole('superadmin', 'admin'), (req, res) => {
+  const { cron } = req.body || {};
+  if (!cron) return res.status(400).json({ error: 'cron is required' });
+  const applied = require('../services/hypervisorHealthService').reschedule(cron);
+  if (!applied) return res.status(400).json({ error: 'Invalid cron expression' });
+  db.prepare(
+    "INSERT INTO settings (key, value, updated_at) VALUES ('hypervisor_health_cron', ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
+  ).run(cron);
   res.json({ ok: true });
 });
 

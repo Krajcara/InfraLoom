@@ -13,6 +13,8 @@ const EVENT_TYPES = [
   { id: 'entra_expiring', label: 'Entra ID secret expiring/expired' },
   { id: 'network_new_device', label: 'New device on the network' },
   { id: 'network_device_offline', label: 'Known device went offline' },
+  { id: 'hypervisor_down', label: 'Hypervisor connection unreachable' },
+  { id: 'hypervisor_up', label: 'Hypervisor connection recovered' },
 ];
 
 const CHANNEL_NAMES = ['telegram', 'slack', 'discord', 'ntfy', 'pushover', 'email'];
@@ -195,7 +197,35 @@ const SENDERS = {
  * Each channel is attempted independently; one failing doesn't stop the
  * others. Never throws.
  */
+const SEVERITY_MAP = {
+  monitor_down: 'critical',
+  monitor_up: 'info',
+  hypervisor_down: 'critical',
+  hypervisor_up: 'info',
+  network_device_offline: 'warning',
+  network_new_device: 'info',
+  ssl_expiring: 'warning',
+  licence_expiring: 'warning',
+  entra_expiring: 'warning',
+};
+
+function recordInAppNotification(message, eventType) {
+  const db = require('../db/database');
+  const severity = SEVERITY_MAP[eventType] || 'info';
+  const row = db
+    .prepare('INSERT INTO app_notifications (event_type, severity, message) VALUES (?, ?, ?)')
+    .run(eventType || null, severity, message);
+  const notification = db.prepare('SELECT * FROM app_notifications WHERE id = ?').get(row.lastInsertRowid);
+  if (global.io) global.io.emit('notification:new', notification);
+  return notification;
+}
+
 async function notify(message, eventType = null) {
+  // In-app notifications are a passive record (you check the bell when
+  // you're ready), unlike a phone push — so they're recorded even during
+  // quiet hours. Only the noisy external channels below are suppressed.
+  recordInAppNotification(message, eventType);
+
   if (eventType && isQuietHours()) {
     return { skipped: 'quiet_hours' };
   }

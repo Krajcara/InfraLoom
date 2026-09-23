@@ -444,6 +444,32 @@ db.exec(`
   );
 `);
 
+// ── In-app notifications (bell icon / toast) ─────────────────────────────
+// Every notify() call (external channels or not) also lands here, so
+// alerts are visible inside the app even with no Telegram/Slack/etc
+// configured.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS app_notifications (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT,
+    severity   TEXT NOT NULL DEFAULT 'warning', -- info | warning | critical
+    message    TEXT NOT NULL,
+    is_read    INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_app_notifications_read ON app_notifications(is_read);
+  CREATE INDEX IF NOT EXISTS idx_app_notifications_created ON app_notifications(created_at);
+`);
+
+// Tracks last-known reachability per hypervisor connection so the health
+// checker only notifies on state CHANGES (up->down, down->up), not every
+// single check cycle.
+ensureColumn('hypervisor_connections', 'last_health_status', 'TEXT');
+// Per-connection opt-out — e.g. a Hyper-V test machine that's intentionally
+// powered off shouldn't keep generating "unreachable" alerts.
+ensureColumn('hypervisor_connections', 'health_check_enabled', 'INTEGER DEFAULT 1');
+db.prepare("UPDATE hypervisor_connections SET health_check_enabled = 1 WHERE health_check_enabled IS NULL").run();
+
 // Seed default settings only if they don't already exist.
 const defaultSettings = {
   app_name: 'InfraLoom',
@@ -453,6 +479,7 @@ const defaultSettings = {
   netscan_cron: '*/5 * * * *',
   netscan_subnet: '',
   netscan_last_run: '',
+  hypervisor_health_cron: '*/5 * * * *',
 };
 const insertSetting = db.prepare(
   'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING'

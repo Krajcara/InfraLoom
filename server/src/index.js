@@ -91,6 +91,7 @@ app.use('/api/myip', require('./routes/myip'));
 app.use('/api/hypervisors', require('./routes/hypervisors'));
 app.use('/api/network-scanner', require('./routes/networkScanner'));
 app.use('/api/patch-management', require('./routes/patchManagement'));
+app.use('/api/notifications', require('./routes/notifications'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
@@ -132,6 +133,7 @@ require('./services/monitorWorker').initMonitorWorker();
 cron.schedule('0 2 * * *', () => require('./services/sslChecker').checkAllSSL());
 require('./services/netspeedService').initScheduler();
 require('./services/networkScanService').initScheduler();
+require('./services/hypervisorHealthService').initScheduler();
 setTimeout(() => require('./services/sslChecker').checkAllSSL(false), 5000);
 
 process.on('SIGTERM', () => {

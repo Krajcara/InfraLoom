@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power, ChevronRight, TerminalSquare, MonitorSmartphone } from 'lucide-react';
+import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power, ChevronRight, TerminalSquare, MonitorSmartphone, Bell, BellOff } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
-const emptyForm = { type: 'proxmox', name: '', url: '', username: 'root@pam', token_id: '', api_token: '', password: '', port: '', patch_ssh_username: '', patch_ssh_password: '', patch_ssh_port: '', patch_ssh_host: '' };
+const emptyForm = { type: 'proxmox', name: '', url: '', username: 'root@pam', token_id: '', api_token: '', password: '', port: '', patch_ssh_username: '', patch_ssh_password: '', patch_ssh_port: '', patch_ssh_host: '', health_check_enabled: true };
 
 const HYPERVISOR_TYPE_LABELS = { proxmox: 'Proxmox VE', hyperv: 'Hyper-V', esxi: 'VMware ESXi' };
 
@@ -16,6 +16,7 @@ export default function HypervisorsPage() {
   const [form, setForm] = useState(null);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
+  const [showHealthConfig, setShowHealthConfig] = useState(false);
 
   async function load() {
     try {
@@ -41,7 +42,7 @@ export default function HypervisorsPage() {
   }
 
   function openEdit(c) {
-    setForm({ id: c.id, type: c.type, name: c.name, url: c.url, username: c.username, token_id: c.token_id || '', api_token: '', password: '', port: c.port || '', patch_ssh_username: c.patch_ssh_username || '', patch_ssh_password: '', patch_ssh_port: c.patch_ssh_port || '', patch_ssh_host: c.patch_ssh_host || '' });
+    setForm({ id: c.id, type: c.type, name: c.name, url: c.url, username: c.username, token_id: c.token_id || '', api_token: '', password: '', port: c.port || '', patch_ssh_username: c.patch_ssh_username || '', patch_ssh_password: '', patch_ssh_port: c.patch_ssh_port || '', patch_ssh_host: c.patch_ssh_host || '', health_check_enabled: c.health_check_enabled !== 0 });
   }
 
   async function save(e) {
@@ -81,8 +82,11 @@ export default function HypervisorsPage() {
       {canEdit && !form && (
         <div className="filters">
           <button onClick={openCreate}><Plus size={14} /> New connection</button>
+          <button onClick={() => setShowHealthConfig(!showHealthConfig)}>Health check settings</button>
         </div>
       )}
+
+      {showHealthConfig && canEdit && <HealthCheckConfigSection onSaved={() => setShowHealthConfig(false)} />}
 
       {form && (
         <section className="card">
@@ -212,6 +216,10 @@ export default function HypervisorsPage() {
                 </div>
               </>
             )}
+            <label className="checkbox-label">
+              <input type="checkbox" checked={form.health_check_enabled} onChange={(e) => setForm({ ...form, health_check_enabled: e.target.checked })} />
+              Background health check enabled (alerts if this connection becomes unreachable)
+            </label>
             <div className="form-row">
               <button type="submit">Save</button>
               <button type="button" onClick={() => setForm(null)}>Cancel</button>
@@ -225,7 +233,17 @@ export default function HypervisorsPage() {
       )}
 
       {connections.map((c) => (
-        <ConnectionBrowser key={c.id} conn={c} canEdit={canEdit} onEdit={() => openEdit(c)} onDelete={() => remove(c)} />
+        <ConnectionBrowser
+          key={c.id}
+          conn={c}
+          canEdit={canEdit}
+          onEdit={() => openEdit(c)}
+          onDelete={() => remove(c)}
+          onToggleHealthCheck={async () => {
+            await api.put(`/hypervisors/connections/${c.id}`, { health_check_enabled: c.health_check_enabled === 0 });
+            load();
+          }}
+        />
       ))}
     </div>
   );
@@ -335,7 +353,56 @@ function downloadRdp(host, username) {
   URL.revokeObjectURL(url);
 }
 
-function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
+function HealthCheckConfigSection({ onSaved }) {
+  const [cron, setCron] = useState('');
+  const [minutes, setMinutes] = useState(5);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api.get('/hypervisors/health-check/config').then((d) => {
+      setCron(d.cron);
+      const m = d.cron.match(/^\*\/(\d+) \* \* \* \*$/);
+      if (m) setMinutes(parseInt(m[1], 10));
+    });
+  }, []);
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const newCron = `*/${Math.max(parseInt(minutes, 10) || 5, 1)} * * * *`;
+      await api.post('/hypervisors/health-check/config', { cron: newCron });
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="card">
+      <h2>Background health check</h2>
+      <p className="muted">
+        Periodically checks that each hypervisor connection is reachable and alerts (in-app + your configured
+        notification channels) if one goes down or comes back. Use the bell/snooze icon on a connection to skip
+        checking it (e.g. a test machine you intentionally turned off).
+      </p>
+      <form onSubmit={save} autoComplete="off">
+        {error && <p className="error">{error}</p>}
+        <label>
+          Check every (minutes)
+          <input type="number" min="1" value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+        </label>
+        <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+      </form>
+    </section>
+  );
+}
+
+function ConnectionBrowser({ conn, canEdit, onEdit, onDelete, onToggleHealthCheck }) {
   const navigate = useNavigate();
   const [nodes, setNodes] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -405,6 +472,15 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete }) {
           <p className="muted mono">{conn.url}</p>
         </div>
         <div className="form-row">
+          {canEdit && (
+            <button
+              className="icon-btn"
+              onClick={onToggleHealthCheck}
+              title={conn.health_check_enabled === 0 ? 'Health check disabled — click to re-enable' : 'Health check enabled — click to snooze'}
+            >
+              {conn.health_check_enabled === 0 ? <BellOff size={16} /> : <Bell size={16} />}
+            </button>
+          )}
           <button className="icon-btn" onClick={load} disabled={loading} title="Refresh">
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
