@@ -28,19 +28,21 @@ async function checkOne(conn) {
     reachable = false;
   }
 
+  // wasReachable is true both when the last check was 'up' AND when this
+  // connection has never been checked before (last_health_status is null) —
+  // that second case is what makes a first-ever "down" result still notify
+  // (e.g. this connection existed before health checking was added), while
+  // a first-ever "up" result stays silent (nothing to recover from yet).
+  // Once set, last_health_status is never null again, so this only affects
+  // the very first check of a connection's lifetime.
   const wasReachable = conn.last_health_status !== 'down';
-  const isFirstCheck = conn.last_health_status === null;
 
   db.prepare('UPDATE hypervisor_connections SET last_health_status = ? WHERE id = ?').run(reachable ? 'up' : 'down', conn.id);
 
-  // Only notify on a genuine transition — never on the very first check
-  // (so adding a connection doesn't immediately fire an "up" notification)
-  // and never repeatedly while it stays in the same state.
-  if (isFirstCheck) return;
-  if (reachable && !wasReachable) {
-    await notify(`Hypervisor connection "${conn.name}" is reachable again.`, 'hypervisor_up');
-  } else if (!reachable && wasReachable) {
+  if (!reachable && wasReachable) {
     await notify(`Hypervisor connection "${conn.name}" is unreachable.`, 'hypervisor_down');
+  } else if (reachable && !wasReachable) {
+    await notify(`Hypervisor connection "${conn.name}" is reachable again.`, 'hypervisor_up');
   }
 }
 
