@@ -9,6 +9,7 @@ const { executeScript: winrmExecuteScript } = require('../lib/winrmClient');
 const WINDOWS_QGA_ID = 'mswindows';
 const DEBIAN_LIKE_IDS = new Set(['ubuntu', 'debian']);
 const RHEL_LIKE_IDS = new Set(['centos', 'fedora', 'rhel', 'rocky', 'almalinux', 'ol']);
+const ALPINE_LIKE_IDS = new Set(['alpine']);
 
 /** Per-node override first (a cluster's nodes can have different root
  * passwords), falling back to the connection's own patch_ssh_* fields. */
@@ -75,6 +76,7 @@ async function detectOsFamily(conn, guestType, node, vmid, hintOs) {
     if (osInfo?.id === WINDOWS_QGA_ID) return 'windows';
     if (osInfo?.id && DEBIAN_LIKE_IDS.has(osInfo.id)) return 'debian';
     if (osInfo?.id && RHEL_LIKE_IDS.has(osInfo.id)) return 'rhel';
+    if (osInfo?.id && ALPINE_LIKE_IDS.has(osInfo.id)) return 'alpine';
     // Unrecognized/older guest agent — fall through to the shell probe below.
   }
 
@@ -86,17 +88,18 @@ async function detectOsFamily(conn, guestType, node, vmid, hintOs) {
     if (os.includes('windows')) return 'windows';
     if (os.includes('ubuntu') || os.includes('debian')) return 'debian';
     if (os.includes('centos') || os.includes('fedora') || os.includes('red hat') || os.includes('rhel') || os.includes('rocky') || os.includes('alma')) return 'rhel';
+    if (os.includes('alpine')) return 'alpine';
   }
 
   const r = await execFor(
     conn, guestType, node, vmid,
-    "if [ -f /etc/debian_version ]; then echo debian; elif [ -f /etc/redhat-release ]; then echo rhel; else echo unknown; fi",
+    "if [ -f /etc/debian_version ]; then echo debian; elif [ -f /etc/redhat-release ]; then echo rhel; elif [ -f /etc/alpine-release ]; then echo alpine; else echo unknown; fi",
     { timeoutMs: 20000 }
   );
   const family = r.stdout.trim();
-  if (!['debian', 'rhel'].includes(family)) {
+  if (!['debian', 'rhel', 'alpine'].includes(family)) {
     const detail = [r.stderr?.trim(), r.stdout?.trim()].filter(Boolean).join(' | ') || '(no output)';
-    const err = new Error(`Could not detect a supported OS (Debian/Ubuntu, RHEL/Fedora, or Windows) inside the guest — raw output: ${detail.slice(0, 300)}`);
+    const err = new Error(`Could not detect a supported OS (Debian/Ubuntu, RHEL/Fedora, Alpine, or Windows) inside the guest — raw output: ${detail.slice(0, 300)}`);
     err.osFamily = 'unknown';
     throw err;
   }
@@ -106,6 +109,7 @@ async function detectOsFamily(conn, guestType, node, vmid, hintOs) {
 const DRY_RUN_COMMANDS = {
   debian: 'export DEBIAN_FRONTEND=noninteractive; apt-get update -qq 2>&1; apt-get -s upgrade 2>&1',
   rhel: '(command -v dnf >/dev/null && dnf check-update || yum check-update) 2>&1; true',
+  alpine: 'apk update -q 2>&1; apk upgrade --simulate 2>&1',
   windows: `
 $ErrorActionPreference = 'SilentlyContinue'
 $session = New-Object -ComObject Microsoft.Update.Session
@@ -121,6 +125,7 @@ foreach ($u in $result.Updates) {
 const APPLY_COMMANDS = {
   debian: 'export DEBIAN_FRONTEND=noninteractive; apt-get update -qq 2>&1; apt-get -y upgrade 2>&1; echo "___EXIT_$?___"',
   rhel: '(command -v dnf >/dev/null && dnf -y upgrade || yum -y upgrade) 2>&1; echo "___EXIT_$?___"',
+  alpine: 'apk update -q 2>&1; apk upgrade 2>&1; echo "___EXIT_$?___"',
   windows: `
 $ErrorActionPreference = 'Continue'
 $session = New-Object -ComObject Microsoft.Update.Session
@@ -183,6 +188,17 @@ function parseWindowsDryRun(output) {
   return packages;
 }
 
+function parseAlpineDryRun(output) {
+  // apk upgrade --simulate prints lines like: (1/3) Upgrading pkgname (oldver -> newver)
+  const packages = [];
+  const re = /^(?:\(\d+\/\d+\)\s+)?Upgrading\s+(\S+)\s+\(([^\s]+)\s*->\s*([^)\s]+)\)/gm;
+  let m;
+  while ((m = re.exec(output))) {
+    packages.push({ name: m[1], current_version: m[2], new_version: m[3] });
+  }
+  return packages;
+}
+
 /** Runs the dry-run simulation and stores a patch_runs row in
  * 'awaiting_approval' with the package snapshot. Never mutates the guest. */
 async function runDryRun({ connectionId, conn, node, guestType, vmid, vmName, guestHost, hintOs, triggeredBy }) {
@@ -191,7 +207,8 @@ async function runDryRun({ connectionId, conn, node, guestType, vmid, vmName, gu
   const cmd = DRY_RUN_COMMANDS[osFamily];
   const r = await execFor(conn, guestType, node, vmid, cmd, { timeoutMs: osFamily === 'windows' ? 240000 : 120000, osFamily, guestHost });
 
-  const packages = osFamily === 'debian' ? parseDebianDryRun(r.stdout) : osFamily === 'rhel' ? parseRhelDryRun(r.stdout) : parseWindowsDryRun(r.stdout);
+  const parsers = { debian: parseDebianDryRun, rhel: parseRhelDryRun, alpine: parseAlpineDryRun, windows: parseWindowsDryRun };
+  const packages = (parsers[osFamily] || parseWindowsDryRun)(r.stdout);
   const status = packages.length === 0 ? 'up_to_date' : 'awaiting_approval';
 
   const row = db
