@@ -24,16 +24,24 @@ router.get('/overview', async (req, res) => {
 
   const results = await Promise.allSettled(
     connections.map(async (conn) => {
-      if (conn.type !== 'proxmox') {
-        // Structure is ready for these, but actual patch checking for
-        // Hyper-V/ESXi guests isn't implemented yet.
-        const client = conn.type === 'hyperv' ? hyperv : conn.type === 'esxi' ? esxi : null;
-        if (!client) throw new Error(`Unsupported hypervisor type: ${conn.type}`);
-        const nodes = await client.fetchNodesSummary(conn);
+      if (conn.type === 'esxi') {
+        // Structure is ready, but actual patch checking for ESXi isn't implemented yet.
+        const nodes = await esxi.fetchNodesSummary(conn);
         return {
           connectionId: conn.id, connectionName: conn.name, connectionType: conn.type, supported: false,
           nodes: nodes.map((n) => ({ node: n.node, online: n.status === 'online', guestCount: n.vm_count || 0, guests: [] })),
         };
+      }
+
+      if (conn.type === 'hyperv') {
+        const summary = await hyperv.fetchNodesSummary(conn);
+        const node = summary[0];
+        if (!node || node.status !== 'online') {
+          return { connectionId: conn.id, connectionName: conn.name, connectionType: conn.type, supported: true, nodes: [{ node: 'host', online: false, guests: [] }] };
+        }
+        const detail = await hyperv.fetchNodeDetail(conn);
+        const guests = detail.vms.filter((vm) => vm.status === 'running').map((vm) => ({ vmid: vm.vmid, name: vm.name, type: 'vm', ip: vm.ip, os: vm.os }));
+        return { connectionId: conn.id, connectionName: conn.name, connectionType: conn.type, supported: true, nodes: [{ node: 'host', online: true, guests }] };
       }
 
       const nodes = await proxmox.fetchNodesSummary(conn);
@@ -80,19 +88,28 @@ router.get('/overview', async (req, res) => {
 router.get('/connections/:id/guests', async (req, res) => {
   const conn = getConnection(req.params.id);
   if (!conn) return res.status(404).json({ error: 'Not found' });
-  if (conn.type !== 'proxmox') return res.status(400).json({ error: 'Patch Management currently supports Proxmox connections only' });
+  if (!['proxmox', 'hyperv'].includes(conn.type)) return res.status(400).json({ error: 'Patch Management supports Proxmox and Hyper-V connections' });
 
   try {
-    const nodes = await proxmox.fetchNodesSummary(conn);
-    const guests = [];
-    for (const node of nodes) {
-      if (node.status !== 'online') continue;
-      const detail = await proxmox.fetchNodeDetail(conn, node.node);
-      for (const vm of [...detail.vms, ...detail.lxc]) {
-        if (vm.status !== 'running') continue;
-        guests.push({ node: node.node, vmid: vm.vmid, name: vm.name, type: vm.type, ip: vm.ip });
+    if (conn.type === 'proxmox') {
+      const nodes = await proxmox.fetchNodesSummary(conn);
+      const guests = [];
+      for (const node of nodes) {
+        if (node.status !== 'online') continue;
+        const detail = await proxmox.fetchNodeDetail(conn, node.node);
+        for (const vm of [...detail.vms, ...detail.lxc]) {
+          if (vm.status !== 'running') continue;
+          guests.push({ node: node.node, vmid: vm.vmid, name: vm.name, type: vm.type, ip: vm.ip });
+        }
       }
+      return res.json({ guests });
     }
+
+    // Hyper-V — always one 'host' node, guests are always type 'vm'
+    const detail = await hyperv.fetchNodeDetail(conn);
+    const guests = detail.vms
+      .filter((vm) => vm.status === 'running')
+      .map((vm) => ({ node: 'host', vmid: vm.vmid, name: vm.name, type: 'vm', ip: vm.ip, os: vm.os }));
     res.json({ guests });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -122,7 +139,8 @@ router.post('/bulk-dry-run', requireRole('superadmin', 'admin', 'operator'), asy
       try {
         if (!conn) throw new Error('Connection not found');
         const run = await patchService.runDryRun({
-          connectionId: conn.id, conn, node: g.node, guestType: g.type, vmid: g.vmid, vmName: g.name, triggeredBy: req.user.username,
+          connectionId: conn.id, conn, node: g.node, guestType: g.type, vmid: g.vmid, vmName: g.name,
+          guestHost: g.ip, hintOs: g.os, triggeredBy: req.user.username,
         });
         completed++;
         if (io) io.emit('patch:bulk-progress', { batchId, completed, total: guests.length, guest: g, run: { ...run, packages_affected: JSON.parse(run.packages_affected || '[]') } });
@@ -142,14 +160,15 @@ router.post('/bulk-dry-run', requireRole('superadmin', 'admin', 'operator'), asy
 // POST /api/patch-management/connections/:id/:node/:type/:vmid/dry-run
 router.post('/connections/:id/:node/:type/:vmid/dry-run', requireRole('superadmin', 'admin', 'operator'), async (req, res) => {
   const { node, type, vmid } = req.params;
-  if (!['qemu', 'lxc'].includes(type)) return res.status(400).json({ error: 'Invalid guest type' });
+  if (!['qemu', 'lxc', 'vm'].includes(type)) return res.status(400).json({ error: 'Invalid guest type' });
 
   const conn = getConnection(req.params.id);
   if (!conn) return res.status(404).json({ error: 'Not found' });
 
   try {
     const run = await patchService.runDryRun({
-      connectionId: conn.id, conn, node, guestType: type, vmid, vmName: req.body?.name, triggeredBy: req.user.username,
+      connectionId: conn.id, conn, node, guestType: type, vmid, vmName: req.body?.name,
+      guestHost: req.body?.ip, hintOs: req.body?.os, triggeredBy: req.user.username,
     });
     writeAuditLog({
       user_id: req.user.id, username: req.user.username, action: 'patch.dry_run',

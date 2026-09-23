@@ -239,6 +239,43 @@ router.post('/connections/:id/vms/:vmid/ssh-credentials/reveal', requireRole('su
   res.json({ username: row.username, password: row.password, private_key: row.private_key, passphrase: row.passphrase, port: row.port });
 });
 
+// ── Saved WinRM credentials (Windows guest patching, e.g. Hyper-V VMs) ──
+
+// GET /api/hypervisors/connections/:id/vms/:vmid/winrm-credentials
+router.get('/connections/:id/vms/:vmid/winrm-credentials', requireRole('superadmin', 'admin'), (req, res) => {
+  const row = db.prepare('SELECT * FROM guest_winrm_credentials WHERE connection_id = ? AND vmid = ?').get(req.params.id, req.params.vmid);
+  if (!row) return res.json({ saved: false });
+  res.json({ saved: true, host: row.host, port: row.port, username: row.username, hasPassword: !!row.password });
+});
+
+// PUT /api/hypervisors/connections/:id/vms/:vmid/winrm-credentials
+router.put('/connections/:id/vms/:vmid/winrm-credentials', requireRole('superadmin', 'admin'), (req, res) => {
+  const { host, port, username, password } = req.body || {};
+  if (!username?.trim()) return res.status(400).json({ error: 'username is required' });
+
+  const existing = db.prepare('SELECT * FROM guest_winrm_credentials WHERE connection_id = ? AND vmid = ?').get(req.params.id, req.params.vmid);
+  const newPassword = password && password !== '***' ? password : existing?.password || null;
+
+  db.prepare(
+    `INSERT INTO guest_winrm_credentials (connection_id, vmid, host, port, username, password, updated_at)
+     VALUES (?,?,?,?,?,?,datetime('now'))
+     ON CONFLICT(connection_id, vmid) DO UPDATE SET
+       host=excluded.host, port=excluded.port, username=excluded.username, password=excluded.password, updated_at=excluded.updated_at`
+  ).run(req.params.id, req.params.vmid, host || null, port ? parseInt(port, 10) : 5985, username.trim(), newPassword);
+
+  writeAuditLog({
+    user_id: req.user.id, username: req.user.username, action: 'hypervisor.winrm_credentials_save',
+    module: 'hypervisors', details: { vmid: req.params.vmid }, ip_address: req.ip,
+  });
+  res.json({ ok: true });
+});
+
+// DELETE /api/hypervisors/connections/:id/vms/:vmid/winrm-credentials
+router.delete('/connections/:id/vms/:vmid/winrm-credentials', requireRole('superadmin', 'admin'), (req, res) => {
+  db.prepare('DELETE FROM guest_winrm_credentials WHERE connection_id = ? AND vmid = ?').run(req.params.id, req.params.vmid);
+  res.json({ ok: true });
+});
+
 
 // POST /api/hypervisors/connections/:id/:node/:type/:vmid/:action
 router.post('/connections/:id/:node/:type/:vmid/:action', requireRole('superadmin', 'admin'), async (req, res) => {

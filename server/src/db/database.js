@@ -349,6 +349,26 @@ db.exec(`
   );
 `);
 
+// Saved WinRM credentials for patching a Windows guest directly (Hyper-V
+// VMs need this — our host-level WinRM connection manages the VM itself,
+// but patching needs a SEPARATE connection into the guest OS). vmid is TEXT
+// here since Hyper-V identifies guests by name, not a numeric id.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS guest_winrm_credentials (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id INTEGER NOT NULL,
+    vmid          TEXT NOT NULL,
+    host          TEXT,
+    port          INTEGER DEFAULT 5985,
+    username      TEXT,
+    password      TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT DEFAULT (datetime('now')),
+    UNIQUE(connection_id, vmid),
+    FOREIGN KEY (connection_id) REFERENCES hypervisor_connections(id) ON DELETE CASCADE
+  );
+`);
+
 // ── Phase 12 — Infrastructure: Network Scanner ──────────────────────────
 // Pi.Alert-style persistent MAC-based inventory. `network_devices` is the
 // durable inventory (one row per MAC, survives across scan cycles);
@@ -425,6 +445,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_patch_runs_status ON patch_runs(status);
   CREATE INDEX IF NOT EXISTS idx_patch_runs_created ON patch_runs(created_at);
 `);
+// The guest's IP at dry-run time — needed to reach a Hyper-V guest directly
+// (Proxmox VM/LXC exec doesn't need this, it goes through the host).
+ensureColumn('patch_runs', 'guest_host', 'TEXT');
 
 // Per-node SSH override for LXC patch management — a Proxmox cluster can
 // have multiple nodes with different root passwords, so one connection-level

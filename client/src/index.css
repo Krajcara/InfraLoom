@@ -1967,3 +1967,10 @@ textarea {
 .toast-close {
   flex-shrink: 0;
 }
+
+.patch-cred-form {
+  padding: 10px 4px;
+  background: #14161b;
+  border-radius: 6px;
+  margin: 4px 0;
+}

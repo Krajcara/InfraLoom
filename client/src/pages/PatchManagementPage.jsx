@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, Fragment } from 'react';
 import { ChevronRight, RefreshCw, Play, Check, X, Server } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -47,7 +47,7 @@ export default function PatchManagementPage() {
   async function checkGuest(connectionId, node, guest) {
     setError(null);
     try {
-      const d = await api.post(`/patch-management/connections/${connectionId}/${node}/${guest.type}/${guest.vmid}/dry-run`, { name: guest.name });
+      const d = await api.post(`/patch-management/connections/${connectionId}/${node}/${guest.type}/${guest.vmid}/dry-run`, { name: guest.name, ip: guest.ip, os: guest.os });
       setActiveRun(d.run);
       load();
     } catch (err) {
@@ -188,7 +188,7 @@ function NodeSection({ conn, node, canRun, onCheckGuest, onCheckAll, onOpenRun }
   }
   const groupKeys = Object.keys(groups).sort((a, b) => (a === 'unchecked' ? 1 : b === 'unchecked' ? -1 : a.localeCompare(b)));
 
-  const allGuestsForBulk = node.guests.map((g) => ({ connectionId: conn.connectionId, node: node.node, type: g.type, vmid: g.vmid, name: g.name }));
+  const allGuestsForBulk = node.guests.map((g) => ({ connectionId: conn.connectionId, node: node.node, type: g.type, vmid: g.vmid, name: g.name, ip: g.ip, os: g.os }));
 
   return (
     <div className="hv-node-block">
@@ -229,7 +229,8 @@ function NodeSection({ conn, node, canRun, onCheckGuest, onCheckAll, onOpenRun }
 
 function OsGroup({ osKey, guests, conn, node, canRun, onCheckGuest, onCheckAll, onOpenRun }) {
   const label = osKey === 'unchecked' ? 'Not yet checked' : OS_LABELS[osKey] || osKey;
-  const guestList = guests.map((g) => ({ connectionId: conn.connectionId, node: node.node, type: g.type, vmid: g.vmid, name: g.name }));
+  const guestList = guests.map((g) => ({ connectionId: conn.connectionId, node: node.node, type: g.type, vmid: g.vmid, name: g.name, ip: g.ip, os: g.os }));
+  const [credGuest, setCredGuest] = useState(null);
 
   return (
     <div className="patch-os-group">
@@ -242,26 +243,104 @@ function OsGroup({ osKey, guests, conn, node, canRun, onCheckGuest, onCheckAll, 
       <table className="table">
         <tbody>
           {guests.map((g) => (
-            <tr key={`${g.type}-${g.vmid}`}>
-              <td>
-                <span className={`hv-type-badge hv-type-${g.type}`}>{g.type === 'lxc' ? 'LXC' : 'VM'}</span>{' '}
-                {g.name} <span className="muted">#{g.vmid}</span>
-              </td>
-              <td><GuestStatusBadge lastRun={g.lastRun} /></td>
-              <td className="actions">
-                {g.lastRun ? (
-                  <button className="btn-link" onClick={() => onOpenRun(g.lastRun)}>View</button>
-                ) : null}
-                {canRun && (
-                  <button className="icon-btn" title="Check for updates" onClick={() => onCheckGuest(conn.connectionId, node.node, g)}>
-                    <Play size={13} />
-                  </button>
-                )}
-              </td>
-            </tr>
+            <Fragment key={`${g.type}-${g.vmid}`}>
+              <tr>
+                <td>
+                  <span className={`hv-type-badge hv-type-${g.type}`}>{g.type === 'lxc' ? 'LXC' : 'VM'}</span>{' '}
+                  {g.name} <span className="muted">#{g.vmid}</span>
+                </td>
+                <td><GuestStatusBadge lastRun={g.lastRun} /></td>
+                <td className="actions">
+                  {g.lastRun ? (
+                    <button className="btn-link" onClick={() => onOpenRun(g.lastRun)}>View</button>
+                  ) : null}
+                  {canRun && g.type === 'vm' && (
+                    <button className="btn-link" onClick={() => setCredGuest(credGuest === g.vmid ? null : g.vmid)}>
+                      {credGuest === g.vmid ? 'Cancel' : 'Credentials'}
+                    </button>
+                  )}
+                  {canRun && (
+                    <button className="icon-btn" title="Check for updates" onClick={() => onCheckGuest(conn.connectionId, node.node, g)}>
+                      <Play size={13} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+              {credGuest === g.vmid && (
+                <tr>
+                  <td colSpan={3}>
+                    <GuestCredentialsForm connectionId={conn.connectionId} guest={g} onSaved={() => setCredGuest(null)} />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function GuestCredentialsForm({ connectionId, guest, onSaved }) {
+  const isWindows = (guest.os || '').toLowerCase().includes('windows');
+  const [form, setForm] = useState({ host: guest.ip || '', username: '', password: '', port: isWindows ? 5985 : 22 });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const path = isWindows
+      ? `/hypervisors/connections/${connectionId}/vms/${guest.vmid}/winrm-credentials`
+      : `/hypervisors/connections/${connectionId}/vms/${guest.vmid}/ssh-credentials`;
+    api.get(path).then((d) => {
+      if (d.saved) setForm((f) => ({ ...f, host: d.host || f.host, username: d.username || '', port: d.port || f.port }));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const path = isWindows
+        ? `/hypervisors/connections/${connectionId}/vms/${guest.vmid}/winrm-credentials`
+        : `/hypervisors/connections/${connectionId}/vms/${guest.vmid}/ssh-credentials`;
+      await api.put(path, form);
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="patch-cred-form">
+      <p className="muted">
+        {isWindows ? 'WinRM' : 'SSH'} credentials for connecting directly to this guest (needed to check/apply updates on Hyper-V VMs).
+      </p>
+      <form onSubmit={save} autoComplete="off">
+        {error && <p className="error">{error}</p>}
+        <div className="form-row">
+          <label>
+            {isWindows ? 'WinRM host' : 'SSH host'}
+            <input value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} placeholder={guest.ip || 'Guest IP'} />
+          </label>
+          <label>
+            Username
+            <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} autoComplete="off" name={`guest_cred_user_${guest.vmid}`} />
+          </label>
+          <label>
+            Password
+            <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="new-password" name={`guest_cred_pass_${guest.vmid}`} placeholder="unchanged" />
+          </label>
+          <label>
+            Port
+            <input value={form.port} onChange={(e) => setForm({ ...form, port: e.target.value })} />
+          </label>
+          <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+        </div>
+      </form>
     </div>
   );
 }

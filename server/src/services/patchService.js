@@ -3,6 +3,8 @@
 const db = require('../db/database');
 const { execInVM, getOsInfo } = require('../lib/qemuExec');
 const { execInLXC } = require('../lib/pctExec');
+const { execInGuest } = require('../lib/guestSshExec');
+const { executeScript: winrmExecuteScript } = require('../lib/winrmClient');
 
 const WINDOWS_QGA_ID = 'mswindows';
 const DEBIAN_LIKE_IDS = new Set(['ubuntu', 'debian']);
@@ -24,15 +26,47 @@ function resolveSshCreds(conn, node) {
   };
 }
 
+/** Saved SSH credentials for a Linux guest VM (reuses the same table the
+ * SSH Terminal feature uses — one saved credential per (connection, vmid)
+ * works for both). */
+function resolveGuestSshCreds(conn, vmid, guestHost) {
+  const row = db.prepare('SELECT * FROM ssh_credentials WHERE connection_id = ? AND vmid = ?').get(conn.id, vmid);
+  return { host: guestHost, port: row?.port || 22, username: row?.username, password: row?.password };
+}
+
+/** Saved WinRM credentials for a Windows guest VM — a separate connection
+ * into the guest OS itself, distinct from the host-level WinRM connection
+ * used to manage the VM (Start-VM etc.). */
+function resolveGuestWinrmCreds(conn, vmid, guestHost) {
+  const row = db.prepare('SELECT * FROM guest_winrm_credentials WHERE connection_id = ? AND vmid = ?').get(conn.id, vmid);
+  return { url: row?.host || guestHost, port: row?.port || 5985, username: row?.username, password: row?.password };
+}
+
 function execFor(conn, guestType, node, vmid, command, opts = {}) {
   if (guestType === 'qemu') {
     return execInVM(conn, node, vmid, command, { ...opts, osType: opts.osFamily === 'windows' ? 'windows' : 'linux' });
   }
   if (guestType === 'lxc') return execInLXC(resolveSshCreds(conn, node), vmid, command, opts);
+  if (guestType === 'vm') {
+    // Hyper-V's generic guest type — command has to reach the GUEST OS, not
+    // the host, so this needs its own per-VM credentials rather than the
+    // host-level WinRM connection used elsewhere for this same connection.
+    if (opts.osFamily === 'windows') {
+      const creds = resolveGuestWinrmCreds(conn, vmid, opts.guestHost);
+      if (!creds.username || !creds.password) throw new Error('No saved WinRM credentials for this guest');
+      return winrmExecuteScript(creds, command, Math.round((opts.timeoutMs || 60000) / 1000)).then((r) => {
+        if (r.exitCode !== 0) throw new Error(r.stderr || `WinRM command failed (exit ${r.exitCode})`);
+        if (opts.onOutput) opts.onOutput(r.stdout);
+        return { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr };
+      });
+    }
+    const creds = resolveGuestSshCreds(conn, vmid, opts.guestHost);
+    return execInGuest(creds, command, opts);
+  }
   throw new Error(`Unsupported guest type: ${guestType}`);
 }
 
-async function detectOsFamily(conn, guestType, node, vmid) {
+async function detectOsFamily(conn, guestType, node, vmid, hintOs) {
   if (guestType === 'qemu') {
     // The dedicated get-osinfo guest-agent call is faster and more reliable
     // than probing with a shell script — and it's the only way to even ask
@@ -42,6 +76,16 @@ async function detectOsFamily(conn, guestType, node, vmid) {
     if (osInfo?.id && DEBIAN_LIKE_IDS.has(osInfo.id)) return 'debian';
     if (osInfo?.id && RHEL_LIKE_IDS.has(osInfo.id)) return 'rhel';
     // Unrecognized/older guest agent — fall through to the shell probe below.
+  }
+
+  if (guestType === 'vm' && hintOs) {
+    // Hyper-V VMs: classify from the OS name already reported via KVP
+    // (see hypervClient.js) rather than exec'ing a probe — we may not even
+    // have credentials for this guest yet at this point.
+    const os = hintOs.toLowerCase();
+    if (os.includes('windows')) return 'windows';
+    if (os.includes('ubuntu') || os.includes('debian')) return 'debian';
+    if (os.includes('centos') || os.includes('fedora') || os.includes('red hat') || os.includes('rhel') || os.includes('rocky') || os.includes('alma')) return 'rhel';
   }
 
   const r = await execFor(
@@ -141,21 +185,21 @@ function parseWindowsDryRun(output) {
 
 /** Runs the dry-run simulation and stores a patch_runs row in
  * 'awaiting_approval' with the package snapshot. Never mutates the guest. */
-async function runDryRun({ connectionId, conn, node, guestType, vmid, vmName, triggeredBy }) {
-  const osFamily = await detectOsFamily(conn, guestType, node, vmid);
+async function runDryRun({ connectionId, conn, node, guestType, vmid, vmName, guestHost, hintOs, triggeredBy }) {
+  const osFamily = await detectOsFamily(conn, guestType, node, vmid, hintOs);
 
   const cmd = DRY_RUN_COMMANDS[osFamily];
-  const r = await execFor(conn, guestType, node, vmid, cmd, { timeoutMs: osFamily === 'windows' ? 240000 : 120000, osFamily });
+  const r = await execFor(conn, guestType, node, vmid, cmd, { timeoutMs: osFamily === 'windows' ? 240000 : 120000, osFamily, guestHost });
 
   const packages = osFamily === 'debian' ? parseDebianDryRun(r.stdout) : osFamily === 'rhel' ? parseRhelDryRun(r.stdout) : parseWindowsDryRun(r.stdout);
   const status = packages.length === 0 ? 'up_to_date' : 'awaiting_approval';
 
   const row = db
     .prepare(
-      `INSERT INTO patch_runs (connection_id, node, guest_type, vmid, vm_name, os_family, status, packages_affected, dry_run_output, triggered_by, completed_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,${status === 'up_to_date' ? "datetime('now')" : 'NULL'})`
+      `INSERT INTO patch_runs (connection_id, node, guest_type, vmid, vm_name, guest_host, os_family, status, packages_affected, dry_run_output, triggered_by, completed_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,${status === 'up_to_date' ? "datetime('now')" : 'NULL'})`
     )
-    .run(connectionId, node, guestType, String(vmid), vmName || null, osFamily, status, JSON.stringify(packages), r.stdout.slice(-20000), triggeredBy);
+    .run(connectionId, node, guestType, String(vmid), vmName || null, guestHost || null, osFamily, status, JSON.stringify(packages), r.stdout.slice(-20000), triggeredBy);
 
   return db.prepare('SELECT * FROM patch_runs WHERE id = ?').get(row.lastInsertRowid);
 }
@@ -186,7 +230,7 @@ async function applyPatches(runId, approvedBy) {
   try {
     const cmd = APPLY_COMMANDS[run.os_family];
     if (!cmd) throw new Error(`No apply command for OS family: ${run.os_family}`);
-    const result = await execFor(conn, run.guest_type, run.node, run.vmid, cmd, { timeoutMs: run.os_family === 'windows' ? 3600000 : 1800000, onOutput, osFamily: run.os_family });
+    const result = await execFor(conn, run.guest_type, run.node, run.vmid, cmd, { timeoutMs: run.os_family === 'windows' ? 3600000 : 1800000, onOutput, osFamily: run.os_family, guestHost: run.guest_host });
 
     const exitMatch = result.stdout.match(/___EXIT_(\d+)___/);
     const exitCode = exitMatch ? parseInt(exitMatch[1], 10) : result.exitCode;
