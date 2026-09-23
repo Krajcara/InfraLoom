@@ -1,141 +1,283 @@
 import { useEffect, useRef, useState } from 'react';
-import { RefreshCw, Play, Check, X, Clock } from 'lucide-react';
+import { ChevronRight, RefreshCw, Play, Check, X, Server } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
+
+const HYPERVISOR_TYPE_LABELS = { proxmox: 'Proxmox VE', hyperv: 'Hyper-V', esxi: 'VMware ESXi' };
+const OS_LABELS = { debian: 'Debian / Ubuntu', rhel: 'RHEL / Fedora' };
 
 export default function PatchManagementPage() {
   const { user } = useAuth();
   const canRun = ['superadmin', 'admin', 'operator'].includes(user?.role);
   const canApprove = ['superadmin', 'admin'].includes(user?.role);
 
-  const [connections, setConnections] = useState([]);
-  const [connId, setConnId] = useState(null);
-  const [guests, setGuests] = useState([]);
-  const [loadingGuests, setLoadingGuests] = useState(false);
+  const [overview, setOverview] = useState(null);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [activeRun, setActiveRun] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [checkingKey, setCheckingKey] = useState(null);
+  const [bulk, setBulk] = useState(null); // { batchId, completed, total }
+
+  async function load() {
+    setError(null);
+    try {
+      const d = await api.get('/patch-management/overview');
+      setOverview(d.connections);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    api.get('/hypervisors/connections').then((d) => {
-      const proxmoxConns = d.connections.filter((c) => c.type === 'proxmox');
-      setConnections(proxmoxConns);
-      if (proxmoxConns.length) setConnId(proxmoxConns[0].id);
-    });
+    load();
   }, []);
 
-  useEffect(() => {
-    if (!connId) return;
-    loadGuests();
-    loadHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connId]);
+  useSocket({
+    'patch:bulk-progress': (data) => {
+      setBulk({ batchId: data.batchId, completed: data.completed, total: data.total });
+    },
+    'patch:bulk-complete': () => {
+      setTimeout(() => setBulk(null), 1500);
+      load();
+    },
+  });
 
-  async function loadGuests() {
-    setLoadingGuests(true);
+  async function checkGuest(connectionId, node, guest) {
     setError(null);
     try {
-      const d = await api.get(`/patch-management/connections/${connId}/guests`);
-      setGuests(d.guests);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoadingGuests(false);
-    }
-  }
-
-  async function loadHistory() {
-    try {
-      const d = await api.get(`/patch-management/runs?connection_id=${connId}`);
-      setHistory(d.runs);
-    } catch {
-      // history is non-critical — leave the previous list showing on failure
-    }
-  }
-
-  async function startDryRun(guest) {
-    setError(null);
-    const key = `${guest.type}-${guest.vmid}`;
-    setCheckingKey(key);
-    try {
-      const d = await api.post(`/patch-management/connections/${connId}/${guest.node}/${guest.type}/${guest.vmid}/dry-run`, { name: guest.name });
+      const d = await api.post(`/patch-management/connections/${connectionId}/${node}/${guest.type}/${guest.vmid}/dry-run`, { name: guest.name });
       setActiveRun(d.run);
+      load();
     } catch (err) {
       setError(err.message);
-    } finally {
-      setCheckingKey(null);
     }
+  }
+
+  async function checkAll(guestList) {
+    if (guestList.length === 0) return;
+    setError(null);
+    try {
+      await api.post('/patch-management/bulk-dry-run', { guests: guestList });
+      setBulk({ batchId: 'starting', completed: 0, total: guestList.length });
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function openLastRun(run) {
+    api.get(`/patch-management/runs/${run.id}`).then((d) => setActiveRun(d.run));
   }
 
   return (
     <div className="page">
-      <h1>Patch Management</h1>
-      <p className="muted">Dry-run → approve → apply, for Linux VMs and LXC containers on Proxmox.</p>
+      <div className="page-header-row">
+        <div>
+          <h1>Patch Management</h1>
+          <p className="muted">Grouped by hypervisor, node, and OS. Status shown is the last known check — use "Check" to refresh it.</p>
+        </div>
+        <button onClick={load} disabled={loading}>
+          <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
+        </button>
+      </div>
 
-      {connections.length === 0 ? (
-        <p className="muted">No Proxmox connections configured yet — add one under Hypervisors first.</p>
-      ) : (
-        <>
-          <div className="filters">
-            {connections.length > 1 && (
-              <select value={connId || ''} onChange={(e) => setConnId(parseInt(e.target.value, 10))}>
-                {connections.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            )}
-            <button onClick={loadGuests} disabled={loadingGuests}>
-              <RefreshCw size={14} className={loadingGuests ? 'spin' : ''} /> Refresh guests
-            </button>
-          </div>
+      {error && <p className="error">{error}</p>}
+      {bulk && (
+        <p className="muted patch-bulk-progress">
+          Checking guests... {bulk.completed}/{bulk.total}
+        </p>
+      )}
 
-          {error && <p className="error">{error}</p>}
+      {loading && !overview && <p className="muted">Loading...</p>}
 
-          <section className="card">
-            <h2>Running guests</h2>
-            <table className="table">
-              <thead><tr><th>Name</th><th>Type</th><th>Node</th><th>IP</th><th></th></tr></thead>
-              <tbody>
-                {guests.map((g) => (
-                  <tr key={`${g.type}-${g.vmid}`}>
-                    <td>{g.name} <span className="muted">#{g.vmid}</span></td>
-                    <td><span className={`hv-type-badge hv-type-${g.type}`}>{g.type === 'lxc' ? 'LXC' : 'VM'}</span></td>
-                    <td className="muted">{g.node}</td>
-                    <td className="mono">{g.ip || '—'}</td>
-                    <td className="actions">
-                      {canRun && (
-                        <button onClick={() => startDryRun(g)} disabled={checkingKey === `${g.type}-${g.vmid}`}>
-                          <Play size={13} /> {checkingKey === `${g.type}-${g.vmid}` ? 'Checking... (this can take up to a minute)' : 'Check for updates'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {guests.length === 0 && !loadingGuests && (
-                  <tr><td colSpan={5} className="muted">No running guests found on this connection.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </section>
+      {overview?.length === 0 && <p className="muted">No hypervisor connections yet — add one under Hypervisors first.</p>}
 
-          {activeRun && (
-            <ActiveRunPanel
-              run={activeRun}
-              canApprove={canApprove}
-              onClose={() => {
-                setActiveRun(null);
-                loadHistory();
-              }}
-            />
-          )}
+      {overview?.map((conn) => (
+        <ConnectionSection
+          key={conn.connectionId}
+          conn={conn}
+          canRun={canRun}
+          canApprove={canApprove}
+          onCheckGuest={checkGuest}
+          onCheckAll={checkAll}
+          onOpenRun={openLastRun}
+        />
+      ))}
 
-          <HistorySection history={history} onOpen={setActiveRun} onRefresh={loadHistory} />
-        </>
+      {activeRun && (
+        <ActiveRunPanel
+          run={activeRun}
+          canApprove={canApprove}
+          onClose={() => {
+            setActiveRun(null);
+            load();
+          }}
+        />
       )}
     </div>
   );
+}
+
+function ConnectionSection({ conn, canRun, canApprove, onCheckGuest, onCheckAll, onOpenRun }) {
+  const [open, setOpen] = useState(true);
+
+  if (conn.error) {
+    return (
+      <section className="card">
+        <button className="hv-node-header hv-node-header-clickable" onClick={() => setOpen(!open)}>
+          <ChevronRight size={16} className={`hv-node-chevron${open ? ' open' : ''}`} />
+          <strong>{conn.connectionName}</strong>
+          <span className={`hv-type-connection-badge hv-type-connection-${conn.connectionType}`}>{HYPERVISOR_TYPE_LABELS[conn.connectionType] || conn.connectionType}</span>
+        </button>
+        {open && <p className="error">{conn.error}</p>}
+      </section>
+    );
+  }
+
+  return (
+    <section className="card">
+      <button className="hv-node-header hv-node-header-clickable" onClick={() => setOpen(!open)}>
+        <ChevronRight size={16} className={`hv-node-chevron${open ? ' open' : ''}`} />
+        <strong>{conn.connectionName}</strong>
+        <span className={`hv-type-connection-badge hv-type-connection-${conn.connectionType}`}>{HYPERVISOR_TYPE_LABELS[conn.connectionType] || conn.connectionType}</span>
+      </button>
+
+      {open && !conn.supported && (
+        <p className="muted patch-unsupported-note">
+          Patch checking isn't implemented yet for {HYPERVISOR_TYPE_LABELS[conn.connectionType] || conn.connectionType} —
+          {' '}{conn.nodes.reduce((sum, n) => sum + (n.guestCount || 0), 0)} guest(s) on this connection.
+        </p>
+      )}
+
+      {open && conn.supported && conn.nodes.map((node) => (
+        <NodeSection
+          key={node.node}
+          conn={conn}
+          node={node}
+          canRun={canRun}
+          canApprove={canApprove}
+          onCheckGuest={onCheckGuest}
+          onCheckAll={onCheckAll}
+          onOpenRun={onOpenRun}
+        />
+      ))}
+    </section>
+  );
+}
+
+function NodeSection({ conn, node, canRun, onCheckGuest, onCheckAll, onOpenRun }) {
+  const [open, setOpen] = useState(true);
+
+  if (!node.online) {
+    return (
+      <div className="hv-node-block">
+        <div className="hv-node-header">
+          <Server size={14} /> <strong>{node.node}</strong> <span className="muted">offline</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Group this node's guests by last-known OS family.
+  const groups = {};
+  for (const g of node.guests) {
+    const key = g.lastRun?.os_family || 'unchecked';
+    groups[key] = groups[key] || [];
+    groups[key].push(g);
+  }
+  const groupKeys = Object.keys(groups).sort((a, b) => (a === 'unchecked' ? 1 : b === 'unchecked' ? -1 : a.localeCompare(b)));
+
+  const allGuestsForBulk = node.guests.map((g) => ({ connectionId: conn.connectionId, node: node.node, type: g.type, vmid: g.vmid, name: g.name }));
+
+  return (
+    <div className="hv-node-block">
+      <button className="hv-node-header hv-node-header-clickable" onClick={() => setOpen(!open)}>
+        <ChevronRight size={15} className={`hv-node-chevron${open ? ' open' : ''}`} />
+        <Server size={14} />
+        <strong>{node.node}</strong>
+        <span className="muted hv-node-stats">{node.guests.length} guest(s)</span>
+        {canRun && node.guests.length > 0 && (
+          <button
+            className="btn-link patch-checkall-link"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCheckAll(allGuestsForBulk);
+            }}
+          >
+            Check all on this node
+          </button>
+        )}
+      </button>
+
+      {open && groupKeys.map((osKey) => (
+        <OsGroup
+          key={osKey}
+          osKey={osKey}
+          guests={groups[osKey]}
+          conn={conn}
+          node={node}
+          canRun={canRun}
+          onCheckGuest={onCheckGuest}
+          onCheckAll={onCheckAll}
+          onOpenRun={onOpenRun}
+        />
+      ))}
+    </div>
+  );
+}
+
+function OsGroup({ osKey, guests, conn, node, canRun, onCheckGuest, onCheckAll, onOpenRun }) {
+  const label = osKey === 'unchecked' ? 'Not yet checked' : OS_LABELS[osKey] || osKey;
+  const guestList = guests.map((g) => ({ connectionId: conn.connectionId, node: node.node, type: g.type, vmid: g.vmid, name: g.name }));
+
+  return (
+    <div className="patch-os-group">
+      <div className="patch-os-group-header">
+        <span className="muted">{label}</span>
+        {canRun && osKey !== 'unchecked' && (
+          <button className="btn-link" onClick={() => onCheckAll(guestList)}>Check all</button>
+        )}
+      </div>
+      <table className="table">
+        <tbody>
+          {guests.map((g) => (
+            <tr key={`${g.type}-${g.vmid}`}>
+              <td>
+                <span className={`hv-type-badge hv-type-${g.type}`}>{g.type === 'lxc' ? 'LXC' : 'VM'}</span>{' '}
+                {g.name} <span className="muted">#{g.vmid}</span>
+              </td>
+              <td><GuestStatusBadge lastRun={g.lastRun} /></td>
+              <td className="actions">
+                {g.lastRun ? (
+                  <button className="btn-link" onClick={() => onOpenRun(g.lastRun)}>View</button>
+                ) : null}
+                {canRun && (
+                  <button className="icon-btn" title="Check for updates" onClick={() => onCheckGuest(conn.connectionId, node.node, g)}>
+                    <Play size={13} />
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function GuestStatusBadge({ lastRun }) {
+  if (!lastRun) return <span className="status-badge">Not checked</span>;
+  const map = {
+    up_to_date: ['status-up', 'Up to date'],
+    awaiting_approval: ['status-degraded', `${lastRun.packages} update(s) pending`],
+    running: ['status-degraded', 'Checking/applying...'],
+    completed: ['status-up', `Patched (${lastRun.packages})`],
+    failed: ['status-down', 'Failed'],
+    cancelled: ['', 'Cancelled'],
+  };
+  const [cls, label] = map[lastRun.status] || ['', lastRun.status];
+  return <span className={`status-badge ${cls}`}>{label}</span>;
 }
 
 function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
@@ -144,6 +286,11 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState(null);
   const outputRef = useRef(null);
+
+  useEffect(() => {
+    setRun(initialRun);
+    setOutput(initialRun.apply_output || '');
+  }, [initialRun]);
 
   useSocket({
     'patch:started': (data) => {
@@ -171,7 +318,7 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
           setTimeout(() => outputRef.current?.scrollTo(0, outputRef.current.scrollHeight), 0);
         }
       } catch {
-        // transient — the next tick will retry
+        // transient — next tick retries
       }
     }, 4000);
     return () => clearInterval(interval);
@@ -204,7 +351,7 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
     <section className="card patch-active-panel">
       <div className="page-header-row">
         <h2>
-          {run.vm_name || `#${run.vmid}`} — <StatusChip status={run.status} />
+          {run.vm_name || `#${run.vmid}`} — <GuestStatusBadge lastRun={{ status: run.status, packages: run.packages_affected?.length || 0 }} />
         </h2>
         <button className="icon-btn" onClick={onClose}><X size={16} /></button>
       </div>
@@ -243,49 +390,6 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
           <pre>{output || 'Waiting for output...'}</pre>
         </div>
       )}
-    </section>
-  );
-}
-
-function StatusChip({ status }) {
-  const map = {
-    awaiting_approval: ['status-degraded', 'Awaiting approval'],
-    up_to_date: ['status-up', 'Up to date'],
-    running: ['status-degraded', 'Running'],
-    completed: ['status-up', 'Completed'],
-    failed: ['status-down', 'Failed'],
-    cancelled: ['', 'Cancelled'],
-  };
-  const [cls, label] = map[status] || ['', status];
-  return <span className={`status-badge ${cls}`}>{label}</span>;
-}
-
-function HistorySection({ history, onOpen, onRefresh }) {
-  return (
-    <section className="card">
-      <div className="page-header-row">
-        <h2>History</h2>
-        <button className="icon-btn" onClick={onRefresh}><RefreshCw size={14} /></button>
-      </div>
-      <table className="table">
-        <thead><tr><th>Guest</th><th>OS</th><th>Status</th><th>Packages</th><th>Triggered by</th><th>Started</th><th></th></tr></thead>
-        <tbody>
-          {history.map((r) => (
-            <tr key={r.id}>
-              <td>{r.vm_name || `#${r.vmid}`}</td>
-              <td className="muted">{r.os_family}</td>
-              <td><StatusChip status={r.status} /></td>
-              <td>{r.packages_affected?.length || 0}</td>
-              <td className="muted">{r.triggered_by}</td>
-              <td className="muted"><Clock size={11} /> {r.created_at}</td>
-              <td className="actions">
-                <button className="btn-link" onClick={() => onOpen(r)}>View</button>
-              </td>
-            </tr>
-          ))}
-          {history.length === 0 && <tr><td colSpan={7} className="muted">No patch runs yet.</td></tr>}
-        </tbody>
-      </table>
     </section>
   );
 }

@@ -246,6 +246,22 @@ async function fetchNodesSummary(conn) {
   return details.sort((a, b) => a.node.localeCompare(b.node));
 }
 
+/** Basic guest list for one node — no guest-agent calls, so it's cheap
+ * enough to call across every node of every connection for an overview
+ * page (unlike fetchNodeDetail, which enriches with IP/OS/disk usage). */
+async function listGuestsBasic(conn, node) {
+  const baseUrl = conn.url;
+  const token = buildToken(conn);
+  const [vms, lxc] = await Promise.all([
+    pveGet(baseUrl, `/nodes/${node}/qemu`, token).catch(() => []),
+    pveGet(baseUrl, `/nodes/${node}/lxc`, token).catch(() => []),
+  ]);
+  return [
+    ...vms.map((v) => ({ vmid: v.vmid, name: v.name, type: 'qemu', status: v.status })),
+    ...lxc.map((v) => ({ vmid: v.vmid, name: v.name || v.hostname, type: 'lxc', status: v.status })),
+  ].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+
 /** Full enriched VM/LXC/storage detail for ONE node — the expensive,
  * guest-agent-backed call. Fetch this only when the node is expanded. */
 async function fetchNodeDetail(conn, nodeName) {
@@ -300,4 +316,4 @@ async function powerAction(conn, node, type, vmid, action) {
   );
 }
 
-module.exports = { fetchNodes, fetchNodesSummary, fetchNodeDetail, powerAction, buildToken };
+module.exports = { fetchNodes, fetchNodesSummary, fetchNodeDetail, listGuestsBasic, powerAction, buildToken };

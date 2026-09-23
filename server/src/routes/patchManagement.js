@@ -6,6 +6,8 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
 const patchService = require('../services/patchService');
 const proxmox = require('../lib/proxmoxClient');
+const hyperv = require('../lib/hypervClient');
+const esxi = require('../lib/esxiClient');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -13,6 +15,66 @@ router.use(requireAuth);
 function getConnection(id) {
   return db.prepare('SELECT * FROM hypervisor_connections WHERE id = ?').get(id);
 }
+
+// GET /api/patch-management/overview — every hypervisor connection, grouped
+// by node, with each guest's most recent known patch status (not a live
+// check — that's what "Check for updates" / "Check all" are for).
+router.get('/overview', async (req, res) => {
+  const connections = db.prepare('SELECT * FROM hypervisor_connections WHERE enabled = 1').all();
+
+  const results = await Promise.allSettled(
+    connections.map(async (conn) => {
+      if (conn.type !== 'proxmox') {
+        // Structure is ready for these, but actual patch checking for
+        // Hyper-V/ESXi guests isn't implemented yet.
+        const client = conn.type === 'hyperv' ? hyperv : conn.type === 'esxi' ? esxi : null;
+        if (!client) throw new Error(`Unsupported hypervisor type: ${conn.type}`);
+        const nodes = await client.fetchNodesSummary(conn);
+        return {
+          connectionId: conn.id, connectionName: conn.name, connectionType: conn.type, supported: false,
+          nodes: nodes.map((n) => ({ node: n.node, online: n.status === 'online', guestCount: n.vm_count || 0, guests: [] })),
+        };
+      }
+
+      const nodes = await proxmox.fetchNodesSummary(conn);
+      const nodeResults = await Promise.all(
+        nodes.map(async (node) => {
+          if (node.status !== 'online') return { node: node.node, online: false, guests: [] };
+          const guests = await proxmox.listGuestsBasic(conn, node.node);
+          return { node: node.node, online: true, guests: guests.filter((g) => g.status === 'running') };
+        })
+      );
+      return { connectionId: conn.id, connectionName: conn.name, connectionType: conn.type, supported: true, nodes: nodeResults };
+    })
+  );
+
+  // Most recent patch_runs row per (connection, node, vmid) — one query, not N+1.
+  const allRuns = db.prepare('SELECT * FROM patch_runs ORDER BY created_at DESC').all();
+  const latestByGuest = new Map();
+  for (const r of allRuns) {
+    const key = `${r.connection_id}:${r.node}:${r.vmid}`;
+    if (!latestByGuest.has(key)) latestByGuest.set(key, r);
+  }
+
+  const output = results.map((r, i) => {
+    if (r.status === 'rejected') {
+      return { connectionId: connections[i].id, connectionName: connections[i].name, connectionType: connections[i].type, error: r.reason.message };
+    }
+    const val = r.value;
+    val.nodes.forEach((n) => {
+      n.guests.forEach((g) => {
+        const key = `${val.connectionId}:${n.node}:${g.vmid}`;
+        const lastRun = latestByGuest.get(key);
+        g.lastRun = lastRun
+          ? { id: lastRun.id, status: lastRun.status, os_family: lastRun.os_family, packages: JSON.parse(lastRun.packages_affected || '[]').length, checked_at: lastRun.created_at }
+          : null;
+      });
+    });
+    return val;
+  });
+
+  res.json({ connections: output });
+});
 
 // GET /api/patch-management/connections/:id/guests — running QEMU+LXC guests eligible for patching
 router.get('/connections/:id/guests', async (req, res) => {
@@ -35,6 +97,46 @@ router.get('/connections/:id/guests', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// POST /api/patch-management/bulk-dry-run — { guests: [{connectionId, node, type, vmid, name}] }
+// Runs multiple dry-runs with limited concurrency, streaming progress over
+// Socket.io as each one finishes (used by "Check all" per node / per OS).
+router.post('/bulk-dry-run', requireRole('superadmin', 'admin', 'operator'), async (req, res) => {
+  const guests = req.body?.guests;
+  if (!Array.isArray(guests) || guests.length === 0) return res.status(400).json({ error: 'guests array is required' });
+  if (guests.length > 50) return res.status(400).json({ error: 'Too many guests in one batch (max 50)' });
+
+  const batchId = `bulk-${Date.now()}`;
+  res.json({ ok: true, batchId, total: guests.length });
+
+  const io = global.io;
+  const CONCURRENCY = 4;
+  let index = 0;
+  let completed = 0;
+
+  async function worker() {
+    while (index < guests.length) {
+      const g = guests[index++];
+      const conn = getConnection(g.connectionId);
+      try {
+        if (!conn) throw new Error('Connection not found');
+        const run = await patchService.runDryRun({
+          connectionId: conn.id, conn, node: g.node, guestType: g.type, vmid: g.vmid, vmName: g.name, triggeredBy: req.user.username,
+        });
+        completed++;
+        if (io) io.emit('patch:bulk-progress', { batchId, completed, total: guests.length, guest: g, run: { ...run, packages_affected: JSON.parse(run.packages_affected || '[]') } });
+      } catch (err) {
+        completed++;
+        if (io) io.emit('patch:bulk-progress', { batchId, completed, total: guests.length, guest: g, error: err.message });
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(CONCURRENCY, guests.length) }, () => worker());
+  Promise.all(workers).then(() => {
+    if (io) io.emit('patch:bulk-complete', { batchId });
+  });
 });
 
 // POST /api/patch-management/connections/:id/:node/:type/:vmid/dry-run

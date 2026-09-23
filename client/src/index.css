@@ -1798,3 +1798,26 @@ textarea {
 .hv-node-ssh-form {
   margin-top: 8px;
 }
+
+.patch-unsupported-note {
+  padding: 12px 4px;
+}
+
+.patch-bulk-progress {
+  margin-bottom: 12px;
+}
+
+.patch-checkall-link {
+  margin-left: auto;
+}
+
+.patch-os-group {
+  margin: 10px 0 10px 22px;
+}
+
+.patch-os-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
