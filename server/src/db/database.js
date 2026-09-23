@@ -368,6 +368,11 @@ db.exec(`
     FOREIGN KEY (connection_id) REFERENCES hypervisor_connections(id) ON DELETE CASCADE
   );
 `);
+// Optional manual host override — used when a guest's IP can't be
+// auto-detected (e.g. Hyper-V Integration Services not reporting it).
+// The SSH Terminal feature ignores this (it always gets the live IP from
+// the caller); Patch Management falls back to it when no live IP is known.
+ensureColumn('ssh_credentials', 'host', 'TEXT');
 
 // ── Phase 12 — Infrastructure: Network Scanner ──────────────────────────
 // Pi.Alert-style persistent MAC-based inventory. `network_devices` is the

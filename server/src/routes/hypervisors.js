@@ -184,6 +184,7 @@ router.get('/connections/:id/vms/:vmid/ssh-credentials', requireRole('superadmin
   if (!row) return res.json({ saved: false });
   res.json({
     saved: true,
+    host: row.host,
     port: row.port,
     username: row.username,
     hasPassword: !!row.password,
@@ -193,7 +194,7 @@ router.get('/connections/:id/vms/:vmid/ssh-credentials', requireRole('superadmin
 
 // PUT /api/hypervisors/connections/:id/vms/:vmid/ssh-credentials
 router.put('/connections/:id/vms/:vmid/ssh-credentials', requireRole('superadmin', 'admin'), (req, res) => {
-  const { port, username, password, private_key, passphrase } = req.body || {};
+  const { host, port, username, password, private_key, passphrase } = req.body || {};
   if (!username?.trim()) return res.status(400).json({ error: 'username is required' });
 
   const existing = db
@@ -205,12 +206,12 @@ router.put('/connections/:id/vms/:vmid/ssh-credentials', requireRole('superadmin
   const newPassphrase = passphrase && passphrase !== '***' ? passphrase : existing?.passphrase || null;
 
   db.prepare(
-    `INSERT INTO ssh_credentials (connection_id, vmid, port, username, password, private_key, passphrase, updated_at)
-     VALUES (?,?,?,?,?,?,?,datetime('now'))
+    `INSERT INTO ssh_credentials (connection_id, vmid, host, port, username, password, private_key, passphrase, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,datetime('now'))
      ON CONFLICT(connection_id, vmid) DO UPDATE SET
-       port=excluded.port, username=excluded.username, password=excluded.password,
+       host=excluded.host, port=excluded.port, username=excluded.username, password=excluded.password,
        private_key=excluded.private_key, passphrase=excluded.passphrase, updated_at=excluded.updated_at`
-  ).run(req.params.id, req.params.vmid, parseInt(port, 10) || 22, username.trim(), newPassword, newKey, newPassphrase);
+  ).run(req.params.id, req.params.vmid, host || null, parseInt(port, 10) || 22, username.trim(), newPassword, newKey, newPassphrase);
 
   writeAuditLog({
     user_id: req.user.id, username: req.user.username, action: 'hypervisor.ssh_credentials_save',
