@@ -111,13 +111,19 @@ const DRY_RUN_COMMANDS = {
   rhel: '(command -v dnf >/dev/null && dnf check-update || yum check-update) 2>&1; true',
   alpine: 'apk update -q 2>&1; apk upgrade --simulate 2>&1',
   windows: `
-$ErrorActionPreference = 'SilentlyContinue'
-$session = New-Object -ComObject Microsoft.Update.Session
-$searcher = $session.CreateUpdateSearcher()
-$result = $searcher.Search("IsInstalled=0 and Type='Software'")
-foreach ($u in $result.Updates) {
-  $kb = if ($u.KBArticleIDs.Count -gt 0) { "KB$($u.KBArticleIDs[0])" } else { 'N/A' }
-  Write-Output "$kb|$($u.Title)"
+$ErrorActionPreference = 'Stop'
+try {
+  $session = New-Object -ComObject Microsoft.Update.Session
+  $searcher = $session.CreateUpdateSearcher()
+  Write-Output "Searching for updates..."
+  $result = $searcher.Search("IsInstalled=0 and Type='Software'")
+  Write-Output "SearchComplete. ResultCode=$($result.ResultCode) UpdatesFound=$($result.Updates.Count)"
+  foreach ($u in $result.Updates) {
+    $kb = if ($u.KBArticleIDs.Count -gt 0) { "KB$($u.KBArticleIDs[0])" } else { 'N/A' }
+    Write-Output "$kb|$($u.Title)"
+  }
+} catch {
+  Write-Output "___SEARCH_FAILED___ $($_.Exception.Message)"
 }
 `.trim(),
 };
@@ -127,30 +133,35 @@ const APPLY_COMMANDS = {
   rhel: '(command -v dnf >/dev/null && dnf -y upgrade || yum -y upgrade) 2>&1; echo "___EXIT_$?___"',
   alpine: 'apk update -q 2>&1; apk upgrade 2>&1; echo "___EXIT_$?___"',
   windows: `
-$ErrorActionPreference = 'Continue'
-$session = New-Object -ComObject Microsoft.Update.Session
-$searcher = $session.CreateUpdateSearcher()
-$result = $searcher.Search("IsInstalled=0 and Type='Software'")
-if ($result.Updates.Count -eq 0) { Write-Output 'No updates to install'; Write-Output '___EXIT_0___'; exit }
-$toInstall = New-Object -ComObject Microsoft.Update.UpdateColl
-foreach ($u in $result.Updates) {
-  if (-not $u.EulaAccepted) { $u.AcceptEula() | Out-Null }
-  $toInstall.Add($u) | Out-Null
-  Write-Output "Queued: $($u.Title)"
+$ErrorActionPreference = 'Stop'
+try {
+  $session = New-Object -ComObject Microsoft.Update.Session
+  $searcher = $session.CreateUpdateSearcher()
+  $result = $searcher.Search("IsInstalled=0 and Type='Software'")
+  if ($result.Updates.Count -eq 0) { Write-Output 'No updates to install'; Write-Output '___EXIT_0___'; exit }
+  $toInstall = New-Object -ComObject Microsoft.Update.UpdateColl
+  foreach ($u in $result.Updates) {
+    if (-not $u.EulaAccepted) { $u.AcceptEula() | Out-Null }
+    $toInstall.Add($u) | Out-Null
+    Write-Output "Queued: $($u.Title)"
+  }
+  $downloader = $session.CreateUpdateDownloader()
+  $downloader.Updates = $toInstall
+  Write-Output 'Downloading updates...'
+  $downloadResult = $downloader.Download()
+  Write-Output "Download result code: $($downloadResult.ResultCode)"
+  $installer = $session.CreateUpdateInstaller()
+  $installer.Updates = $toInstall
+  Write-Output 'Installing updates...'
+  $installResult = $installer.Install()
+  Write-Output "Install result code: $($installResult.ResultCode)"
+  if ($installResult.RebootRequired) { Write-Output 'REBOOT REQUIRED to finish installing updates.' }
+  $exitCode = if ($installResult.ResultCode -eq 2) { 0 } else { 1 }
+  Write-Output "___EXIT_\${exitCode}___"
+} catch {
+  Write-Output "ERROR: $($_.Exception.Message)"
+  Write-Output "___EXIT_1___"
 }
-$downloader = $session.CreateUpdateDownloader()
-$downloader.Updates = $toInstall
-Write-Output 'Downloading updates...'
-$downloadResult = $downloader.Download()
-Write-Output "Download result code: $($downloadResult.ResultCode)"
-$installer = $session.CreateUpdateInstaller()
-$installer.Updates = $toInstall
-Write-Output 'Installing updates...'
-$installResult = $installer.Install()
-Write-Output "Install result code: $($installResult.ResultCode)"
-if ($installResult.RebootRequired) { Write-Output 'REBOOT REQUIRED to finish installing updates.' }
-$exitCode = if ($installResult.ResultCode -eq 2) { 0 } else { 1 }
-Write-Output "___EXIT_\${exitCode}___"
 `.trim(),
 };
 
@@ -206,6 +217,11 @@ async function runDryRun({ connectionId, conn, node, guestType, vmid, vmName, gu
 
   const cmd = DRY_RUN_COMMANDS[osFamily];
   const r = await execFor(conn, guestType, node, vmid, cmd, { timeoutMs: osFamily === 'windows' ? 240000 : 120000, osFamily, guestHost });
+
+  if (osFamily === 'windows' && r.stdout.includes('___SEARCH_FAILED___')) {
+    const m = r.stdout.match(/___SEARCH_FAILED___\s*(.*)/);
+    throw new Error(`Windows Update search failed inside the guest: ${(m?.[1] || 'unknown error').trim().slice(0, 300)}`);
+  }
 
   const parsers = { debian: parseDebianDryRun, rhel: parseRhelDryRun, alpine: parseAlpineDryRun, windows: parseWindowsDryRun };
   const packages = (parsers[osFamily] || parseWindowsDryRun)(r.stdout);
