@@ -454,6 +454,24 @@ db.exec(`
 // (Proxmox VM/LXC exec doesn't need this, it goes through the host).
 ensureColumn('patch_runs', 'guest_host', 'TEXT');
 
+// Periodic CPU/RAM/Disk snapshots per hypervisor node — powers the TV
+// Hypervisors page's historical charts. A background service (see
+// hypervisorMetricsService.js) writes one row per node on each tick.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS hypervisor_node_metrics (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id INTEGER NOT NULL,
+    node          TEXT NOT NULL,
+    cpu_usage     REAL,
+    mem_usage     REAL,
+    disk_usage    REAL,
+    recorded_at   TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (connection_id) REFERENCES hypervisor_connections(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_hv_node_metrics_recorded ON hypervisor_node_metrics(recorded_at);
+  CREATE INDEX IF NOT EXISTS idx_hv_node_metrics_conn_node ON hypervisor_node_metrics(connection_id, node);
+`);
+
 // Per-node SSH override for LXC patch management — a Proxmox cluster can
 // have multiple nodes with different root passwords, so one connection-level
 // credential isn't always enough. A node without a row here falls back to
@@ -510,6 +528,8 @@ const defaultSettings = {
   hypervisor_health_cron: '*/5 * * * *',
   tv_dashboard_enabled: '1',
   tv_hypervisors_enabled: '1',
+  hypervisor_metrics_cron: '*/2 * * * *',
+  hypervisor_metrics_retention_hours: '24',
 };
 const insertSetting = db.prepare(
   'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING'

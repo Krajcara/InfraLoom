@@ -95,6 +95,23 @@ router.get('/public/dashboard', async (req, res) => {
 
 // GET /api/status/public/hypervisors — TV/NOC hypervisor overview, no auth.
 // Summary only — no VM/LXC names, no IPs, no credentials.
+// GET /api/status/public/hypervisors/history?hours=3 — cluster-wide CPU/RAM
+// time series (averaged across all online nodes at each collection tick)
+// for the TV Hypervisors page's charts.
+router.get('/public/hypervisors/history', (req, res) => {
+  if (!tvPageEnabled('tv_hypervisors_enabled')) return res.status(404).json({ error: 'This page is disabled' });
+  const hours = Math.min(parseInt(req.query.hours, 10) || 3, 24);
+  const points = db
+    .prepare(
+      `SELECT strftime('%Y-%m-%d %H:%M', recorded_at) as bucket, AVG(cpu_usage) as cpu, AVG(mem_usage) as mem, AVG(disk_usage) as disk
+       FROM hypervisor_node_metrics
+       WHERE recorded_at >= datetime('now', ?)
+       GROUP BY bucket ORDER BY bucket ASC`
+    )
+    .all(`-${hours} hours`);
+  res.json({ points });
+});
+
 router.get('/public/hypervisors', async (req, res) => {
   if (!tvPageEnabled('tv_hypervisors_enabled')) return res.status(404).json({ error: 'This page is disabled' });
 
@@ -109,7 +126,7 @@ router.get('/public/hypervisors', async (req, res) => {
       const nodes = await Promise.all(
         summary.map(async (n) => {
           if (n.status !== 'online') {
-            return { node: n.node, online: false, cpu_pct: null, ram_pct: null, disk_pct: null, uptime_s: n.uptime || 0, guests: [] };
+            return { node: n.node, online: false, cpu_pct: null, ram_pct: null, disk_pct: null, uptime_s: n.uptime || 0, guests: [], storages: [] };
           }
           // Proxmox needs the node name; Hyper-V/ESXi have one implicit node.
           const detail = conn.type === 'proxmox' ? await client.fetchNodeDetail(conn, n.node) : await client.fetchNodeDetail(conn);
@@ -119,13 +136,14 @@ router.get('/public/hypervisors', async (req, res) => {
             cpu_pct: g.cpu_usage ?? null, mem_pct: g.mem_usage ?? null, disk_pct: g.disk_usage ?? null,
             mem_used_gb: g.mem_used_gb, mem_max_gb: g.mem_max_gb, cpus: g.cpus,
           }));
+          const storages = (detail.storages || []).map((s) => ({ name: s.storage, usage_pct: s.usage_pct, used_gb: s.used_gb, total_gb: s.total_gb }));
           return {
             node: n.node, online: true,
             cpu_pct: n.cpu_usage ?? null, ram_pct: n.mem_usage ?? null, disk_pct: n.disk_usage ?? null,
             uptime_s: n.uptime || 0,
             mem_used_gb: n.mem_used_gb, mem_max_gb: n.mem_max_gb, cpus: n.cpus,
             running_count: n.running_count || 0, total_count: (n.vm_count || 0) + (n.lxc_count || 0),
-            guests,
+            guests, storages,
           };
         })
       );

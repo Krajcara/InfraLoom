@@ -134,6 +134,7 @@ cron.schedule('0 2 * * *', () => require('./services/sslChecker').checkAllSSL())
 require('./services/netspeedService').initScheduler();
 require('./services/networkScanService').initScheduler();
 require('./services/hypervisorHealthService').initScheduler();
+require('./services/hypervisorMetricsService').initScheduler();
 setTimeout(() => require('./services/sslChecker').checkAllSSL(false), 5000);
 
 process.on('SIGTERM', () => {
