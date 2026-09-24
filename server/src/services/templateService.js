@@ -6,10 +6,10 @@ const { resolveSshCreds } = require('./patchService');
 const proxmox = require('../lib/proxmoxClient');
 
 const CLOUD_IMAGES = {
-  'ubuntu-22.04': { label: 'Ubuntu 22.04 LTS (Jammy)', url: 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img' },
-  'ubuntu-24.04': { label: 'Ubuntu 24.04 LTS (Noble)', url: 'https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img' },
-  'debian-12': { label: 'Debian 12 (Bookworm)', url: 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2' },
-  'debian-11': { label: 'Debian 11 (Bullseye)', url: 'https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2' },
+  'ubuntu-22.04': { label: 'Ubuntu 22.04 LTS Server (Jammy)', url: 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img' },
+  'ubuntu-24.04': { label: 'Ubuntu 24.04 LTS Server (Noble)', url: 'https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img' },
+  'debian-12': { label: 'Debian 12 Server (Bookworm)', url: 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2' },
+  'debian-11': { label: 'Debian 11 Server (Bullseye)', url: 'https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2' },
 };
 
 function shellEscape(s) {

@@ -119,6 +119,10 @@ export default function TemplatesPage() {
                 </select>
               </label>
             </div>
+            <p className="muted">
+              All of these are official "cloud" images — minimal, headless server builds meant for VM provisioning.
+              Neither Ubuntu nor Debian publish a desktop-edition cloud image; there's no GUI on any of these.
+            </p>
             <div className="form-row">
               <label>
                 CPU cores
