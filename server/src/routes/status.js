@@ -89,7 +89,7 @@ router.get('/public/dashboard', async (req, res) => {
   );
 
   // Hypervisors — grouped by type, per-node rows (live, best-effort per connection).
-  const connections = db.prepare('SELECT * FROM hypervisor_connections WHERE enabled = 1').all();
+  const connections = db.prepare('SELECT * FROM hypervisor_connections WHERE enabled = 1 ORDER BY name').all();
   const hvByType = { proxmox: [], esxi: [], hyperv: [] };
   await Promise.allSettled(
     connections.map(async (conn) => {
@@ -126,7 +126,11 @@ router.get('/public/dashboard', async (req, res) => {
     network_devices: { total: netscanRow.total || 0, online: netscanRow.online || 0 },
     last_speed_test: lastSpeedTest || null,
     pending_patches: pendingPatchesRow.n || 0,
-    hypervisors: hvByType,
+    hypervisors: {
+      proxmox: hvByType.proxmox.sort((a, b) => a.name.localeCompare(b.name)),
+      esxi: hvByType.esxi.sort((a, b) => a.name.localeCompare(b.name)),
+      hyperv: hvByType.hyperv.sort((a, b) => a.name.localeCompare(b.name)),
+    },
     ssl_expiring: sslExpiring,
     licences_expiring: licencesExpiring,
   });
@@ -154,7 +158,7 @@ router.get('/public/hypervisors/history', (req, res) => {
 router.get('/public/hypervisors', async (req, res) => {
   if (!tvPageEnabled('tv_hypervisors_enabled')) return res.status(404).json({ error: 'This page is disabled' });
 
-  const connections = db.prepare('SELECT * FROM hypervisor_connections WHERE enabled = 1').all();
+  const connections = db.prepare('SELECT * FROM hypervisor_connections WHERE enabled = 1 ORDER BY name').all();
 
   const results = await Promise.allSettled(
     connections.map(async (conn) => {
@@ -193,7 +197,7 @@ router.get('/public/hypervisors', async (req, res) => {
           if (!uniqueStorages.has(s.name)) uniqueStorages.set(s.name, s);
         }
       }
-      return { name: conn.name, type: conn.type, nodes, storages: [...uniqueStorages.values()] };
+      return { name: conn.name, type: conn.type, nodes: nodes.sort((a, b) => a.node.localeCompare(b.node)), storages: [...uniqueStorages.values()].sort((a, b) => a.name.localeCompare(b.name)) };
     })
   );
 

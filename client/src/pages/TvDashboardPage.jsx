@@ -72,7 +72,7 @@ export default function TvDashboardPage() {
 
           <div className="tv-two-col">
             <div className="tv-status-col">
-              <CategoryCard title="Uptime monitors" countLabel={`${data.monitors.length} monitors`} items={data.monitors} />
+              <CategoryCard title="Uptime monitors" countLabel={`${data.monitors.length} monitors`} items={data.monitors} countOnly />
               {data.routers.length > 0 && <CategoryCard title="Routers" countLabel={`${data.routers.length} router${data.routers.length === 1 ? '' : 's'}`} items={data.routers} />}
               {data.switches.length > 0 && <CategoryCard title="Switches" countLabel={`${data.switches.length} switch${data.switches.length === 1 ? 'es' : ''}`} items={data.switches} />}
               {data.access_points.length > 0 && <CategoryCard title="Access points" countLabel={`${data.access_points.length} AP${data.access_points.length === 1 ? '' : 's'}`} items={data.access_points} />}
@@ -172,7 +172,7 @@ function SummaryTile({ label, value, tone }) {
   );
 }
 
-function CategoryCard({ title, countLabel, items }) {
+function CategoryCard({ title, countLabel, items, countOnly }) {
   const allUp = items.every((i) => i.status === 'up');
   return (
     <div className="tv-cat-card">
@@ -182,7 +182,7 @@ function CategoryCard({ title, countLabel, items }) {
       </div>
       {items.length === 0 ? (
         <p className="tv-sub tv-list-empty">None configured</p>
-      ) : items.length <= 6 ? (
+      ) : !countOnly && items.length <= 6 ? (
         items.map((item, i) => (
           <div key={i} className="tv-list-row">
             <span>
