@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const db = require('../db/database');
+const { buildToken } = require('../lib/proxmoxClient');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 const TOFU_DIR = path.join(PROJECT_ROOT, 'data', 'tofu');
@@ -43,7 +44,7 @@ terraform {
 
 provider "proxmox" {
   endpoint  = ${hclString(conn.url + '/')}
-  api_token = ${hclString(`${conn.token_id}=${conn.api_token}`)}
+  api_token = ${hclString(buildToken(conn))}
   insecure  = true
 }
 `;
