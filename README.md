@@ -31,6 +31,9 @@ Self-hosted IT infrastructure management application. Runs on Ubuntu Linux.
   rules and quiet hours
 - **System Update** — checks GitHub, updates and restarts from the UI, with
   a live progress bar and step status
+- **Backup** — scheduled or on-demand ZIP backups (SQLCipher database +
+  an AES-256-GCM encrypted copy of `.env`), with configurable retention.
+  See **Backup and restore** below.
 - **Audit Log** — filterable, CSV export
 
 **Inventory**
@@ -172,6 +175,36 @@ by platform:
 - **Patch management for ESXi guests is not implemented yet** — they
   appear in Patch Management's grouped view with a "not yet supported"
   note rather than a guest list.
+
+## Backup and restore
+
+**Admin → Backup** creates a ZIP containing:
+- `infraloom.db` — a consistent snapshot of the live database (safe to take
+  while the app is running; it checkpoints the WAL before copying)
+- `env.enc` — your `.env` file, AES-256-GCM encrypted with a separate
+  `BACKUP_ENCRYPTION_PASSWORD` (auto-generated into `.env` on first backup
+  if not already present)
+
+This two-key design is deliberate: the database is already encrypted with
+`DB_ENCRYPTION_KEY`, but that key itself lives in `.env`. Bundling a
+plaintext `.env` into the backup would mean anyone who got the ZIP could
+decrypt the database — so `.env` is encrypted too, with a **different**
+password that never travels inside the backup file itself.
+
+**Store `BACKUP_ENCRYPTION_PASSWORD` somewhere separate from your backups**
+(a password manager, not the same server) — a backup ZIP without it cannot
+be decrypted, by design, and losing it makes existing backups unrecoverable.
+
+Backups run on a configurable daily schedule with configurable retention
+(both set from the Backup page), or on demand.
+
+**To restore:**
+1. Decrypt `env.enc` using `BACKUP_ENCRYPTION_PASSWORD` (AES-256-GCM; the
+   file layout is `salt(16) | iv(16) | authTag(16) | ciphertext`) to
+   recover the original `.env`
+2. Place the recovered `.env` and `infraloom.db` (renamed to match your
+   `DB_PATH`) into a fresh or existing InfraLoom install
+3. Restart the service
 
 ## Security
 

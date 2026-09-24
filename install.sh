@@ -87,13 +87,15 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
   cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
   APP_SECRET_VALUE="$(openssl rand -hex 64)"
   DB_KEY_VALUE="$(openssl rand -hex 32)"
+  BACKUP_PW_VALUE="$(openssl rand -hex 32)"
   sed -i "s|^APP_SECRET=.*|APP_SECRET=${APP_SECRET_VALUE}|"       "$INSTALL_DIR/.env"
   sed -i "s|^DB_ENCRYPTION_KEY=.*|DB_ENCRYPTION_KEY=${DB_KEY_VALUE}|" "$INSTALL_DIR/.env"
+  sed -i "s|^BACKUP_ENCRYPTION_PASSWORD=.*|BACKUP_ENCRYPTION_PASSWORD=${BACKUP_PW_VALUE}|" "$INSTALL_DIR/.env"
   sed -i "s|^APP_PORT=.*|APP_PORT=${APP_PORT}|"                   "$INSTALL_DIR/.env"
   [ -n "$GITHUB_TOKEN" ] && sed -i "s|^GITHUB_TOKEN=.*|GITHUB_TOKEN=${GITHUB_TOKEN}|" "$INSTALL_DIR/.env"
   chmod 600 "$INSTALL_DIR/.env"
-  success ".env created with a freshly generated APP_SECRET and DB_ENCRYPTION_KEY."
-  warn "Back up DB_ENCRYPTION_KEY securely — losing it means losing access to all data."
+  success ".env created with a freshly generated APP_SECRET, DB_ENCRYPTION_KEY, and BACKUP_ENCRYPTION_PASSWORD."
+  warn "Back up DB_ENCRYPTION_KEY and BACKUP_ENCRYPTION_PASSWORD securely — losing either means losing access to your data or your backups."
 else
   info ".env already exists — leaving it untouched."
 fi

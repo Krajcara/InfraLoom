@@ -530,6 +530,8 @@ const defaultSettings = {
   tv_hypervisors_enabled: '1',
   hypervisor_metrics_cron: '*/2 * * * *',
   hypervisor_metrics_retention_hours: '24',
+  backup_cron: '0 3 * * *',
+  backup_retention_count: '14',
 };
 const insertSetting = db.prepare(
   'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING'

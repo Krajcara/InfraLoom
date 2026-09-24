@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "axios": "^1.7.9",
+    "archiver": "^7.0.1",
     "better-sqlite3-multiple-ciphers": "^13.0.3",
     "decompress": "^4.2.1",
     "decompress-targz": "^4.1.1",

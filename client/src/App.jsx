@@ -9,6 +9,7 @@ import ProfilePage from './pages/ProfilePage';
 import UsersPage from './pages/UsersPage';
 import SettingsPage from './pages/SettingsPage';
 import UpdatePage from './pages/UpdatePage';
+import BackupPage from './pages/BackupPage';
 import AuditLogPage from './pages/AuditLogPage';
 import LicencesPage from './pages/LicencesPage';
 import EntraAppsPage from './pages/EntraAppsPage';
@@ -88,6 +89,14 @@ export default function App() {
             element={
               <ProtectedRoute roles={['superadmin', 'admin']}>
                 <UpdatePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/backup"
+            element={
+              <ProtectedRoute roles={['superadmin', 'admin']}>
+                <BackupPage />
               </ProtectedRoute>
             }
           />

@@ -54,6 +54,7 @@ const NAV_GROUPS = [
       { to: '/audit-log', label: 'Audit Log', roles: ['superadmin', 'admin'] },
       { to: '/settings', label: 'Settings', roles: ['superadmin', 'admin'] },
       { to: '/update', label: 'Update', roles: ['superadmin', 'admin'] },
+      { to: '/backup', label: 'Backup', roles: ['superadmin', 'admin'] },
     ],
   },
 ];
