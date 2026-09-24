@@ -2570,3 +2570,102 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── TV Dashboard v2 — status-page style ── */
+.tv-updated {
+  font-size: 13px;
+  color: #8a8f9c;
+  margin-top: 4px;
+}
+
+.tv-alert-banner {
+  background: rgba(202, 138, 4, 0.15);
+  border: 1px solid #ca8a04;
+  color: #facc15;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tv-alert-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #facc15;
+  flex-shrink: 0;
+}
+
+.tv-summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.tv-summary-tile {
+  background: #14161b;
+  border: 1px solid #2a2e38;
+  border-radius: 10px;
+  padding: 18px;
+  text-align: center;
+}
+
+.tv-summary-value {
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.tv-summary-ok .tv-summary-value { color: #22c55e; }
+.tv-summary-warn .tv-summary-value { color: #facc15; }
+.tv-summary-danger .tv-summary-value { color: #ff6b6b; }
+.tv-summary-neutral .tv-summary-value { color: #e4e6eb; }
+
+.tv-summary-label {
+  font-size: 12px;
+  color: #8a8f9c;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 6px;
+}
+
+.tv-status-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tv-cat-card {
+  background: #14161b;
+  border: 1px solid #2a2e38;
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+
+.tv-cat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8a8f9c;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #1f222a;
+}
+
+.tv-status-warn { background: #facc15; }
+
+.tv-badge-ok {
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}

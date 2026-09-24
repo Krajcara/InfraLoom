@@ -72,13 +72,10 @@ router.get('/local/:id/status', async (req, res) => {
     try {
       const resolver = new dnsLib.Resolver();
       resolver.setServers([dnsIp]);
-      await new Promise((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error('timeout')), 3000);
-        resolver.resolve4('cloudflare.com', (err) => {
-          clearTimeout(t);
-          err ? reject(err) : resolve();
-        });
-      });
+      await Promise.race([
+        resolver.resolve4('cloudflare.com'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+      ]);
       return { online: true };
     } catch (e) {
       return { online: false, error: e.message };

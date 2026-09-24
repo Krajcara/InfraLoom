@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const dnsLib = require('dns').promises;
 const db = require('../db/database');
 const proxmox = require('../lib/proxmoxClient');
 const hyperv = require('../lib/hypervClient');
@@ -40,17 +41,21 @@ router.get('/public/:id/checks', (req, res) => {
 router.get('/public/dashboard', async (req, res) => {
   if (!tvPageEnabled('tv_dashboard_enabled')) return res.status(404).json({ error: 'This page is disabled' });
 
-  const deviceCounts = (table) => {
-    const row = db
+  const deviceList = (table) =>
+    db
       .prepare(
-        `SELECT COUNT(*) as total, SUM(CASE WHEN m.last_status = 'up' THEN 1 ELSE 0 END) as online
-         FROM ${table} d LEFT JOIN monitors m ON m.id = d.monitor_id`
+        `SELECT d.name, d.ip_address, m.last_status
+         FROM ${table} d LEFT JOIN monitors m ON m.id = d.monitor_id
+         ORDER BY d.name`
       )
-      .get();
-    return { total: row.total || 0, online: row.online || 0 };
-  };
+      .all()
+      .map((d) => ({ name: d.name, detail: d.ip_address, status: d.last_status === 'up' ? 'up' : d.last_status === 'down' ? 'down' : 'unknown' }));
 
-  const monitorRow = db.prepare("SELECT COUNT(*) as total, SUM(CASE WHEN last_status = 'up' THEN 1 ELSE 0 END) as up FROM monitors WHERE enabled = 1").get();
+  const monitors = db
+    .prepare("SELECT label, last_status, ssl_days FROM monitors WHERE enabled = 1 ORDER BY label")
+    .all()
+    .map((m) => ({ name: m.label, status: m.last_status === 'up' ? 'up' : m.last_status === 'down' ? 'down' : m.last_status === 'degraded' ? 'degraded' : 'unknown' }));
+
   const sslExpiring = db
     .prepare("SELECT label, ssl_days FROM monitors WHERE enabled = 1 AND ssl_days IS NOT NULL AND ssl_days <= 14 ORDER BY ssl_days ASC LIMIT 5")
     .all();
@@ -59,37 +64,71 @@ router.get('/public/dashboard', async (req, res) => {
     .all();
   const netscanRow = db.prepare('SELECT COUNT(*) as total, SUM(CASE WHEN is_online = 1 THEN 1 ELSE 0 END) as online FROM network_devices WHERE is_archived = 0').get();
   const lastSpeedTest = db.prepare("SELECT provider, download, upload, ping, created_at FROM speed_tests WHERE status = 'done' ORDER BY created_at DESC LIMIT 1").get();
-  const dnsCount = db.prepare('SELECT COUNT(*) as total FROM dns_local').get();
+  const domainCount = db.prepare('SELECT COUNT(*) as total FROM dns_domains').get();
   const pendingPatchesRow = db.prepare("SELECT COUNT(*) as n FROM patch_runs WHERE id IN (SELECT MAX(id) FROM patch_runs GROUP BY connection_id, node, vmid) AND status = 'awaiting_approval'").get();
 
-  // Hypervisor summary — live, same as the internal widget (best-effort per connection).
-  const connections = db.prepare('SELECT * FROM hypervisor_connections WHERE enabled = 1').all();
-  let vmsRunning = 0;
-  let vmsTotal = 0;
-  await Promise.allSettled(
-    connections.map(async (conn) => {
-      const client = conn.type === 'proxmox' ? proxmox : conn.type === 'hyperv' ? hyperv : conn.type === 'esxi' ? esxi : null;
-      if (!client) return;
-      const nodes = await client.fetchNodesSummary(conn);
-      for (const n of nodes) {
-        vmsRunning += n.running_count || 0;
-        vmsTotal += (n.vm_count || 0) + (n.lxc_count || 0);
+  // DNS servers — a quick raw resolve check per server (fast; same fallback
+  // technique the internal DNS status check uses), not the full per-vendor
+  // API auth flow, so a batch of these stays cheap enough for a 30s poll.
+  const dnsServers = db.prepare('SELECT role, type, ip, label FROM dns_local ORDER BY role').all();
+  const dnsResults = await Promise.all(
+    dnsServers.map(async (s) => {
+      const dnsIp = s.ip.replace(/^https?:\/\//, '').split(':')[0];
+      try {
+        const resolver = new dnsLib.Resolver();
+        resolver.setServers([dnsIp]);
+        await Promise.race([
+          resolver.resolve4('cloudflare.com'),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+        ]);
+        return { name: s.label || `${s.type} (${s.role})`, detail: s.role, status: 'up' };
+      } catch {
+        return { name: s.label || `${s.type} (${s.role})`, detail: s.role, status: 'down' };
       }
     })
   );
 
+  // Hypervisors — grouped by type, per-node rows (live, best-effort per connection).
+  const connections = db.prepare('SELECT * FROM hypervisor_connections WHERE enabled = 1').all();
+  const hvByType = { proxmox: [], esxi: [], hyperv: [] };
+  await Promise.allSettled(
+    connections.map(async (conn) => {
+      const client = conn.type === 'proxmox' ? proxmox : conn.type === 'hyperv' ? hyperv : conn.type === 'esxi' ? esxi : null;
+      if (!client || !hvByType[conn.type]) return;
+      const nodes = await client.fetchNodesSummary(conn);
+      for (const n of nodes) {
+        hvByType[conn.type].push({
+          name: n.node, connection: conn.name, status: n.status === 'online' ? 'up' : 'down',
+          cpu_pct: n.cpu_usage ?? null, ram_pct: n.mem_usage ?? null,
+          running: n.running_count || 0, total: (n.vm_count || 0) + (n.lxc_count || 0),
+        });
+      }
+    })
+  );
+
+  const routers = deviceList('routers');
+  const switches = deviceList('switches');
+  const accessPoints = deviceList('access_points');
+  const allHvNodes = [...hvByType.proxmox, ...hvByType.esxi, ...hvByType.hyperv];
+
+  // Overall Operational/Degraded/Down/Total across every individually-tracked item.
+  const allItems = [...monitors, ...routers, ...switches, ...accessPoints, ...dnsResults, ...allHvNodes];
+  const operational = allItems.filter((i) => i.status === 'up').length;
+  const degraded = allItems.filter((i) => i.status === 'degraded').length;
+  const down = allItems.filter((i) => i.status === 'down').length;
+
   res.json({
-    monitors: { total: monitorRow.total || 0, up: monitorRow.up || 0 },
-    ssl_expiring: sslExpiring,
-    licences_expiring: licencesExpiring,
-    routers: deviceCounts('routers'),
-    switches: deviceCounts('switches'),
-    access_points: deviceCounts('access_points'),
-    dns_configured: dnsCount.total || 0,
+    summary: { operational, degraded, down, total: allItems.length },
+    monitors,
+    routers, switches, access_points: accessPoints,
+    dns_servers: dnsResults,
+    domains_configured: domainCount.total || 0,
     network_devices: { total: netscanRow.total || 0, online: netscanRow.online || 0 },
     last_speed_test: lastSpeedTest || null,
     pending_patches: pendingPatchesRow.n || 0,
-    hypervisors: { vms_running: vmsRunning, vms_total: vmsTotal, connections: connections.length },
+    hypervisors: hvByType,
+    ssl_expiring: sslExpiring,
+    licences_expiring: licencesExpiring,
   });
 });
 

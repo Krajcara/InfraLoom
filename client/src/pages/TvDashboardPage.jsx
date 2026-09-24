@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import LiveClock from '../components/LiveClock';
 
+const HV_LABELS = { proxmox: 'Proxmox infrastructure', esxi: 'ESXi infrastructure', hyperv: 'Hyper-V infrastructure' };
+
 export default function TvDashboardPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [disabled, setDisabled] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -16,6 +19,7 @@ export default function TvDashboardPage() {
         }
         if (!res.ok) throw new Error('Could not load dashboard');
         setData(await res.json());
+        setUpdatedAt(new Date());
         setError(null);
       } catch (err) {
         setError(err.message);
@@ -34,10 +38,15 @@ export default function TvDashboardPage() {
     );
   }
 
+  const degradedCount = data ? data.summary.degraded + data.summary.down : 0;
+
   return (
     <div className="tv-shell">
       <div className="tv-header">
-        <h1>InfraLoom</h1>
+        <div>
+          <h1>System status</h1>
+          {updatedAt && <p className="tv-updated">Updated {updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · auto-refresh every 30s</p>}
+        </div>
         <LiveClock />
       </div>
 
@@ -45,76 +54,107 @@ export default function TvDashboardPage() {
 
       {data && (
         <>
-          {/* KPI row */}
-          <div className="tv-kpi-row">
-            <Kpi label="Monitors" value={`${data.monitors.up}/${data.monitors.total}`} ok={data.monitors.up === data.monitors.total} />
-            <Kpi label="Hypervisor VMs" value={`${data.hypervisors.vms_running}/${data.hypervisors.vms_total}`} ok={data.hypervisors.vms_running > 0 || data.hypervisors.vms_total === 0} />
-            <Kpi label="Routers" value={`${data.routers.online}/${data.routers.total}`} ok={data.routers.online === data.routers.total} />
-            <Kpi label="Switches" value={`${data.switches.online}/${data.switches.total}`} ok={data.switches.online === data.switches.total} />
-            <Kpi label="Access Points" value={`${data.access_points.online}/${data.access_points.total}`} ok={data.access_points.online === data.access_points.total} />
-            <Kpi label="Network Devices" value={`${data.network_devices.online}/${data.network_devices.total}`} ok={data.network_devices.online === data.network_devices.total} />
-            <Kpi label="DNS Servers" value={data.dns_configured} neutral />
-            <Kpi label="Pending Patches" value={data.pending_patches} ok={data.pending_patches === 0} />
-          </div>
-
-          {/* Net Speed strip */}
-          <div className="tv-chart-row">
-            <div className="tv-chart-card tv-speed-card">
-              <div className="tv-chart-title">Net Speed</div>
-              {data.last_speed_test ? (
-                <div className="tv-speed-row">
-                  <div className="tv-speed-stat">
-                    <div className="tv-speed-value">{Math.round(data.last_speed_test.download)}</div>
-                    <div className="tv-speed-unit">Mbps down</div>
-                  </div>
-                  <div className="tv-speed-stat">
-                    <div className="tv-speed-value">{Math.round(data.last_speed_test.upload)}</div>
-                    <div className="tv-speed-unit">Mbps up</div>
-                  </div>
-                  <div className="tv-speed-stat">
-                    <div className="tv-speed-value">{Math.round(data.last_speed_test.ping)}</div>
-                    <div className="tv-speed-unit">ms ping</div>
-                  </div>
-                  <div className="tv-speed-provider">{data.last_speed_test.provider}</div>
-                </div>
-              ) : (
-                <div className="tv-chart-empty">No test yet</div>
-              )}
+          {degradedCount > 0 && (
+            <div className="tv-alert-banner">
+              <span className="tv-alert-dot" />
+              {data.summary.down > 0 && `${data.summary.down} service${data.summary.down === 1 ? '' : 's'} down`}
+              {data.summary.down > 0 && data.summary.degraded > 0 && ' · '}
+              {data.summary.degraded > 0 && `${data.summary.degraded} service${data.summary.degraded === 1 ? '' : 's'} degraded`}
             </div>
+          )}
+
+          <div className="tv-summary-row">
+            <SummaryTile label="Operational" value={data.summary.operational} tone="ok" />
+            <SummaryTile label="Degraded" value={data.summary.degraded} tone="warn" />
+            <SummaryTile label="Down" value={data.summary.down} tone="danger" />
+            <SummaryTile label="Total" value={data.summary.total} tone="neutral" />
           </div>
 
-          {/* Expiring SSL / Licences */}
           <div className="tv-two-col">
-            <div className="tv-section">
-              <div className="tv-section-title">SSL Expiring</div>
-              <div className="tv-list-card">
-                {data.ssl_expiring.length === 0 ? (
-                  <p className="tv-sub tv-list-empty">Nothing expiring soon</p>
-                ) : (
-                  data.ssl_expiring.map((s, i) => (
-                    <div key={i} className="tv-list-row">
-                      <span>{s.label}</span>
-                      <span className={s.ssl_days <= 3 ? 'tv-badge-danger' : 'tv-badge-warn'}>{Math.round(s.ssl_days)}d</span>
+            <div className="tv-status-col">
+              <CategoryCard title="Uptime monitors" countLabel={`${data.monitors.length} monitors`} items={data.monitors} />
+              {data.routers.length > 0 && <CategoryCard title="Routers" countLabel={`${data.routers.length} router${data.routers.length === 1 ? '' : 's'}`} items={data.routers} />}
+              {data.switches.length > 0 && <CategoryCard title="Switches" countLabel={`${data.switches.length} switch${data.switches.length === 1 ? 'es' : ''}`} items={data.switches} />}
+              {data.access_points.length > 0 && <CategoryCard title="Access points" countLabel={`${data.access_points.length} AP${data.access_points.length === 1 ? '' : 's'}`} items={data.access_points} />}
+              {data.dns_servers.length > 0 && <CategoryCard title="DNS servers" countLabel={`${data.dns_servers.length} server${data.dns_servers.length === 1 ? '' : 's'}`} items={data.dns_servers} />}
+            </div>
+
+            <div className="tv-status-col">
+              <div className="tv-cat-card">
+                <div className="tv-cat-header">
+                  <span>Internet speed</span>
+                  {data.last_speed_test && <span className="tv-badge-ok">Active</span>}
+                </div>
+                {data.last_speed_test ? (
+                  <div className="tv-speed-row">
+                    <div className="tv-speed-stat">
+                      <div className="tv-speed-value">{Math.round(data.last_speed_test.download)}</div>
+                      <div className="tv-speed-unit">↓ Download Mbps</div>
                     </div>
-                  ))
+                    <div className="tv-speed-stat">
+                      <div className="tv-speed-value">{Math.round(data.last_speed_test.upload)}</div>
+                      <div className="tv-speed-unit">↑ Upload Mbps</div>
+                    </div>
+                    <div className="tv-speed-stat">
+                      <div className="tv-speed-value">{Math.round(data.last_speed_test.ping)}</div>
+                      <div className="tv-speed-unit">Ping ms</div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="tv-sub tv-list-empty">No test yet</p>
                 )}
               </div>
-            </div>
 
-            <div className="tv-section">
-              <div className="tv-section-title">Licences Expiring</div>
-              <div className="tv-list-card">
-                {data.licences_expiring.length === 0 ? (
-                  <p className="tv-sub tv-list-empty">Nothing expiring soon</p>
-                ) : (
-                  data.licences_expiring.map((l, i) => (
-                    <div key={i} className="tv-list-row">
+              {['proxmox', 'esxi', 'hyperv'].map((type) =>
+                data.hypervisors[type]?.length > 0 ? (
+                  <div key={type} className="tv-cat-card">
+                    <div className="tv-cat-header">
+                      <span>{HV_LABELS[type]}</span>
+                      <span className="tv-sub">{data.hypervisors[type].length} node{data.hypervisors[type].length === 1 ? '' : 's'}</span>
+                    </div>
+                    {data.hypervisors[type].map((n, i) => (
+                      <div key={i} className="tv-list-row">
+                        <span>
+                          <span className={`tv-status-dot ${n.status === 'up' ? 'tv-status-up' : 'tv-status-down'}`} />
+                          {n.name} <span className="tv-sub">{n.running}/{n.total} running</span>
+                        </span>
+                        <span className={n.status === 'up' ? 'tv-badge-ok' : 'tv-badge-danger'}>{n.status === 'up' ? 'Online' : 'Offline'}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null
+              )}
+
+              <div className="tv-cat-card">
+                <div className="tv-cat-header">
+                  <span>Network devices</span>
+                  <span className="tv-sub">{data.network_devices.total} devices</span>
+                </div>
+                <div className="tv-list-row">
+                  <span>{data.network_devices.online}/{data.network_devices.total} online</span>
+                  <span className={data.network_devices.online === data.network_devices.total ? 'tv-badge-ok' : 'tv-badge-warn'}>
+                    {data.network_devices.online === data.network_devices.total ? 'All up' : 'Attention'}
+                  </span>
+                </div>
+              </div>
+
+              {(data.ssl_expiring.length > 0 || data.licences_expiring.length > 0) && (
+                <div className="tv-cat-card">
+                  <div className="tv-cat-header"><span>Expiring soon</span></div>
+                  {data.ssl_expiring.map((s, i) => (
+                    <div key={`ssl-${i}`} className="tv-list-row">
+                      <span>{s.label} (SSL)</span>
+                      <span className={s.ssl_days <= 3 ? 'tv-badge-danger' : 'tv-badge-warn'}>{Math.round(s.ssl_days)}d</span>
+                    </div>
+                  ))}
+                  {data.licences_expiring.map((l, i) => (
+                    <div key={`lic-${i}`} className="tv-list-row">
                       <span>{l.vendor} — {l.licence_type}</span>
                       <span className={l.days_left <= 3 ? 'tv-badge-danger' : 'tv-badge-warn'}>{Math.round(l.days_left)}d</span>
                     </div>
-                  ))
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </>
@@ -123,12 +163,46 @@ export default function TvDashboardPage() {
   );
 }
 
-function Kpi({ label, value, ok, neutral }) {
-  const cls = neutral ? 'tv-kpi-neutral' : ok ? 'tv-kpi-ok' : 'tv-kpi-warn';
+function SummaryTile({ label, value, tone }) {
   return (
-    <div className={`tv-kpi-tile ${cls}`}>
-      <div className="tv-kpi-label">{label}</div>
-      <div className="tv-kpi-value">{value}</div>
+    <div className={`tv-summary-tile tv-summary-${tone}`}>
+      <div className="tv-summary-value">{value}</div>
+      <div className="tv-summary-label">{label}</div>
+    </div>
+  );
+}
+
+function CategoryCard({ title, countLabel, items }) {
+  const allUp = items.every((i) => i.status === 'up');
+  return (
+    <div className="tv-cat-card">
+      <div className="tv-cat-header">
+        <span>{title}</span>
+        <span className="tv-sub">{countLabel}</span>
+      </div>
+      {items.length === 0 ? (
+        <p className="tv-sub tv-list-empty">None configured</p>
+      ) : items.length <= 6 ? (
+        items.map((item, i) => (
+          <div key={i} className="tv-list-row">
+            <span>
+              <span className={`tv-status-dot ${item.status === 'up' ? 'tv-status-up' : item.status === 'degraded' ? 'tv-status-warn' : 'tv-status-down'}`} />
+              {item.name}{item.detail ? <span className="tv-sub"> · {item.detail}</span> : null}
+            </span>
+            <span className={item.status === 'up' ? 'tv-badge-ok' : item.status === 'degraded' ? 'tv-badge-warn' : 'tv-badge-danger'}>
+              {item.status === 'up' ? 'Online' : item.status === 'degraded' ? 'Degraded' : 'Down'}
+            </span>
+          </div>
+        ))
+      ) : (
+        <div className="tv-list-row">
+          <span>
+            <span className={`tv-status-dot ${allUp ? 'tv-status-up' : 'tv-status-warn'}`} />
+            {items.filter((i) => i.status === 'up').length}/{items.length} online
+          </span>
+          <span className={allUp ? 'tv-badge-ok' : 'tv-badge-warn'}>{allUp ? 'All up' : 'Attention'}</span>
+        </div>
+      )}
     </div>
   );
 }
