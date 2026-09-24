@@ -5,6 +5,7 @@ const db = require('../db/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
 const iacService = require('../services/iacService');
+const templateService = require('../services/templateService');
 const proxmox = require('../lib/proxmoxClient');
 
 const router = express.Router();
@@ -39,6 +40,60 @@ router.get('/connections/:id/templates', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/automation/cloud-images — the known-good image catalog
+router.get('/cloud-images', (req, res) => {
+  res.json({
+    images: Object.entries(templateService.CLOUD_IMAGES).map(([key, v]) => ({ key, label: v.label })),
+  });
+});
+
+// POST /api/automation/connections/:id/templates — create a new VM template from a cloud image
+router.post('/connections/:id/templates', requireRole('superadmin', 'admin'), async (req, res) => {
+  const conn = getConnection(req.params.id);
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  if (conn.type !== 'proxmox') return res.status(400).json({ error: 'Templates are only supported for Proxmox connections' });
+
+  const { node, name, imageKey, storage, cores, memoryMb, bridge } = req.body || {};
+  if (!node || !name || !imageKey || !storage) return res.status(400).json({ error: 'node, name, imageKey, and storage are required' });
+
+  res.json({ ok: true, message: 'Template creation started' });
+  writeAuditLog({
+    user_id: req.user.id, username: req.user.username, action: 'automation.template_create',
+    module: 'automation', details: { node, name, imageKey }, ip_address: req.ip,
+  });
+
+  try {
+    await templateService.createTemplate({
+      connectionId: conn.id, conn, node, name, imageKey, storage,
+      cores: cores || 2, memoryMb: memoryMb || 2048, bridge: bridge || 'vmbr0',
+      triggeredBy: req.user.username,
+    });
+  } catch (err) {
+    console.error('[Automation] Template creation failed:', err.message);
+  }
+});
+
+// GET /api/automation/template-jobs?connection_id=&limit=
+router.get('/template-jobs', (req, res) => {
+  const { connection_id, limit } = req.query;
+  let sql = 'SELECT * FROM template_jobs WHERE 1=1';
+  const params = [];
+  if (connection_id) {
+    sql += ' AND connection_id = ?';
+    params.push(connection_id);
+  }
+  sql += ' ORDER BY created_at DESC LIMIT ?';
+  params.push(Math.min(parseInt(limit, 10) || 50, 200));
+  res.json({ jobs: db.prepare(sql).all(...params) });
+});
+
+// GET /api/automation/template-jobs/:id
+router.get('/template-jobs/:id', (req, res) => {
+  const job = db.prepare('SELECT * FROM template_jobs WHERE id = ?').get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Not found' });
+  res.json({ job });
 });
 
 // GET /api/automation/deployments?connection_id=&limit=

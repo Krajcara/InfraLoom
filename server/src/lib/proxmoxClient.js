@@ -357,7 +357,17 @@ async function listAvailableLxcTemplates(conn, node) {
   return list.map((t) => ({ template: t.template, section: t.section, description: t.headline || t.description, os: t.os }));
 }
 
+/** The next unused VMID, starting the search from Proxmox's own configured
+ * default (usually 100) — used so template creation doesn't need to guess
+ * or hardcode an ID that might collide with something already in use. */
+async function nextFreeVmid(conn) {
+  const baseUrl = conn.url;
+  const token = buildToken(conn);
+  const result = await pveGet(baseUrl, '/cluster/nextid', token);
+  return parseInt(result, 10);
+}
+
 module.exports = {
   fetchNodes, fetchNodesSummary, fetchNodeDetail, listGuestsBasic, powerAction, buildToken,
-  listVmTemplates, listStorages, listDownloadedLxcTemplates, listAvailableLxcTemplates,
+  listVmTemplates, listStorages, listDownloadedLxcTemplates, listAvailableLxcTemplates, nextFreeVmid,
 };

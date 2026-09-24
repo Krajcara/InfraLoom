@@ -300,4 +300,4 @@ function cancelRun(runId) {
   db.prepare("UPDATE patch_runs SET status='cancelled', completed_at=datetime('now') WHERE id=? AND status='awaiting_approval'").run(runId);
 }
 
-module.exports = { runDryRun, applyPatches, cancelRun, detectOsFamily };
+module.exports = { runDryRun, applyPatches, cancelRun, detectOsFamily, resolveSshCreds };

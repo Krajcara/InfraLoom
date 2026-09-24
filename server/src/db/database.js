@@ -474,6 +474,23 @@ db.exec(`
 
 // ── Automation: OpenTofu-provisioned infrastructure ──────────────────────
 db.exec(`
+  CREATE TABLE IF NOT EXISTS template_jobs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id INTEGER NOT NULL,
+    node          TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    vmid          TEXT,
+    status        TEXT NOT NULL DEFAULT 'running', -- running | completed | failed
+    output        TEXT,
+    error         TEXT,
+    triggered_by  TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    completed_at  TEXT,
+    FOREIGN KEY (connection_id) REFERENCES hypervisor_connections(id) ON DELETE CASCADE
+  );
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS iac_deployments (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT NOT NULL,

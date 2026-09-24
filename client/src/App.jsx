@@ -12,6 +12,7 @@ import UpdatePage from './pages/UpdatePage';
 import BackupPage from './pages/BackupPage';
 import NewDeploymentPage from './pages/NewDeploymentPage';
 import DeploymentsPage from './pages/DeploymentsPage';
+import TemplatesPage from './pages/TemplatesPage';
 import AuditLogPage from './pages/AuditLogPage';
 import LicencesPage from './pages/LicencesPage';
 import EntraAppsPage from './pages/EntraAppsPage';
@@ -99,6 +100,14 @@ export default function App() {
             element={
               <ProtectedRoute roles={['superadmin', 'admin']}>
                 <BackupPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/automation/templates"
+            element={
+              <ProtectedRoute roles={['superadmin', 'admin']}>
+                <TemplatesPage />
               </ProtectedRoute>
             }
           />
