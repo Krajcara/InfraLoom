@@ -10,6 +10,7 @@ export default function SettingsPage() {
     <div className="page">
       <h1>Settings</h1>
       {canEdit && <GeneralSection />}
+      {canEdit && <TvPagesSection />}
       {canEdit && <SmtpSection />}
       {canEdit && <NotificationsSection />}
       {canEdit && <NotificationRulesSection />}
@@ -33,6 +34,49 @@ function useSettingsForm(initialKeys) {
   }
 
   return { values, set, loaded };
+}
+
+function TvPagesSection() {
+  const { values, set, loaded } = useSettingsForm({ tv_dashboard_enabled: '1', tv_hypervisors_enabled: '1' });
+  const [message, setMessage] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/settings', { tv_dashboard_enabled: values.tv_dashboard_enabled, tv_hypervisors_enabled: values.tv_hypervisors_enabled });
+      setMessage({ type: 'success', text: 'Saved.' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!loaded) return null;
+
+  return (
+    <section className="card">
+      <h2>Public TV / status pages</h2>
+      <p className="muted">
+        Two read-only pages meant for a wall-mounted screen or NOC board — no login required. Turn either off if
+        you don't want it reachable.
+      </p>
+      <form onSubmit={save} autoComplete="off">
+        {message && <p className={message.type}>{message.text}</p>}
+        <label className="checkbox-label">
+          <input type="checkbox" checked={values.tv_dashboard_enabled !== '0'} onChange={(e) => set('tv_dashboard_enabled', e.target.checked ? '1' : '0')} />
+          Dashboard page enabled — <a href="/status/dashboard" target="_blank" rel="noreferrer">/status/dashboard</a>
+        </label>
+        <label className="checkbox-label">
+          <input type="checkbox" checked={values.tv_hypervisors_enabled !== '0'} onChange={(e) => set('tv_hypervisors_enabled', e.target.checked ? '1' : '0')} />
+          Hypervisors page enabled — <a href="/status/hypervisors" target="_blank" rel="noreferrer">/status/hypervisors</a>
+        </label>
+        <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+      </form>
+    </section>
+  );
 }
 
 function GeneralSection() {

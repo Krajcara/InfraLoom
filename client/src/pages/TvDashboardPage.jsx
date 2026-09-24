@@ -4,11 +4,16 @@ import LiveClock from '../components/LiveClock';
 export default function TvDashboardPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [disabled, setDisabled] = useState(false);
 
   useEffect(() => {
     async function load() {
       try {
         const res = await fetch('/api/status/public/dashboard');
+        if (res.status === 404) {
+          setDisabled(true);
+          return;
+        }
         if (!res.ok) throw new Error('Could not load dashboard');
         setData(await res.json());
         setError(null);
@@ -20,6 +25,14 @@ export default function TvDashboardPage() {
     const interval = setInterval(load, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  if (disabled) {
+    return (
+      <div className="tv-shell">
+        <p className="tv-sub">This page is currently disabled.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="tv-shell">

@@ -8,6 +8,11 @@ const esxi = require('../lib/esxiClient');
 
 const router = express.Router();
 
+function tvPageEnabled(key) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row ? row.value !== '0' : true; // default enabled if never set
+}
+
 // GET /api/status/public — for the public /status page
 router.get('/public', (req, res) => {
   const monitors = db
@@ -33,6 +38,8 @@ router.get('/public/:id/checks', (req, res) => {
 // Deliberately returns only counts/aggregates — never tokens, credentials,
 // or internal IPs — matching the /public pattern above.
 router.get('/public/dashboard', async (req, res) => {
+  if (!tvPageEnabled('tv_dashboard_enabled')) return res.status(404).json({ error: 'This page is disabled' });
+
   const deviceCounts = (table) => {
     const row = db
       .prepare(
@@ -89,26 +96,40 @@ router.get('/public/dashboard', async (req, res) => {
 // GET /api/status/public/hypervisors — TV/NOC hypervisor overview, no auth.
 // Summary only — no VM/LXC names, no IPs, no credentials.
 router.get('/public/hypervisors', async (req, res) => {
+  if (!tvPageEnabled('tv_hypervisors_enabled')) return res.status(404).json({ error: 'This page is disabled' });
+
   const connections = db.prepare('SELECT * FROM hypervisor_connections WHERE enabled = 1').all();
 
   const results = await Promise.allSettled(
     connections.map(async (conn) => {
       const client = conn.type === 'proxmox' ? proxmox : conn.type === 'hyperv' ? hyperv : conn.type === 'esxi' ? esxi : null;
       if (!client) throw new Error(`Unsupported type: ${conn.type}`);
-      const nodes = await client.fetchNodesSummary(conn);
-      return {
-        name: conn.name,
-        type: conn.type,
-        nodes: nodes.map((n) => ({
-          node: n.node,
-          online: n.status === 'online',
-          cpu_pct: n.cpu_usage ?? null,
-          ram_pct: n.mem_usage ?? null,
-          disk_pct: n.disk_usage ?? null,
-          vms_running: n.running_count || 0,
-          vms_total: (n.vm_count || 0) + (n.lxc_count || 0),
-        })),
-      };
+
+      const summary = await client.fetchNodesSummary(conn);
+      const nodes = await Promise.all(
+        summary.map(async (n) => {
+          if (n.status !== 'online') {
+            return { node: n.node, online: false, cpu_pct: null, ram_pct: null, disk_pct: null, uptime_s: n.uptime || 0, guests: [] };
+          }
+          // Proxmox needs the node name; Hyper-V/ESXi have one implicit node.
+          const detail = conn.type === 'proxmox' ? await client.fetchNodeDetail(conn, n.node) : await client.fetchNodeDetail(conn);
+          const guests = [...(detail.vms || []), ...(detail.lxc || [])].map((g) => ({
+            vmid: g.vmid, name: g.name, type: g.type,
+            status: g.status, os: g.os, ip: g.ip,
+            cpu_pct: g.cpu_usage ?? null, mem_pct: g.mem_usage ?? null, disk_pct: g.disk_usage ?? null,
+            mem_used_gb: g.mem_used_gb, mem_max_gb: g.mem_max_gb, cpus: g.cpus,
+          }));
+          return {
+            node: n.node, online: true,
+            cpu_pct: n.cpu_usage ?? null, ram_pct: n.mem_usage ?? null, disk_pct: n.disk_usage ?? null,
+            uptime_s: n.uptime || 0,
+            mem_used_gb: n.mem_used_gb, mem_max_gb: n.mem_max_gb, cpus: n.cpus,
+            running_count: n.running_count || 0, total_count: (n.vm_count || 0) + (n.lxc_count || 0),
+            guests,
+          };
+        })
+      );
+      return { name: conn.name, type: conn.type, nodes };
     })
   );
 

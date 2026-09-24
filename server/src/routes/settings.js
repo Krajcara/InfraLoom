@@ -46,6 +46,8 @@ const ALL_KEYS = [
   'quiet_hours_enabled',
   'quiet_hours_start',
   'quiet_hours_end',
+  'tv_dashboard_enabled',
+  'tv_hypervisors_enabled',
 ];
 
 const MASK = '***';

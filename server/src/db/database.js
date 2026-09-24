@@ -508,6 +508,8 @@ const defaultSettings = {
   netscan_subnet: '',
   netscan_last_run: '',
   hypervisor_health_cron: '*/5 * * * *',
+  tv_dashboard_enabled: '1',
+  tv_hypervisors_enabled: '1',
 };
 const insertSetting = db.prepare(
   'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING'
