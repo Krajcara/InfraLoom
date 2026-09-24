@@ -316,4 +316,48 @@ async function powerAction(conn, node, type, vmid, action) {
   );
 }
 
-module.exports = { fetchNodes, fetchNodesSummary, fetchNodeDetail, listGuestsBasic, powerAction, buildToken };
+/** VMs already marked as a Proxmox template (the "golden image" a new VM
+ * gets cloned from) — used to populate the template picker when creating
+ * a new VM. */
+async function listVmTemplates(conn, node) {
+  const baseUrl = conn.url;
+  const token = buildToken(conn);
+  const vms = await pveGet(baseUrl, `/nodes/${node}/qemu`, token);
+  return vms.filter((v) => v.template === 1).map((v) => ({ vmid: v.vmid, name: v.name }));
+}
+
+/** Storages on a node that can hold VM/container disks (content type
+ * "images" for VM disks, "rootdir" for LXC). */
+async function listStorages(conn, node) {
+  const baseUrl = conn.url;
+  const token = buildToken(conn);
+  const storages = await pveGet(baseUrl, `/nodes/${node}/storage`, token);
+  return storages
+    .filter((s) => (s.content || '').includes('images') || (s.content || '').includes('rootdir'))
+    .map((s) => ({ storage: s.storage, type: s.type, content: s.content }));
+}
+
+/** LXC container templates already downloaded to a storage (ready to use
+ * immediately — no download wait). */
+async function listDownloadedLxcTemplates(conn, node, storage) {
+  const baseUrl = conn.url;
+  const token = buildToken(conn);
+  const content = await pveGet(baseUrl, `/nodes/${node}/storage/${storage}/content?content=vztmpl`, token);
+  return content.map((c) => ({ volid: c.volid, size: c.size }));
+}
+
+/** The full official catalog of LXC templates Proxmox can download
+ * on-demand (`pveam` list, exposed via the node's aplinfo endpoint) —
+ * this is what a "browse available templates" picker shows, distinct
+ * from the (usually much shorter) already-downloaded list above. */
+async function listAvailableLxcTemplates(conn, node) {
+  const baseUrl = conn.url;
+  const token = buildToken(conn);
+  const list = await pveGet(baseUrl, `/nodes/${node}/aplinfo`, token);
+  return list.map((t) => ({ template: t.template, section: t.section, description: t.headline || t.description, os: t.os }));
+}
+
+module.exports = {
+  fetchNodes, fetchNodesSummary, fetchNodeDetail, listGuestsBasic, powerAction, buildToken,
+  listVmTemplates, listStorages, listDownloadedLxcTemplates, listAvailableLxcTemplates,
+};

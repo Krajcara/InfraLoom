@@ -39,8 +39,22 @@ echo ""
 # ─── System packages ─────────────────────────────────────────────────────────
 info "Installing system packages (curl, git, build tools, nmap, arp-scan)..."
 apt-get update -qq
-apt-get install -y -qq curl git build-essential python3 nmap arp-scan sqlite3 ca-certificates openssl iputils-ping >/dev/null
+apt-get install -y -qq curl git build-essential python3 nmap arp-scan sqlite3 ca-certificates openssl iputils-ping unzip >/dev/null
 success "System packages installed."
+
+# ─── OpenTofu (Automation module: provisions Proxmox VMs/LXC) ────────────────
+if ! command -v tofu >/dev/null 2>&1; then
+  info "Installing OpenTofu..."
+  TOFU_VERSION="1.12.6"
+  TOFU_ARCH="$(dpkg --print-architecture)"
+  curl -sL "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_linux_${TOFU_ARCH}.zip" -o /tmp/tofu.zip
+  unzip -o -q /tmp/tofu.zip tofu -d /tmp
+  install -m 0755 /tmp/tofu /usr/local/bin/tofu
+  rm -f /tmp/tofu.zip /tmp/tofu
+  success "OpenTofu $(tofu version | head -1) installed."
+else
+  success "OpenTofu already installed ($(tofu version | head -1))."
+fi
 
 # arp-scan and nmap's SYN/UDP scan modes need raw-socket access, which
 # normally means running as root. Instead of running the whole app as root,

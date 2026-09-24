@@ -472,7 +472,32 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_hv_node_metrics_conn_node ON hypervisor_node_metrics(connection_id, node);
 `);
 
-// Per-node SSH override for LXC patch management — a Proxmox cluster can
+// ── Automation: OpenTofu-provisioned infrastructure ──────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS iac_deployments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    guest_type    TEXT NOT NULL,          -- vm | lxc
+    connection_id INTEGER NOT NULL,
+    node          TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'planning', -- planning | awaiting_approval | applying | completed | failed | destroyed
+    tf_vars       TEXT,                   -- JSON snapshot of the form inputs used to generate the config
+    tf_config     TEXT,                   -- the generated main.tf, for audit/reference
+    state_dir     TEXT NOT NULL,          -- this deployment's isolated working directory (holds .tfstate)
+    plan_output   TEXT,
+    apply_output  TEXT,
+    result_vmid   TEXT,                   -- populated once the real vmid is known post-apply
+    error         TEXT,
+    triggered_by  TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    applied_at    TEXT,
+    FOREIGN KEY (connection_id) REFERENCES hypervisor_connections(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_iac_deployments_connection ON iac_deployments(connection_id);
+  CREATE INDEX IF NOT EXISTS idx_iac_deployments_status ON iac_deployments(status);
+`);
+
+// ── Per-node SSH override for LXC patch management — a Proxmox cluster can
 // have multiple nodes with different root passwords, so one connection-level
 // credential isn't always enough. A node without a row here falls back to
 // the connection's own patch_ssh_* fields.

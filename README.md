@@ -36,6 +36,18 @@ Self-hosted IT infrastructure management application. Runs on Ubuntu Linux.
   See **Backup and restore** below.
 - **Audit Log** — filterable, CSV export
 
+**Automation** *(new — Proxmox only for now)*
+- **New VM / LXC** — provisions via OpenTofu against the Proxmox API
+  (`bpg/proxmox` provider): plan → review → approve → apply, with live
+  streamed output, matching Patch Management's dry-run/approve pattern.
+  VM creation clones from an existing Proxmox template; LXC creation uses
+  an already-downloaded container template (download new ones from
+  Proxmox itself for now — Templates management is a near-term follow-up).
+  Currently Debian/Ubuntu only; Windows and Ansible-driven post-provision
+  configuration are planned next.
+- **Deployments** — history of every plan/apply, with status and the
+  resulting vmid once created.
+
 **Inventory**
 - **Licences** — tracking, expiry alerts, credential reveal (audited)
 - **Entra ID Apps** — app registrations, secret expiry tracking, CSV export

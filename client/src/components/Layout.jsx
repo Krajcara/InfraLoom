@@ -41,6 +41,15 @@ const NAV_GROUPS = [
     ],
   },
   {
+    key: 'automation',
+    label: 'Automation',
+    roles: ['superadmin', 'admin', 'operator'],
+    items: [
+      { to: '/automation/new', label: 'New VM/LXC', roles: ['superadmin', 'admin', 'operator'] },
+      { to: '/automation/deployments', label: 'Deployments', roles: ['superadmin', 'admin', 'operator'] },
+    ],
+  },
+  {
     key: 'account',
     label: 'Account',
     items: [{ to: '/profile', label: 'Profile' }],

@@ -10,6 +10,8 @@ import UsersPage from './pages/UsersPage';
 import SettingsPage from './pages/SettingsPage';
 import UpdatePage from './pages/UpdatePage';
 import BackupPage from './pages/BackupPage';
+import NewDeploymentPage from './pages/NewDeploymentPage';
+import DeploymentsPage from './pages/DeploymentsPage';
 import AuditLogPage from './pages/AuditLogPage';
 import LicencesPage from './pages/LicencesPage';
 import EntraAppsPage from './pages/EntraAppsPage';
@@ -97,6 +99,22 @@ export default function App() {
             element={
               <ProtectedRoute roles={['superadmin', 'admin']}>
                 <BackupPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/automation/new"
+            element={
+              <ProtectedRoute roles={['superadmin', 'admin', 'operator']}>
+                <NewDeploymentPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/automation/deployments"
+            element={
+              <ProtectedRoute roles={['superadmin', 'admin', 'operator']}>
+                <DeploymentsPage />
               </ProtectedRoute>
             }
           />

@@ -97,6 +97,7 @@ app.use('/api/network-scanner', require('./routes/networkScanner'));
 app.use('/api/patch-management', require('./routes/patchManagement'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/backup', require('./routes/backup'));
+app.use('/api/automation', require('./routes/automation'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
