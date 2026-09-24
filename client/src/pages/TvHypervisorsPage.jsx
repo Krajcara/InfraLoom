@@ -53,11 +53,11 @@ export default function TvHypervisorsPage() {
     );
   }
 
-  // Flatten every online node across every connection for the KPI/summary row.
+  // Flatten every online node across every connection for the top KPI row (overall summary).
   const allNodes = (data?.connections || []).filter((c) => !c.error).flatMap((c) => c.nodes.map((n) => ({ ...n, connType: c.type })));
   const onlineNodes = allNodes.filter((n) => n.online);
   const allGuests = onlineNodes.flatMap((n) => n.guests || []);
-  const allStorages = onlineNodes.flatMap((n) => n.storages || []);
+  const allStorages = (data?.connections || []).filter((c) => !c.error).flatMap((c) => c.storages || []);
   const runningGuests = allGuests.filter((g) => g.status === 'running').length;
   const oldestUptime = onlineNodes.reduce((max, n) => Math.max(max, n.uptime_s || 0), 0);
   const avgOf = (arr, key) => {
@@ -71,6 +71,11 @@ export default function TvHypervisorsPage() {
   const ramPoints = history?.points.map((p) => ({ value: p.mem })) || [];
   const diskPoints = history?.points.map((p) => ({ value: p.disk })) || [];
 
+  const byType = { proxmox: [], esxi: [], hyperv: [] };
+  for (const conn of data?.connections || []) {
+    if (byType[conn.type]) byType[conn.type].push(conn);
+  }
+
   return (
     <div className="tv-shell">
       <div className="tv-header">
@@ -82,6 +87,8 @@ export default function TvHypervisorsPage() {
 
       {data && (
         <>
+          {data.connections.length === 0 && <p className="tv-sub">No hypervisor connections configured.</p>}
+
           {/* KPI row */}
           <div className="tv-kpi-row">
             <div className="tv-kpi-tile tv-kpi-neutral">
@@ -130,7 +137,7 @@ export default function TvHypervisorsPage() {
             </div>
           </div>
 
-          {/* Datastore gauges */}
+          {/* Datastore gauges (deduplicated, no-data entries already dropped server-side) */}
           {allStorages.length > 0 && (
             <div className="tv-section">
               <div className="tv-section-title">Datastore Status</div>
@@ -142,43 +149,52 @@ export default function TvHypervisorsPage() {
             </div>
           )}
 
-          {/* Per-connection / per-node guest cards */}
-          <div className="tv-hv-list">
-            {data.connections.length === 0 && <p className="tv-sub">No hypervisor connections configured.</p>}
-            {data.connections.map((conn, i) => (
-              <div key={i} className="tv-hv-connection">
-                {conn.error ? (
-                  <div className="tv-hv-connection-header">
-                    <span className="tv-hv-connection-name">{conn.name}</span>
-                    <span className="tv-hv-connection-type">{TYPE_LABELS[conn.type] || conn.type}</span>
-                    <span className="tv-badge-danger">Unreachable</span>
-                  </div>
-                ) : (
-                  conn.nodes.map((n, j) => (
-                    <div key={j} className="tv-hv-node-section">
-                      <div className="tv-hv-node-header">
-                        <span className={`tv-status-dot ${n.online ? 'tv-status-up' : 'tv-status-down'}`} />
-                        <span className="tv-hv-node-name">{n.node}</span>
-                        <span className="tv-hv-connection-type">{TYPE_LABELS[conn.type] || conn.type}</span>
-                        <span className="tv-sub">{n.online ? 'online' : 'offline'}{formatUptime(n.uptime_s) ? ` · ${formatUptime(n.uptime_s)}` : ''}</span>
-                        {n.online && <span className="tv-sub tv-hv-running">{n.running_count}/{n.total_count} running</span>}
-                      </div>
-
-                      {n.online && n.guests.length > 0 && (
-                        <div className="tv-guest-grid">
-                          {n.guests.map((g) => (
-                            <GuestCard key={`${g.type}-${g.vmid}`} guest={g} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            ))}
-          </div>
+          {/* Grouped by hypervisor platform */}
+          {['proxmox', 'esxi', 'hyperv'].map((type) =>
+            byType[type].length > 0 ? <TypeSection key={type} type={type} connections={byType[type]} /> : null
+          )}
         </>
       )}
+    </div>
+  );
+}
+
+function TypeSection({ type, connections }) {
+  return (
+    <div className="tv-section">
+      <div className="tv-section-title">{TYPE_LABELS[type] || type}</div>
+      <div className="tv-hv-list">
+        {connections.map((conn, i) => (
+          <div key={i} className="tv-hv-connection">
+            {conn.error ? (
+              <div className="tv-hv-connection-header">
+                <span className="tv-hv-connection-name">{conn.name}</span>
+                <span className="tv-badge-danger">Unreachable</span>
+              </div>
+            ) : (
+              conn.nodes.map((n, j) => (
+                <div key={j} className="tv-hv-node-section">
+                  <div className="tv-hv-node-header">
+                    <span className={`tv-status-dot ${n.online ? 'tv-status-up' : 'tv-status-down'}`} />
+                    <span className="tv-hv-node-name">{n.node}</span>
+                    <span className="tv-hv-connection-name">{conn.name}</span>
+                    <span className="tv-sub">{n.online ? 'online' : 'offline'}{formatUptime(n.uptime_s) ? ` · ${formatUptime(n.uptime_s)}` : ''}</span>
+                    {n.online && <span className="tv-sub tv-hv-running">{n.running_count}/{n.total_count} running</span>}
+                  </div>
+
+                  {n.online && n.guests.length > 0 && (
+                    <div className="tv-guest-grid">
+                      {n.guests.map((g) => (
+                        <GuestCard key={`${g.type}-${g.vmid}`} guest={g} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

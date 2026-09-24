@@ -147,12 +147,19 @@ router.get('/public/hypervisors', async (req, res) => {
           };
         })
       );
-      return { name: conn.name, type: conn.type, nodes };
+      const uniqueStorages = new Map();
+      for (const n of nodes) {
+        for (const s of n.storages) {
+          if (s.usage_pct === null || s.usage_pct === undefined) continue; // no capacity data — nothing useful to show
+          if (!uniqueStorages.has(s.name)) uniqueStorages.set(s.name, s);
+        }
+      }
+      return { name: conn.name, type: conn.type, nodes, storages: [...uniqueStorages.values()] };
     })
   );
 
   const connectionsOut = results.map((r, i) =>
-    r.status === 'fulfilled' ? r.value : { name: connections[i].name, type: connections[i].type, error: true, nodes: [] }
+    r.status === 'fulfilled' ? r.value : { name: connections[i].name, type: connections[i].type, error: true, nodes: [], storages: [] }
   );
 
   res.json({ connections: connectionsOut });
