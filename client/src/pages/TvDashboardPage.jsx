@@ -44,94 +44,91 @@ export default function TvDashboardPage() {
       {error && <p className="error">{error}</p>}
 
       {data && (
-        <div className="tv-grid">
-          <TvCard title="Uptime Monitor" status={data.monitors.up === data.monitors.total ? 'up' : 'warn'}>
-            <div className="tv-big-number">{data.monitors.up}/{data.monitors.total}</div>
-            <div className="tv-sub">monitors up</div>
-          </TvCard>
+        <>
+          {/* KPI row */}
+          <div className="tv-kpi-row">
+            <Kpi label="Monitors" value={`${data.monitors.up}/${data.monitors.total}`} ok={data.monitors.up === data.monitors.total} />
+            <Kpi label="Hypervisor VMs" value={`${data.hypervisors.vms_running}/${data.hypervisors.vms_total}`} ok={data.hypervisors.vms_running > 0 || data.hypervisors.vms_total === 0} />
+            <Kpi label="Routers" value={`${data.routers.online}/${data.routers.total}`} ok={data.routers.online === data.routers.total} />
+            <Kpi label="Switches" value={`${data.switches.online}/${data.switches.total}`} ok={data.switches.online === data.switches.total} />
+            <Kpi label="Access Points" value={`${data.access_points.online}/${data.access_points.total}`} ok={data.access_points.online === data.access_points.total} />
+            <Kpi label="Network Devices" value={`${data.network_devices.online}/${data.network_devices.total}`} ok={data.network_devices.online === data.network_devices.total} />
+            <Kpi label="DNS Servers" value={data.dns_configured} neutral />
+            <Kpi label="Pending Patches" value={data.pending_patches} ok={data.pending_patches === 0} />
+          </div>
 
-          <TvCard title="Hypervisors" status={data.hypervisors.vms_running > 0 || data.hypervisors.vms_total === 0 ? 'up' : 'warn'}>
-            <div className="tv-big-number">{data.hypervisors.vms_running}/{data.hypervisors.vms_total}</div>
-            <div className="tv-sub">guests running · {data.hypervisors.connections} connection(s)</div>
-          </TvCard>
-
-          <TvCard title="Routers" status={data.routers.online === data.routers.total ? 'up' : 'warn'}>
-            <div className="tv-big-number">{data.routers.online}/{data.routers.total}</div>
-            <div className="tv-sub">online</div>
-          </TvCard>
-
-          <TvCard title="Switches" status={data.switches.online === data.switches.total ? 'up' : 'warn'}>
-            <div className="tv-big-number">{data.switches.online}/{data.switches.total}</div>
-            <div className="tv-sub">online</div>
-          </TvCard>
-
-          <TvCard title="Access Points" status={data.access_points.online === data.access_points.total ? 'up' : 'warn'}>
-            <div className="tv-big-number">{data.access_points.online}/{data.access_points.total}</div>
-            <div className="tv-sub">online</div>
-          </TvCard>
-
-          <TvCard title="Network Devices" status={data.network_devices.online === data.network_devices.total ? 'up' : 'warn'}>
-            <div className="tv-big-number">{data.network_devices.online}/{data.network_devices.total}</div>
-            <div className="tv-sub">online</div>
-          </TvCard>
-
-          <TvCard title="DNS Servers" status="up">
-            <div className="tv-big-number">{data.dns_configured}</div>
-            <div className="tv-sub">configured</div>
-          </TvCard>
-
-          <TvCard title="Net Speed" status="up">
-            {data.last_speed_test ? (
-              <>
-                <div className="tv-big-number">{Math.round(data.last_speed_test.download)} <span className="tv-unit">Mbps</span></div>
-                <div className="tv-sub">↑ {Math.round(data.last_speed_test.upload)} Mbps · {Math.round(data.last_speed_test.ping)} ms</div>
-              </>
-            ) : (
-              <div className="tv-sub">No test yet</div>
-            )}
-          </TvCard>
-
-          <TvCard title="Pending Patches" status={data.pending_patches === 0 ? 'up' : 'warn'}>
-            <div className="tv-big-number">{data.pending_patches}</div>
-            <div className="tv-sub">awaiting approval</div>
-          </TvCard>
-
-          <TvCard title="SSL Expiring" status={data.ssl_expiring.length === 0 ? 'up' : 'warn'} wide>
-            {data.ssl_expiring.length === 0 ? (
-              <div className="tv-sub">Nothing expiring soon</div>
-            ) : (
-              data.ssl_expiring.map((s, i) => (
-                <div key={i} className="tv-list-row">
-                  <span>{s.label}</span>
-                  <span className={s.ssl_days <= 3 ? 'tv-badge-danger' : 'tv-badge-warn'}>{Math.round(s.ssl_days)}d</span>
+          {/* Net Speed strip */}
+          <div className="tv-chart-row">
+            <div className="tv-chart-card tv-speed-card">
+              <div className="tv-chart-title">Net Speed</div>
+              {data.last_speed_test ? (
+                <div className="tv-speed-row">
+                  <div className="tv-speed-stat">
+                    <div className="tv-speed-value">{Math.round(data.last_speed_test.download)}</div>
+                    <div className="tv-speed-unit">Mbps down</div>
+                  </div>
+                  <div className="tv-speed-stat">
+                    <div className="tv-speed-value">{Math.round(data.last_speed_test.upload)}</div>
+                    <div className="tv-speed-unit">Mbps up</div>
+                  </div>
+                  <div className="tv-speed-stat">
+                    <div className="tv-speed-value">{Math.round(data.last_speed_test.ping)}</div>
+                    <div className="tv-speed-unit">ms ping</div>
+                  </div>
+                  <div className="tv-speed-provider">{data.last_speed_test.provider}</div>
                 </div>
-              ))
-            )}
-          </TvCard>
+              ) : (
+                <div className="tv-chart-empty">No test yet</div>
+              )}
+            </div>
+          </div>
 
-          <TvCard title="Licences Expiring" status={data.licences_expiring.length === 0 ? 'up' : 'warn'} wide>
-            {data.licences_expiring.length === 0 ? (
-              <div className="tv-sub">Nothing expiring soon</div>
-            ) : (
-              data.licences_expiring.map((l, i) => (
-                <div key={i} className="tv-list-row">
-                  <span>{l.vendor} — {l.licence_type}</span>
-                  <span className={l.days_left <= 3 ? 'tv-badge-danger' : 'tv-badge-warn'}>{Math.round(l.days_left)}d</span>
-                </div>
-              ))
-            )}
-          </TvCard>
-        </div>
+          {/* Expiring SSL / Licences */}
+          <div className="tv-two-col">
+            <div className="tv-section">
+              <div className="tv-section-title">SSL Expiring</div>
+              <div className="tv-list-card">
+                {data.ssl_expiring.length === 0 ? (
+                  <p className="tv-sub tv-list-empty">Nothing expiring soon</p>
+                ) : (
+                  data.ssl_expiring.map((s, i) => (
+                    <div key={i} className="tv-list-row">
+                      <span>{s.label}</span>
+                      <span className={s.ssl_days <= 3 ? 'tv-badge-danger' : 'tv-badge-warn'}>{Math.round(s.ssl_days)}d</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="tv-section">
+              <div className="tv-section-title">Licences Expiring</div>
+              <div className="tv-list-card">
+                {data.licences_expiring.length === 0 ? (
+                  <p className="tv-sub tv-list-empty">Nothing expiring soon</p>
+                ) : (
+                  data.licences_expiring.map((l, i) => (
+                    <div key={i} className="tv-list-row">
+                      <span>{l.vendor} — {l.licence_type}</span>
+                      <span className={l.days_left <= 3 ? 'tv-badge-danger' : 'tv-badge-warn'}>{Math.round(l.days_left)}d</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-function TvCard({ title, status, children, wide }) {
+function Kpi({ label, value, ok, neutral }) {
+  const cls = neutral ? 'tv-kpi-neutral' : ok ? 'tv-kpi-ok' : 'tv-kpi-warn';
   return (
-    <div className={`tv-card tv-card-${status}${wide ? ' tv-card-wide' : ''}`}>
-      <div className="tv-card-title">{title}</div>
-      <div className="tv-card-body">{children}</div>
+    <div className={`tv-kpi-tile ${cls}`}>
+      <div className="tv-kpi-label">{label}</div>
+      <div className="tv-kpi-value">{value}</div>
     </div>
   );
 }

@@ -2511,3 +2511,62 @@ textarea {
   color: #8a8f9c;
   margin-top: 4px;
 }
+
+/* ── TV Dashboard — net speed strip, two-column expiring lists ── */
+.tv-speed-card {
+  grid-column: 1 / -1;
+}
+
+.tv-speed-row {
+  display: flex;
+  align-items: baseline;
+  gap: 40px;
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.tv-speed-stat {
+  text-align: center;
+}
+
+.tv-speed-value {
+  font-size: 38px;
+  font-weight: 700;
+}
+
+.tv-speed-unit {
+  font-size: 13px;
+  color: #8a8f9c;
+  margin-top: 2px;
+}
+
+.tv-speed-provider {
+  font-size: 12px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  align-self: center;
+}
+
+.tv-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.tv-list-card {
+  background: #14161b;
+  border: 1px solid #2a2e38;
+  border-radius: 10px;
+  padding: 8px 18px;
+}
+
+.tv-list-empty {
+  padding: 10px 0;
+}
+
+@media (max-width: 900px) {
+  .tv-two-col {
+    grid-template-columns: 1fr;
+  }
+}
