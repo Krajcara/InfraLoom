@@ -115,6 +115,22 @@ success "Code updated"
 
 cd "$INSTALL_DIR"
 
+# ─── OpenTofu (Automation module) ──────────────────────────────────────────────
+# System-level dependency, not something `npm install` covers — check for it
+# separately so existing installs (which only ran install.sh before this
+# feature existed) pick it up too, not just fresh installs.
+if ! command -v tofu >/dev/null 2>&1; then
+  progress "Installing OpenTofu"
+  TOFU_VERSION="1.12.6"
+  TOFU_ARCH="$(dpkg --print-architecture)"
+  curl -sL "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_linux_${TOFU_ARCH}.zip" -o /tmp/tofu.zip
+  command -v unzip >/dev/null 2>&1 || apt-get install -y -qq unzip >/dev/null
+  unzip -o -q /tmp/tofu.zip tofu -d /tmp
+  install -m 0755 /tmp/tofu /usr/local/bin/tofu
+  rm -f /tmp/tofu.zip /tmp/tofu
+  success "OpenTofu $(tofu version | head -1) installed."
+fi
+
 # ─── Reinstall dependencies ───────────────────────────────────────────────────
 # NOTE: deliberately do NOT source .env here — NODE_ENV=production would make
 # npm skip devDependencies (vite, ...) and break the build. See install.sh.
