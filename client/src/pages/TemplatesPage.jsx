@@ -111,7 +111,11 @@ export default function TemplatesPage() {
                 Storage
                 <select value={form.storage} onChange={(e) => setForm({ ...form, storage: e.target.value })} required>
                   <option value="">Select...</option>
-                  {templates?.storages.map((s) => <option key={s.storage} value={s.storage}>{s.storage}</option>)}
+                  {templates?.storages.map((s) => (
+                    <option key={s.storage} value={s.storage}>
+                      {s.storage}{s.avail_gb ? ` — ${s.avail_gb} GB free` : ''}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>

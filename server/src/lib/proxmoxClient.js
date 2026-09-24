@@ -334,7 +334,13 @@ async function listStorages(conn, node) {
   const storages = await pveGet(baseUrl, `/nodes/${node}/storage`, token);
   return storages
     .filter((s) => (s.content || '').includes('images') || (s.content || '').includes('rootdir'))
-    .map((s) => ({ storage: s.storage, type: s.type, content: s.content }));
+    .map((s) => ({
+      storage: s.storage, type: s.type, content: s.content,
+      total_gb: s.total ? (s.total / 1073741824).toFixed(1) : null,
+      used_gb: s.used ? (s.used / 1073741824).toFixed(1) : null,
+      avail_gb: s.avail ? (s.avail / 1073741824).toFixed(1) : null,
+      usage_pct: s.total && s.used ? Math.round((s.used / s.total) * 100) : null,
+    }));
 }
 
 /** LXC container templates already downloaded to a storage (ready to use
