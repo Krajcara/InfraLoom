@@ -10,7 +10,7 @@ export default function NewDeploymentPage() {
   const [node, setNode] = useState('');
   const [templates, setTemplates] = useState(null);
   const [form, setForm] = useState({
-    name: '', templateVmid: '', templateFileId: '', storage: '',
+    name: '', vmid: '', templateVmid: '', templateFileId: '', storage: '',
     cores: 2, memoryMb: 2048, diskGb: 20,
     networkMode: 'dhcp', address: '', gateway: '', dns: '1.1.1.1',
   });
@@ -51,6 +51,7 @@ export default function NewDeploymentPage() {
           ? { mode: 'dhcp' }
           : { mode: 'static', address: form.address, gateway: form.gateway, dns: form.dns.split(',').map((s) => s.trim()).filter(Boolean) },
       };
+      if (form.vmid) vars.vmid = form.vmid;
       if (guestType === 'vm') vars.templateVmid = form.templateVmid;
       else vars.templateFileId = form.templateFileId;
 
@@ -109,6 +110,10 @@ export default function NewDeploymentPage() {
             <label>
               Name
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="my-new-vm" required />
+            </label>
+            <label>
+              VMID (optional)
+              <input type="number" min="100" value={form.vmid || ''} onChange={(e) => setForm({ ...form, vmid: e.target.value })} placeholder="auto-assign" />
             </label>
             {guestType === 'vm' ? (
               <label>

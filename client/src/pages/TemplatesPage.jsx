@@ -13,7 +13,7 @@ export default function TemplatesPage() {
   const [jobs, setJobs] = useState([]);
   const [activeJob, setActiveJob] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: '', imageKey: '', storage: '', cores: 2, memoryMb: 2048, bridge: 'vmbr0' });
+  const [form, setForm] = useState({ name: '', vmid: '', imageKey: '', storage: '', cores: 2, memoryMb: 2048, bridge: 'vmbr0' });
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
 
@@ -65,6 +65,18 @@ export default function TemplatesPage() {
     'template:complete': () => loadJobs(),
   });
 
+  async function deleteTemplate(t) {
+    if (!confirm(`Delete template "${t.name}" (#${t.vmid})? This permanently removes it from Proxmox and cannot be undone.`)) return;
+    setError(null);
+    try {
+      await api.del(`/automation/connections/${connId}/templates/${node}/${t.vmid}`);
+      const d = await api.get(`/automation/connections/${connId}/templates?node=${node}`);
+      setTemplates(d);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   return (
     <div className="page">
       <div className="page-header-row">
@@ -99,6 +111,10 @@ export default function TemplatesPage() {
               <label>
                 Template name
                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="ubuntu-22.04-template" required />
+              </label>
+              <label>
+                VMID (optional)
+                <input type="number" min="100" value={form.vmid || ''} onChange={(e) => setForm({ ...form, vmid: e.target.value })} placeholder="auto-assign" />
               </label>
               <label>
                 Cloud image
@@ -145,12 +161,18 @@ export default function TemplatesPage() {
       <section className="card">
         <h2>Existing VM templates on {node}</h2>
         <table className="table">
-          <thead><tr><th>Name</th><th>VMID</th></tr></thead>
+          <thead><tr><th>Name</th><th>VMID</th><th></th></tr></thead>
           <tbody>
             {templates?.vmTemplates.map((t) => (
-              <tr key={t.vmid}><td>{t.name}</td><td className="muted">#{t.vmid}</td></tr>
+              <tr key={t.vmid}>
+                <td>{t.name}</td>
+                <td className="muted">#{t.vmid}</td>
+                <td className="actions">
+                  <button className="btn-link danger" onClick={() => deleteTemplate(t)}>Delete</button>
+                </td>
+              </tr>
             ))}
-            {templates && templates.vmTemplates.length === 0 && <tr><td colSpan={2} className="muted">No templates yet on this node.</td></tr>}
+            {templates && templates.vmTemplates.length === 0 && <tr><td colSpan={3} className="muted">No templates yet on this node.</td></tr>}
           </tbody>
         </table>
       </section>

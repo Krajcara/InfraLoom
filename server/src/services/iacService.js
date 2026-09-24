@@ -79,14 +79,14 @@ function buildVmConfig(conn, vars) {
   const diskGb = hclNumber(vars.diskGb, 'diskGb');
   const templateVmid = hclNumber(vars.templateVmid, 'templateVmid');
   const networkBlock = buildNetworkBlock(vars.network, { withDns: true });
+  const vmidLine = vars.vmid ? `\n  vm_id     = ${hclNumber(vars.vmid, 'vmid')}\n` : '\n';
 
   return (
     buildProviderBlock(conn) +
     `
 resource "proxmox_virtual_environment_vm" "this" {
   name      = ${hclString(vars.name)}
-  node_name = ${hclString(vars.node)}
-
+  node_name = ${hclString(vars.node)}${vmidLine}
   clone {
     vm_id = ${templateVmid}
   }
@@ -121,6 +121,7 @@ function buildLxcConfig(conn, vars) {
   const memoryMb = hclNumber(vars.memoryMb, 'memoryMb');
   const diskGb = hclNumber(vars.diskGb, 'diskGb');
   const networkBlock = buildNetworkBlock(vars.network, { withDns: false });
+  const vmidLine = vars.vmid ? `\n  vm_id     = ${hclNumber(vars.vmid, 'vmid')}\n` : '\n';
   const dnsBlock = vars.network.mode === 'static' && vars.network.dns?.length
     ? `
   dns {
@@ -132,8 +133,7 @@ function buildLxcConfig(conn, vars) {
     buildProviderBlock(conn) +
     `
 resource "proxmox_virtual_environment_container" "this" {
-  node_name = ${hclString(vars.node)}
-
+  node_name = ${hclString(vars.node)}${vmidLine}
   initialization {
     hostname = ${hclString(vars.name)}${networkBlock}
   }${dnsBlock}

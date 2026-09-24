@@ -373,7 +373,22 @@ async function nextFreeVmid(conn) {
   return parseInt(result, 10);
 }
 
+/** Deletes a VM (or a template, which is just a VM flagged template=1) —
+ * this is a Proxmox background task, so the delete call returns quickly
+ * but actual removal happens shortly after. */
+async function deleteVm(conn, node, vmid) {
+  const baseUrl = conn.url;
+  const token = buildToken(conn);
+  return axios({
+    method: 'delete',
+    url: `${baseUrl}/api2/json/nodes/${node}/qemu/${vmid}`,
+    headers: { Authorization: `PVEAPIToken=${token}` },
+    httpsAgent,
+    timeout: 15000,
+  });
+}
+
 module.exports = {
   fetchNodes, fetchNodesSummary, fetchNodeDetail, listGuestsBasic, powerAction, buildToken,
-  listVmTemplates, listStorages, listDownloadedLxcTemplates, listAvailableLxcTemplates, nextFreeVmid,
+  listVmTemplates, listStorages, listDownloadedLxcTemplates, listAvailableLxcTemplates, nextFreeVmid, deleteVm,
 };

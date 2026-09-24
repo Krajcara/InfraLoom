@@ -55,23 +55,41 @@ router.post('/connections/:id/templates', requireRole('superadmin', 'admin'), as
   if (!conn) return res.status(404).json({ error: 'Not found' });
   if (conn.type !== 'proxmox') return res.status(400).json({ error: 'Templates are only supported for Proxmox connections' });
 
-  const { node, name, imageKey, storage, cores, memoryMb, bridge } = req.body || {};
+  const { node, name, imageKey, storage, cores, memoryMb, bridge, vmid } = req.body || {};
   if (!node || !name || !imageKey || !storage) return res.status(400).json({ error: 'node, name, imageKey, and storage are required' });
 
   res.json({ ok: true, message: 'Template creation started' });
   writeAuditLog({
     user_id: req.user.id, username: req.user.username, action: 'automation.template_create',
-    module: 'automation', details: { node, name, imageKey }, ip_address: req.ip,
+    module: 'automation', details: { node, name, imageKey, vmid }, ip_address: req.ip,
   });
 
   try {
     await templateService.createTemplate({
-      connectionId: conn.id, conn, node, name, imageKey, storage,
+      connectionId: conn.id, conn, node, name, imageKey, storage, vmid,
       cores: cores || 2, memoryMb: memoryMb || 2048, bridge: bridge || 'vmbr0',
       triggeredBy: req.user.username,
     });
   } catch (err) {
     console.error('[Automation] Template creation failed:', err.message);
+  }
+});
+
+// DELETE /api/automation/connections/:id/templates/:node/:vmid
+router.delete('/connections/:id/templates/:node/:vmid', requireRole('superadmin', 'admin'), async (req, res) => {
+  const conn = getConnection(req.params.id);
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  if (conn.type !== 'proxmox') return res.status(400).json({ error: 'Templates are only supported for Proxmox connections' });
+
+  try {
+    await templateService.deleteTemplate(conn, req.params.node, req.params.vmid);
+    writeAuditLog({
+      user_id: req.user.id, username: req.user.username, action: 'automation.template_delete',
+      module: 'automation', details: { node: req.params.node, vmid: req.params.vmid }, ip_address: req.ip,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -51,7 +51,7 @@ echo "___EXIT_$?___"
 `.trim();
 }
 
-async function createTemplate({ connectionId, conn, node, name, imageKey, storage, cores, memoryMb, bridge, triggeredBy }) {
+async function createTemplate({ connectionId, conn, node, name, imageKey, storage, cores, memoryMb, bridge, vmid: requestedVmid, triggeredBy }) {
   const image = CLOUD_IMAGES[imageKey];
   if (!image) throw new Error(`Unknown cloud image: ${imageKey}`);
 
@@ -64,7 +64,8 @@ async function createTemplate({ connectionId, conn, node, name, imageKey, storag
   let vmid;
   let creds;
   try {
-    vmid = await proxmox.nextFreeVmid(conn);
+    vmid = requestedVmid ? parseInt(requestedVmid, 10) : await proxmox.nextFreeVmid(conn);
+    if (!Number.isInteger(vmid) || vmid < 100) throw new Error(`Invalid VMID: ${requestedVmid}`);
     db.prepare('UPDATE template_jobs SET vmid = ? WHERE id = ?').run(String(vmid), id);
     creds = resolveSshCreds(conn, node);
   } catch (err) {
@@ -99,4 +100,8 @@ async function createTemplate({ connectionId, conn, node, name, imageKey, storag
   }
 }
 
-module.exports = { createTemplate, CLOUD_IMAGES };
+async function deleteTemplate(conn, node, vmid) {
+  await proxmox.deleteVm(conn, node, vmid);
+}
+
+module.exports = { createTemplate, deleteTemplate, CLOUD_IMAGES };
