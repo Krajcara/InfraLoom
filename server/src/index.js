@@ -6,7 +6,6 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const helmet = require('helmet');
-const cors = require('cors');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
@@ -22,7 +21,7 @@ const app = express();
 // IP from X-Forwarded-For instead of logging a warning on every request.
 app.set('trust proxy', 1);
 const server = http.createServer(app);
-const io = new SocketIOServer(server, { cors: { origin: true, credentials: true } });
+const io = new SocketIOServer(server); // same-origin only — see the CORS note below
 global.io = io; // accessible to routes/services that need to push events (update, later monitors etc.)
 require('./services/sshTerminal').initSshTerminal(io);
 
@@ -46,7 +45,12 @@ app.use(
     originAgentCluster: false,
   })
 );
-app.use(cors({ origin: true, credentials: true }));
+// No CORS middleware: frontend and API are always served from the same
+// origin here, so no cross-origin requests need to succeed. The previous
+// origin:true + credentials:true reflected any requesting origin back as
+// allowed and sent cookies with it — a real CSRF/credential-theft exposure
+// (any external site could have made authenticated requests on a logged-in
+// user's behalf) with no legitimate use case in a same-origin deployment.
 app.use(compression());
 app.use(cookieParser());
 app.use(express.json({ limit: '2mb' }));

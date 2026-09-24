@@ -215,6 +215,29 @@ Backups run on a configurable daily schedule with configurable retention
 - LXC patch management's host-level SSH credential and Hyper-V's per-guest
   credentials are broader access than the platforms' own API tokens —
   only configure them on connections where you actually need patching.
+- CORS is disabled outright — the frontend and API are always served from
+  the same origin, so no cross-origin request (credentialed or not) should
+  ever succeed. An earlier `origin: true, credentials: true` configuration
+  reflected any requesting origin as allowed and sent cookies with it — a
+  real CSRF exposure with no legitimate use case here.
+- CSV exports (Audit Log) neutralize formula-injection payloads (a value
+  starting with `=`, `+`, `-`, or `@` is prefixed with a quote) so opening
+  an export in Excel/Sheets can't trigger an embedded formula.
+- The Net Speed CLI auto-downloader verifies extracted files resolve
+  inside the expected output directory before use, as explicit
+  defense-in-depth against `decompress`'s disclosed Zip Slip CVE (no
+  upstream fix exists for that package); the existing anchored filename
+  filter already blocked path-traversal entries in practice.
+- `npm audit` is clean for `nodemailer` (upgraded to v10, which fixed a
+  critical SSRF/arbitrary-file-read advisory and a high-severity TLS
+  validation issue) as of this phase. Two moderate-severity findings
+  remain, deliberately deferred: `react-router-dom` (open redirect and an
+  SSR-hydration issue that doesn't apply here, since this is a client-only
+  SPA) and `uuid` via `node-cron` (a buffer-bounds check we never trigger,
+  since we don't call it with user-supplied buffers). Both fixes are
+  major-version bumps with real regression risk for the size of change
+  involved — worth doing, but as a deliberate, separately-tested upgrade
+  rather than folded into this pass.
 
 ## License
 

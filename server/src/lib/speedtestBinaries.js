@@ -81,6 +81,16 @@ async function ensureBinary({ name, list, urlBase, binaryRegex }) {
     },
   });
   fs.rmSync(archivePath, { force: true });
+
+  // Explicit defense-in-depth against decompress's disclosed Zip Slip CVE
+  // (GHSA-mp2f-45pm-3cg9, no upstream fix available): even though the
+  // anchored filter regex above already rejects any path-traversal entry
+  // before it's written, this makes the containment check explicit rather
+  // than relying solely on that regex being correct forever.
+  if (path.resolve(binaryPath) !== path.resolve(BIN_DIR, binaryName) || !path.resolve(binaryPath).startsWith(path.resolve(BIN_DIR) + path.sep)) {
+    fs.rmSync(binaryPath, { force: true });
+    throw new Error(`${name}: extracted file resolved outside the expected binary directory — refusing to use it`);
+  }
   fs.chmodSync(binaryPath, 0o755);
 
   if (!fs.existsSync(binaryPath)) throw new Error(`${name}: extraction did not produce a binary`);

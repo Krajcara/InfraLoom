@@ -67,7 +67,12 @@ router.get('/export.csv', (req, res) => {
   const headers = ['id', 'created_at', 'username', 'action', 'module', 'entity_type', 'entity_id', 'ip_address', 'details'];
   const escape = (v) => {
     if (v === null || v === undefined) return '';
-    const s = String(v).replace(/"/g, '""');
+    let s = String(v);
+    // CSV/formula injection: a cell starting with =, +, -, or @ is executed
+    // as a formula by Excel/Sheets when the file is opened. Prefixing with
+    // a single quote forces it to be read as plain text instead.
+    if (/^[=+\-@]/.test(s)) s = `'${s}`;
+    s = s.replace(/"/g, '""');
     return /[",\n]/.test(s) ? `"${s}"` : s;
   };
 
