@@ -14,6 +14,8 @@ import LicencesPage from './pages/LicencesPage';
 import EntraAppsPage from './pages/EntraAppsPage';
 import MonitorsPage from './pages/MonitorsPage';
 import StatusPage from './pages/StatusPage';
+import TvDashboardPage from './pages/TvDashboardPage';
+import TvHypervisorsPage from './pages/TvHypervisorsPage';
 import SshPage from './pages/SshPage';
 import RoutersPage from './pages/RoutersPage';
 import SwitchesPage from './pages/SwitchesPage';
@@ -33,6 +35,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/status" element={<StatusPage />} />
+        <Route path="/status/dashboard" element={<TvDashboardPage />} />
+        <Route path="/status/hypervisors" element={<TvHypervisorsPage />} />
         <Route
           element={
             <ProtectedRoute>

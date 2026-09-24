@@ -2007,3 +2007,230 @@ textarea {
   gap: 6px;
   font-size: 13px;
 }
+
+/* ── TV / NOC pages ── */
+.tv-shell {
+  min-height: 100vh;
+  background: #0a0b0e;
+  padding: 32px 40px;
+  color: #e4e6eb;
+}
+
+.tv-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 32px;
+}
+
+.tv-header h1 {
+  font-size: 36px;
+  margin: 0;
+}
+
+.tv-clock {
+  text-align: right;
+}
+
+.tv-clock-time {
+  font-size: 32px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tv-clock-date {
+  font-size: 14px;
+  color: #8a8f9c;
+  margin-top: 2px;
+}
+
+.tv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.tv-card {
+  background: #14161b;
+  border: 1px solid #2a2e38;
+  border-left: 5px solid #4a4f5c;
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+
+.tv-card-up { border-left-color: #22c55e; }
+.tv-card-warn { border-left-color: #facc15; }
+
+.tv-card-wide {
+  grid-column: span 2;
+}
+
+.tv-card-title {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8a8f9c;
+  margin-bottom: 10px;
+}
+
+.tv-big-number {
+  font-size: 42px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.tv-unit {
+  font-size: 18px;
+  color: #8a8f9c;
+}
+
+.tv-sub {
+  font-size: 14px;
+  color: #8a8f9c;
+  margin-top: 6px;
+}
+
+.tv-list-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 15px;
+  border-bottom: 1px solid #1f222a;
+}
+
+.tv-list-row:last-child {
+  border-bottom: none;
+}
+
+.tv-badge-warn, .tv-badge-danger {
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.tv-badge-warn {
+  background: rgba(250, 204, 21, 0.15);
+  color: #facc15;
+}
+
+.tv-badge-danger {
+  background: rgba(255, 107, 107, 0.15);
+  color: #ff6b6b;
+}
+
+/* Hypervisors TV page */
+.tv-hv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.tv-hv-connection {
+  background: #14161b;
+  border: 1px solid #2a2e38;
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+
+.tv-hv-connection-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.tv-hv-connection-name {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.tv-hv-connection-type {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8a8f9c;
+  background: #1f222a;
+  padding: 3px 10px;
+  border-radius: 6px;
+}
+
+.tv-hv-nodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.tv-hv-node {
+  background: #0f1115;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.tv-hv-node-offline {
+  opacity: 0.6;
+}
+
+.tv-hv-node-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tv-hv-node-name {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.tv-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tv-status-up { background: #22c55e; }
+.tv-status-down { background: #ff6b6b; }
+
+.tv-usage-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tv-usage-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tv-usage-label {
+  width: 36px;
+  font-size: 12px;
+  color: #8a8f9c;
+}
+
+.tv-usage-bar-track {
+  flex: 1;
+  height: 8px;
+  background: #1f222a;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.tv-usage-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+}
+
+.tv-usage-ok { background: #22c55e; }
+.tv-usage-warn { background: #facc15; }
+.tv-usage-danger { background: #ff6b6b; }
+
+.tv-usage-pct {
+  width: 36px;
+  text-align: right;
+  font-size: 12px;
+  color: #8a8f9c;
+}
