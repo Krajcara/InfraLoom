@@ -1,11 +1,11 @@
 'use strict';
 
 const express = require('express');
-const dnsLib = require('dns').promises;
 const db = require('../db/database');
 const proxmox = require('../lib/proxmoxClient');
 const hyperv = require('../lib/hypervClient');
 const esxi = require('../lib/esxiClient');
+const { checkDnsServerOnline } = require('../lib/dnsHealthCheck');
 
 const router = express.Router();
 
@@ -70,21 +70,11 @@ router.get('/public/dashboard', async (req, res) => {
   // DNS servers — a quick raw resolve check per server (fast; same fallback
   // technique the internal DNS status check uses), not the full per-vendor
   // API auth flow, so a batch of these stays cheap enough for a 30s poll.
-  const dnsServers = db.prepare('SELECT role, type, ip, label FROM dns_local ORDER BY role').all();
+  const dnsServers = db.prepare('SELECT role, type, ip, api_key, label FROM dns_local ORDER BY role').all();
   const dnsResults = await Promise.all(
     dnsServers.map(async (s) => {
-      const dnsIp = s.ip.replace(/^https?:\/\//, '').split(':')[0];
-      try {
-        const resolver = new dnsLib.Resolver();
-        resolver.setServers([dnsIp]);
-        await Promise.race([
-          resolver.resolve4('cloudflare.com'),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
-        ]);
-        return { name: s.label || `${s.type} (${s.role})`, detail: s.role, status: 'up' };
-      } catch {
-        return { name: s.label || `${s.type} (${s.role})`, detail: s.role, status: 'down' };
-      }
+      const result = await checkDnsServerOnline(s);
+      return { name: s.label || `${s.type} (${s.role})`, detail: s.role, status: result.online ? 'up' : 'down' };
     })
   );
 
