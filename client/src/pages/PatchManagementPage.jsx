@@ -19,6 +19,7 @@ export default function PatchManagementPage() {
   const [bulk, setBulk] = useState(null); // { batchId, completed, total }
 
   async function load() {
+    setLoading(true);
     setError(null);
     try {
       const d = await api.get('/patch-management/overview');
