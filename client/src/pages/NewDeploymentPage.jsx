@@ -42,6 +42,10 @@ export default function NewDeploymentPage() {
 
   async function plan(e) {
     e.preventDefault();
+    if (form.vmid && templates?.usedVmids.includes(parseInt(form.vmid, 10))) {
+      setError(`VMID ${form.vmid} is already in use on this node — choose another or leave blank to auto-assign.`);
+      return;
+    }
     setPlanning(true);
     setError(null);
     try {
@@ -114,6 +118,9 @@ export default function NewDeploymentPage() {
             <label>
               VMID (optional)
               <input type="number" min="100" value={form.vmid || ''} onChange={(e) => setForm({ ...form, vmid: e.target.value })} placeholder="auto-assign" />
+              {form.vmid && templates?.usedVmids.includes(parseInt(form.vmid, 10)) && (
+                <span className="error">VMID {form.vmid} is already in use on this node</span>
+              )}
             </label>
             {guestType === 'vm' ? (
               <label>

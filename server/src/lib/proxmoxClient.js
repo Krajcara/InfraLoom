@@ -388,7 +388,21 @@ async function deleteVm(conn, node, vmid) {
   });
 }
 
+/** Every VMID already in use on a node (VMs and containers both — the ID
+ * space is shared between them in Proxmox), for validating a manually
+ * entered VMID before attempting to use it. */
+async function listUsedVmids(conn, node) {
+  const baseUrl = conn.url;
+  const token = buildToken(conn);
+  const [vms, lxc] = await Promise.all([
+    pveGet(baseUrl, `/nodes/${node}/qemu`, token).catch(() => []),
+    pveGet(baseUrl, `/nodes/${node}/lxc`, token).catch(() => []),
+  ]);
+  return [...vms, ...lxc].map((g) => g.vmid);
+}
+
 module.exports = {
   fetchNodes, fetchNodesSummary, fetchNodeDetail, listGuestsBasic, powerAction, buildToken,
   listVmTemplates, listStorages, listDownloadedLxcTemplates, listAvailableLxcTemplates, nextFreeVmid, deleteVm,
+  listUsedVmids,
 };

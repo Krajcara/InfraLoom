@@ -24,9 +24,10 @@ router.get('/connections/:id/templates', async (req, res) => {
   if (!node) return res.status(400).json({ error: 'node query param is required' });
 
   try {
-    const [vmTemplates, storages] = await Promise.all([
+    const [vmTemplates, storages, usedVmids] = await Promise.all([
       proxmox.listVmTemplates(conn, node),
       proxmox.listStorages(conn, node),
+      proxmox.listUsedVmids(conn, node),
     ]);
     const lxcTemplatesByStorage = {};
     for (const s of storages) {
@@ -36,7 +37,7 @@ router.get('/connections/:id/templates', async (req, res) => {
         lxcTemplatesByStorage[s.storage] = [];
       }
     }
-    res.json({ vmTemplates, storages, lxcTemplatesByStorage });
+    res.json({ vmTemplates, storages, lxcTemplatesByStorage, usedVmids });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

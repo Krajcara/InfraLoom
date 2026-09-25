@@ -82,14 +82,43 @@ function buildVmConfig(conn, vars) {
   const networkBlock = buildNetworkBlock(vars.network, { withDns: true });
   const vmidLine = vars.vmid ? `\n  vm_id     = ${hclNumber(vars.vmid, 'vmid')}\n` : '\n';
 
+  // Ensures qemu-guest-agent is installed and running once the clone boots
+  // for the first time — most cloud images ship it already, but not all
+  // do, and this makes it reliable either way rather than assuming.
+  const cloudInitYaml = [
+    '#cloud-config',
+    'packages:',
+    '  - qemu-guest-agent',
+    'runcmd:',
+    '  - systemctl enable --now qemu-guest-agent',
+    '',
+  ].join('\n');
+
   return (
     buildProviderBlock(conn) +
     `
+resource "proxmox_virtual_environment_file" "cloud_init" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = ${hclString(vars.node)}
+
+  source_raw {
+    data      = <<-EOT
+      ${cloudInitYaml.split('\n').join('\n      ')}
+      EOT
+    file_name = ${hclString(`${vars.name}-cloud-init.yaml`)}
+  }
+}
+
 resource "proxmox_virtual_environment_vm" "this" {
   name      = ${hclString(vars.name)}
   node_name = ${hclString(vars.node)}${vmidLine}
   clone {
     vm_id = ${templateVmid}
+  }
+
+  agent {
+    enabled = true
   }
 
   cpu {
@@ -106,7 +135,9 @@ resource "proxmox_virtual_environment_vm" "this" {
     interface    = "scsi0"
   }
 
-  initialization {${networkBlock}
+  initialization {
+    user_data_file_id = proxmox_virtual_environment_file.cloud_init.id
+${networkBlock}
   }
 }
 
