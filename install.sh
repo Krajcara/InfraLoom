@@ -39,7 +39,7 @@ echo ""
 # ─── System packages ─────────────────────────────────────────────────────────
 info "Installing system packages (curl, git, build tools, nmap, arp-scan)..."
 apt-get update -qq
-apt-get install -y -qq curl git build-essential python3 nmap arp-scan sqlite3 ca-certificates openssl iputils-ping unzip >/dev/null
+apt-get install -y -qq curl git build-essential python3 python3-pip nmap arp-scan sqlite3 ca-certificates openssl iputils-ping unzip >/dev/null
 success "System packages installed."
 
 # ─── OpenTofu (Automation module: provisions Proxmox VMs/LXC) ────────────────
@@ -54,6 +54,15 @@ if ! command -v tofu >/dev/null 2>&1; then
   success "OpenTofu $(tofu version | head -1) installed."
 else
   success "OpenTofu already installed ($(tofu version | head -1))."
+fi
+
+# ─── Ansible (Automation module: post-provision configuration) ───────────────
+if ! command -v ansible-playbook >/dev/null 2>&1; then
+  info "Installing Ansible..."
+  pip install ansible-core --break-system-packages >/dev/null 2>&1
+  success "Ansible $(ansible-playbook --version | head -1) installed."
+else
+  success "Ansible already installed."
 fi
 
 # arp-scan and nmap's SYN/UDP scan modes need raw-socket access, which

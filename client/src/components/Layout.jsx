@@ -48,6 +48,8 @@ const NAV_GROUPS = [
       { to: '/automation/templates', label: 'Templates', roles: ['superadmin', 'admin'] },
       { to: '/automation/new', label: 'New VM/LXC', roles: ['superadmin', 'admin', 'operator'] },
       { to: '/automation/deployments', label: 'Deployments', roles: ['superadmin', 'admin', 'operator'] },
+      { to: '/automation/playbooks', label: 'Playbooks', roles: ['superadmin', 'admin'] },
+      { to: '/automation/run-playbook', label: 'Run Playbook', roles: ['superadmin', 'admin', 'operator'] },
     ],
   },
   {

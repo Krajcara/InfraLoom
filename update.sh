@@ -131,6 +131,14 @@ if ! command -v tofu >/dev/null 2>&1; then
   success "OpenTofu $(tofu version | head -1) installed."
 fi
 
+# ─── Ansible (Automation module) ───────────────────────────────────────────────
+if ! command -v ansible-playbook >/dev/null 2>&1; then
+  progress "Installing Ansible"
+  command -v pip3 >/dev/null 2>&1 || apt-get install -y -qq python3-pip >/dev/null
+  pip install ansible-core --break-system-packages >/dev/null 2>&1
+  success "Ansible $(ansible-playbook --version | head -1) installed."
+fi
+
 # ─── Reinstall dependencies ───────────────────────────────────────────────────
 # NOTE: deliberately do NOT source .env here — NODE_ENV=production would make
 # npm skip devDependencies (vite, ...) and break the build. See install.sh.

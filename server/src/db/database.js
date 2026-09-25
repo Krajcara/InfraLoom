@@ -472,6 +472,35 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_hv_node_metrics_conn_node ON hypervisor_node_metrics(connection_id, node);
 `);
 
+// ── Automation: Ansible playbooks ─────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ansible_playbooks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    description  TEXT,
+    content      TEXT NOT NULL,
+    is_builtin   INTEGER DEFAULT 0,
+    created_by   TEXT,
+    created_at   TEXT DEFAULT (datetime('now')),
+    updated_at   TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS ansible_runs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    playbook_id   INTEGER,
+    playbook_name TEXT NOT NULL,
+    target_guests TEXT NOT NULL,  -- JSON: [{connectionId, node, vmid, name, ip}]
+    status        TEXT NOT NULL DEFAULT 'checking', -- checking | awaiting_approval | applying | completed | failed
+    check_output  TEXT,
+    apply_output  TEXT,
+    error         TEXT,
+    triggered_by  TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    completed_at  TEXT,
+    FOREIGN KEY (playbook_id) REFERENCES ansible_playbooks(id) ON DELETE SET NULL
+  );
+`);
+
 // ── Automation: OpenTofu-provisioned infrastructure ──────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS template_jobs (
@@ -580,6 +609,105 @@ const insertSetting = db.prepare(
 );
 for (const [key, value] of Object.entries(defaultSettings)) {
   insertSetting.run(key, value);
+}
+
+const builtinPlaybooks = [
+  {
+    name: 'Install Docker',
+    description: 'Installs Docker Engine + Compose plugin on a Debian/Ubuntu host via the official apt repository.',
+    content: `---
+- name: Install Docker
+  hosts: all
+  become: true
+  tasks:
+    - name: Install prerequisite packages
+      apt:
+        name: ["ca-certificates", "curl", "gnupg"]
+        state: present
+        update_cache: true
+
+    - name: Create keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Add Docker GPG key
+      get_url:
+        url: https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Add Docker apt repository
+      apt_repository:
+        repo: "deb [arch={{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker packages
+      apt:
+        name: ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"]
+        state: present
+        update_cache: true
+
+    - name: Ensure Docker is running and enabled
+      systemd:
+        name: docker
+        state: started
+        enabled: true
+`,
+  },
+  {
+    name: 'Install Node Exporter',
+    description: 'Installs the Prometheus Node Exporter monitoring agent as a systemd service (listens on :9100).',
+    content: `---
+- name: Install Node Exporter
+  hosts: all
+  become: true
+  vars:
+    node_exporter_version: "1.8.2"
+  tasks:
+    - name: Download node_exporter
+      unarchive:
+        src: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+        dest: /tmp
+        remote_src: true
+
+    - name: Install binary
+      copy:
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+        dest: /usr/local/bin/node_exporter
+        mode: "0755"
+        remote_src: true
+
+    - name: Create systemd service
+      copy:
+        dest: /etc/systemd/system/node_exporter.service
+        content: |
+          [Unit]
+          Description=Prometheus Node Exporter
+          After=network.target
+
+          [Service]
+          User=nobody
+          ExecStart=/usr/local/bin/node_exporter
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Start and enable node_exporter
+      systemd:
+        name: node_exporter
+        state: started
+        enabled: true
+        daemon_reload: true
+`,
+  },
+];
+const insertBuiltinPlaybook = db.prepare(
+  'INSERT INTO ansible_playbooks (name, description, content, is_builtin) SELECT ?, ?, ?, 1 WHERE NOT EXISTS (SELECT 1 FROM ansible_playbooks WHERE name = ? AND is_builtin = 1)'
+);
+for (const pb of builtinPlaybooks) {
+  insertBuiltinPlaybook.run(pb.name, pb.description, pb.content, pb.name);
 }
 
 module.exports = db;

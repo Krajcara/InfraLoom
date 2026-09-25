@@ -13,6 +13,8 @@ import BackupPage from './pages/BackupPage';
 import NewDeploymentPage from './pages/NewDeploymentPage';
 import DeploymentsPage from './pages/DeploymentsPage';
 import TemplatesPage from './pages/TemplatesPage';
+import PlaybooksPage from './pages/PlaybooksPage';
+import RunPlaybookPage from './pages/RunPlaybookPage';
 import AuditLogPage from './pages/AuditLogPage';
 import LicencesPage from './pages/LicencesPage';
 import EntraAppsPage from './pages/EntraAppsPage';
@@ -124,6 +126,22 @@ export default function App() {
             element={
               <ProtectedRoute roles={['superadmin', 'admin', 'operator']}>
                 <DeploymentsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/automation/playbooks"
+            element={
+              <ProtectedRoute roles={['superadmin', 'admin']}>
+                <PlaybooksPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/automation/run-playbook"
+            element={
+              <ProtectedRoute roles={['superadmin', 'admin', 'operator']}>
+                <RunPlaybookPage />
               </ProtectedRoute>
             }
           />
