@@ -14,6 +14,7 @@ export default function TemplatesPage() {
   const [activeJob, setActiveJob] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: '', vmid: '', imageKey: '', storage: '', cores: 2, memoryMb: 2048, bridge: 'vmbr0' });
+  const [jobsLoading, setJobsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
 
@@ -43,7 +44,8 @@ export default function TemplatesPage() {
   }, [connId, node]);
 
   function loadJobs() {
-    api.get(`/automation/template-jobs?connection_id=${connId}`).then((d) => setJobs(d.jobs));
+    setJobsLoading(true);
+    api.get(`/automation/template-jobs?connection_id=${connId}`).then((d) => setJobs(d.jobs)).finally(() => setJobsLoading(false));
   }
 
   async function createTemplate(e) {
@@ -87,7 +89,7 @@ export default function TemplatesPage() {
         <h1>Templates</h1>
         <div className="form-row">
           <button onClick={() => setShowCreate(!showCreate)}>{showCreate ? 'Cancel' : '+ Create template from cloud image'}</button>
-          <button onClick={loadJobs}><RefreshCw size={14} /></button>
+          <button onClick={loadJobs} disabled={jobsLoading}><RefreshCw size={14} className={jobsLoading ? 'spin' : ''} /></button>
         </div>
       </div>
 
