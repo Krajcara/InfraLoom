@@ -4,7 +4,7 @@ import { useSocket } from '../hooks/useSocket';
 
 export default function RunPlaybookPage() {
   const [playbooks, setPlaybooks] = useState([]);
-  const [playbookId, setPlaybookId] = useState('');
+  const [selectedPlaybooks, setSelectedPlaybooks] = useState(new Set());
   const [targets, setTargets] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [run, setRun] = useState(null);
@@ -15,6 +15,14 @@ export default function RunPlaybookPage() {
     api.get('/ansible/playbooks').then((d) => setPlaybooks(d.playbooks));
     api.get('/ansible/targets').then((d) => setTargets(d.targets));
   }, []);
+
+  function togglePlaybook(id) {
+    setSelectedPlaybooks((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
 
   function toggle(t) {
     const key = `${t.connectionId}:${t.vmid}`;
@@ -27,15 +35,15 @@ export default function RunPlaybookPage() {
 
   async function check(e) {
     e.preventDefault();
-    if (!playbookId || selected.size === 0) {
-      setError('Choose a playbook and at least one target.');
+    if (selectedPlaybooks.size === 0 || selected.size === 0) {
+      setError('Choose at least one playbook and at least one target.');
       return;
     }
     setChecking(true);
     setError(null);
     try {
       const guests = targets.filter((t) => selected.has(`${t.connectionId}:${t.vmid}`));
-      const d = await api.post('/ansible/runs', { playbookId: parseInt(playbookId, 10), guests });
+      const d = await api.post('/ansible/runs', { playbookIds: [...selectedPlaybooks], guests });
       setRun(d.run);
     } catch (err) {
       setError(err.message);
@@ -54,18 +62,27 @@ export default function RunPlaybookPage() {
       <p className="muted">
         Runs in <code>--check --diff</code> mode first (Ansible's own dry-run — nothing on the targets changes),
         then you approve before it runs for real. Targets need SSH credentials already saved (the same ones used
-        for SSH Terminal / Patch Management).
+        for SSH Terminal / Patch Management) — this works for any running VM/LXC, not just ones InfraLoom created.
       </p>
 
       {error && <p className="error">{error}</p>}
 
       <form onSubmit={check} autoComplete="off">
         <section className="card">
-          <h2>Playbook</h2>
-          <select value={playbookId} onChange={(e) => setPlaybookId(e.target.value)} required>
-            <option value="">Select a playbook...</option>
-            {playbooks.map((pb) => <option key={pb.id} value={pb.id}>{pb.name}{pb.is_builtin ? ' (built-in)' : ''}</option>)}
-          </select>
+          <h2>Playbooks ({selectedPlaybooks.size} selected — runs in the order listed below)</h2>
+          <table className="table">
+            <thead><tr><th></th><th>Name</th><th>Description</th></tr></thead>
+            <tbody>
+              {playbooks.map((pb) => (
+                <tr key={pb.id}>
+                  <td><input type="checkbox" checked={selectedPlaybooks.has(pb.id)} onChange={() => togglePlaybook(pb.id)} /></td>
+                  <td>{pb.name}{pb.is_builtin ? ' (built-in)' : ''}</td>
+                  <td className="muted">{pb.description}</td>
+                </tr>
+              ))}
+              {playbooks.length === 0 && <tr><td colSpan={3} className="muted">No playbooks yet.</td></tr>}
+            </tbody>
+          </table>
         </section>
 
         <section className="card">

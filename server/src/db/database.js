@@ -500,6 +500,7 @@ db.exec(`
     FOREIGN KEY (playbook_id) REFERENCES ansible_playbooks(id) ON DELETE SET NULL
   );
 `);
+ensureColumn('ansible_runs', 'playbook_ids', 'TEXT'); // JSON array of playbook ids run in this batch — supersedes the single playbook_id/playbook_name pair for new runs
 
 // ── Automation: OpenTofu-provisioned infrastructure ──────────────────────
 db.exec(`

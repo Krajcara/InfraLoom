@@ -94,12 +94,14 @@ router.get('/runs/:id', (req, res) => {
 
 // POST /api/ansible/runs — check (dry-run), nothing on targets changes yet
 router.post('/runs', requireRole('superadmin', 'admin', 'operator'), async (req, res) => {
-  const { playbookId, guests } = req.body || {};
-  if (!playbookId || !Array.isArray(guests) || guests.length === 0) return res.status(400).json({ error: 'playbookId and a non-empty guests array are required' });
+  const { playbookIds, guests } = req.body || {};
+  if (!Array.isArray(playbookIds) || playbookIds.length === 0 || !Array.isArray(guests) || guests.length === 0) {
+    return res.status(400).json({ error: 'playbookIds (non-empty array) and a non-empty guests array are required' });
+  }
 
   try {
-    const run = await ansibleService.checkPlaybook({ playbookId, guests, triggeredBy: req.user.username });
-    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'ansible.check', module: 'ansible', entity_id: run.id, details: { playbookId, targetCount: guests.length }, ip_address: req.ip });
+    const run = await ansibleService.checkPlaybook({ playbookIds, guests, triggeredBy: req.user.username });
+    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'ansible.check', module: 'ansible', entity_id: run.id, details: { playbookIds, targetCount: guests.length }, ip_address: req.ip });
     res.json({ run: { ...run, target_guests: JSON.parse(run.target_guests) } });
   } catch (err) {
     res.status(500).json({ error: err.message });

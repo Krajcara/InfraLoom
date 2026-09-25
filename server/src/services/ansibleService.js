@@ -90,15 +90,17 @@ function runAnsible(dir, args, { onOutput, timeoutMs = 1800000 } = {}) {
 
 /** Runs the playbook in --check --diff mode and stores a run row awaiting
  * approval — nothing on the target hosts changes yet. */
-async function checkPlaybook({ playbookId, guests, triggeredBy }) {
-  const playbook = db.prepare('SELECT * FROM ansible_playbooks WHERE id = ?').get(playbookId);
-  if (!playbook) throw new Error('Playbook not found');
+async function checkPlaybook({ playbookIds, guests, triggeredBy }) {
+  const ids = Array.isArray(playbookIds) ? playbookIds : [playbookIds];
+  const playbooks = ids.map((pid) => db.prepare('SELECT * FROM ansible_playbooks WHERE id = ?').get(pid)).filter(Boolean);
+  if (playbooks.length === 0) throw new Error('No valid playbooks selected');
 
+  const combinedName = playbooks.map((p) => p.name).join(', ');
   const row = db
     .prepare(
-      `INSERT INTO ansible_runs (playbook_id, playbook_name, target_guests, status, triggered_by) VALUES (?,?,?,'checking',?)`
+      `INSERT INTO ansible_runs (playbook_id, playbook_name, playbook_ids, target_guests, status, triggered_by) VALUES (?,?,?,?,'checking',?)`
     )
-    .run(playbookId, playbook.name, JSON.stringify(guests), triggeredBy);
+    .run(playbooks[0].id, combinedName, JSON.stringify(playbooks.map((p) => p.id)), JSON.stringify(guests), triggeredBy);
   const id = row.lastInsertRowid;
 
   const dir = path.join(RUNS_DIR, String(id));
@@ -107,9 +109,17 @@ async function checkPlaybook({ playbookId, guests, triggeredBy }) {
   try {
     const { inventory, missing } = buildInventory(guests);
     fs.writeFileSync(path.join(dir, 'inventory.yml'), inventory);
-    fs.writeFileSync(path.join(dir, 'playbook.yml'), playbook.content);
+    // Ansible natively accepts multiple playbook files as separate
+    // positional args and runs them in order within one invocation — one
+    // check, one approval, one apply for the whole batch, rather than a
+    // separate run per playbook.
+    const playbookFiles = playbooks.map((p, i) => {
+      const filename = `playbook-${i}.yml`;
+      fs.writeFileSync(path.join(dir, filename), p.content);
+      return filename;
+    });
 
-    const result = await runAnsible(dir, ['-i', 'inventory.yml', 'playbook.yml', '--check', '--diff'], { timeoutMs: 300000 });
+    const result = await runAnsible(dir, ['-i', 'inventory.yml', ...playbookFiles, '--check', '--diff'], { timeoutMs: 300000 });
     const checkFailedNote = result.code !== 0
       ? '\n\n⚠️  This check run reported a failure — but --check mode has known false-negatives for ' +
         'playbooks that add a package repository and install from it in the same run (the simulated run ' +
@@ -148,7 +158,12 @@ async function applyPlaybook(runId, approvedBy) {
   };
 
   try {
-    const result = await runAnsible(dir, ['-i', 'inventory.yml', 'playbook.yml'], { onOutput });
+    const playbookFiles = fs.readdirSync(dir)
+      .filter((f) => /^playbook-\d+\.yml$/.test(f))
+      .sort((a, b) => parseInt(a.match(/\d+/)[0], 10) - parseInt(b.match(/\d+/)[0], 10));
+    if (playbookFiles.length === 0) throw new Error('No playbook files found for this run — was it checked first?');
+
+    const result = await runAnsible(dir, ['-i', 'inventory.yml', ...playbookFiles], { onOutput });
     const status = result.code === 0 ? 'completed' : 'failed';
     db.prepare("UPDATE ansible_runs SET status=?, apply_output=?, completed_at=datetime('now') WHERE id=?").run(status, accumulated, runId);
     if (io) io.emit('ansible:complete', { runId, status });
