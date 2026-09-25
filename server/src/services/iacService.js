@@ -5,6 +5,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const db = require('../db/database');
 const { buildToken } = require('../lib/proxmoxClient');
+const { resolveSshCreds } = require('./patchService');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 const TOFU_DIR = path.join(PROJECT_ROOT, 'data', 'tofu');
@@ -31,7 +32,27 @@ function hclNumber(value, fieldName) {
   return n;
 }
 
-function buildProviderBlock(conn) {
+function buildProviderBlock(conn, sshCreds) {
+  // The bpg/proxmox provider needs SSH access to the node for a handful of
+  // operations that have no REST API equivalent — uploading a snippet file
+  // (our cloud-init data) is one of them. Reuses the same host-level SSH
+  // credentials already configured for LXC patch management, since it's
+  // the identical kind of access (broad, host-level shell/file control).
+  const sshBlock = sshCreds?.username && sshCreds?.password
+    ? `
+  ssh {
+    agent    = false
+    username = ${hclString(sshCreds.username)}
+    password = ${hclString(sshCreds.password)}
+
+    node {
+      name    = ${hclString(sshCreds.nodeName)}
+      address = ${hclString(sshCreds.host)}
+    }
+  }
+`
+    : '';
+
   return `
 terraform {
   required_providers {
@@ -46,7 +67,7 @@ provider "proxmox" {
   endpoint  = ${hclString(conn.url + '/')}
   api_token = ${hclString(buildToken(conn))}
   insecure  = true
-}
+${sshBlock}}
 `;
 }
 
@@ -81,6 +102,13 @@ function buildVmConfig(conn, vars) {
   const templateVmid = hclNumber(vars.templateVmid, 'templateVmid');
   const networkBlock = buildNetworkBlock(vars.network, { withDns: true });
   const vmidLine = vars.vmid ? `\n  vm_id     = ${hclNumber(vars.vmid, 'vmid')}\n` : '\n';
+  const sshCreds = { ...resolveSshCreds(conn, vars.node), nodeName: vars.node };
+  if (!sshCreds.username || !sshCreds.password) {
+    throw new Error(
+      "VM creation needs SSH access to the Proxmox host (used to upload the cloud-init snippet that installs the guest agent) — " +
+      "set it under this connection's \"Patch Management (LXC)\" settings, or that node's SSH override, even if you don't use LXC patching."
+    );
+  }
 
   // Ensures qemu-guest-agent is installed and running once the clone boots
   // for the first time — most cloud images ship it already, but not all
@@ -95,7 +123,7 @@ function buildVmConfig(conn, vars) {
   ].join('\n');
 
   return (
-    buildProviderBlock(conn) +
+    buildProviderBlock(conn, sshCreds) +
     `
 resource "proxmox_virtual_environment_file" "cloud_init" {
   content_type = "snippets"
