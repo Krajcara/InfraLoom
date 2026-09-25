@@ -28,11 +28,16 @@ export default function PlaybooksPage() {
     setError(null);
   }
 
-  function openEdit(pb) {
-    setEditingId(pb.id);
-    setForm({ name: pb.name, description: pb.description || '', content: pb.content });
-    setShowForm(true);
+  async function openEdit(pb) {
     setError(null);
+    try {
+      const d = await api.get(`/ansible/playbooks/${pb.id}`);
+      setEditingId(pb.id);
+      setForm({ name: d.playbook.name, description: d.playbook.description || '', content: d.playbook.content });
+      setShowForm(true);
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   function closeForm() {
