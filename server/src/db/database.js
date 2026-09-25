@@ -501,6 +501,7 @@ db.exec(`
   );
 `);
 ensureColumn('ansible_runs', 'playbook_ids', 'TEXT'); // JSON array of playbook ids run in this batch — supersedes the single playbook_id/playbook_name pair for new runs
+ensureColumn('ansible_playbooks', 'port', 'TEXT'); // informational only — which port the installed app listens on, shown in the list
 
 // ── Automation: OpenTofu-provisioned infrastructure ──────────────────────
 db.exec(`

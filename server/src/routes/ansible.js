@@ -37,7 +37,7 @@ router.get('/targets', async (req, res) => {
 
 // GET /api/ansible/playbooks
 router.get('/playbooks', (req, res) => {
-  res.json({ playbooks: db.prepare('SELECT id, name, description, is_builtin, created_by, created_at, updated_at FROM ansible_playbooks ORDER BY is_builtin DESC, name ASC').all() });
+  res.json({ playbooks: db.prepare('SELECT id, name, description, port, is_builtin, created_by, created_at, updated_at FROM ansible_playbooks ORDER BY is_builtin DESC, name ASC').all() });
 });
 
 // GET /api/ansible/playbooks/:id
@@ -49,9 +49,9 @@ router.get('/playbooks/:id', (req, res) => {
 
 // POST /api/ansible/playbooks
 router.post('/playbooks', requireRole('superadmin', 'admin'), (req, res) => {
-  const { name, description, content } = req.body || {};
+  const { name, description, content, port } = req.body || {};
   if (!name || !content) return res.status(400).json({ error: 'name and content are required' });
-  const result = db.prepare('INSERT INTO ansible_playbooks (name, description, content, created_by) VALUES (?,?,?,?)').run(name, description || '', content, req.user.username);
+  const result = db.prepare('INSERT INTO ansible_playbooks (name, description, content, port, created_by) VALUES (?,?,?,?,?)').run(name, description || '', content, port || null, req.user.username);
   writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'ansible.playbook_create', module: 'ansible', entity_id: result.lastInsertRowid, details: { name }, ip_address: req.ip });
   res.json({ playbook: db.prepare('SELECT * FROM ansible_playbooks WHERE id = ?').get(result.lastInsertRowid) });
 });
@@ -61,9 +61,9 @@ router.put('/playbooks/:id', requireRole('superadmin', 'admin'), (req, res) => {
   const pb = db.prepare('SELECT * FROM ansible_playbooks WHERE id = ?').get(req.params.id);
   if (!pb) return res.status(404).json({ error: 'Not found' });
   if (pb.is_builtin) return res.status(400).json({ error: 'Built-in playbooks cannot be edited — copy it into a new one instead' });
-  const { name, description, content } = req.body || {};
-  db.prepare("UPDATE ansible_playbooks SET name=?, description=?, content=?, updated_at=datetime('now') WHERE id=?").run(
-    name || pb.name, description ?? pb.description, content || pb.content, req.params.id
+  const { name, description, content, port } = req.body || {};
+  db.prepare("UPDATE ansible_playbooks SET name=?, description=?, content=?, port=?, updated_at=datetime('now') WHERE id=?").run(
+    name || pb.name, description ?? pb.description, content || pb.content, port ?? pb.port, req.params.id
   );
   writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'ansible.playbook_update', module: 'ansible', entity_id: pb.id, ip_address: req.ip });
   res.json({ playbook: db.prepare('SELECT * FROM ansible_playbooks WHERE id = ?').get(req.params.id) });

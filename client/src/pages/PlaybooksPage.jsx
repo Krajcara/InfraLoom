@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Trash2, Upload, Pencil } from 'lucide-react';
 import { api } from '../api';
 
-const emptyForm = { name: '', description: '', content: '' };
+const emptyForm = { name: '', description: '', content: '', port: '' };
 
 export default function PlaybooksPage() {
   const [playbooks, setPlaybooks] = useState([]);
@@ -33,7 +33,7 @@ export default function PlaybooksPage() {
     try {
       const d = await api.get(`/ansible/playbooks/${pb.id}`);
       setEditingId(pb.id);
-      setForm({ name: d.playbook.name, description: d.playbook.description || '', content: d.playbook.content });
+      setForm({ name: d.playbook.name, description: d.playbook.description || '', content: d.playbook.content, port: d.playbook.port || '' });
       setShowForm(true);
     } catch (err) {
       setError(err.message);
@@ -102,6 +102,10 @@ export default function PlaybooksPage() {
                 Description
                 <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </label>
+              <label>
+                Port (optional, informational)
+                <input value={form.port} onChange={(e) => setForm({ ...form, port: e.target.value })} placeholder="e.g. 80, 8080" />
+              </label>
               <button type="button" onClick={() => fileInputRef.current?.click()}><Upload size={14} /> Upload .yml</button>
               <input ref={fileInputRef} type="file" accept=".yml,.yaml" style={{ display: 'none' }} onChange={onFileChosen} />
             </div>
@@ -123,12 +127,13 @@ export default function PlaybooksPage() {
 
       <section className="card">
         <table className="table">
-          <thead><tr><th>Name</th><th>Description</th><th>Source</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Description</th><th>Port</th><th>Source</th><th></th></tr></thead>
           <tbody>
             {playbooks.map((pb) => (
               <tr key={pb.id}>
                 <td>{pb.name}</td>
                 <td className="muted">{pb.description}</td>
+                <td className="muted">{pb.port || '—'}</td>
                 <td className="muted">{pb.is_builtin ? 'Built-in' : `Custom · ${pb.created_by}`}</td>
                 <td className="actions">
                   {!pb.is_builtin && (
@@ -140,7 +145,7 @@ export default function PlaybooksPage() {
                 </td>
               </tr>
             ))}
-            {playbooks.length === 0 && <tr><td colSpan={4} className="muted">No playbooks yet.</td></tr>}
+            {playbooks.length === 0 && <tr><td colSpan={5} className="muted">No playbooks yet.</td></tr>}
           </tbody>
         </table>
       </section>
