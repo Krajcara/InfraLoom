@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Trash2, Upload } from 'lucide-react';
+import { Trash2, Upload, Pencil } from 'lucide-react';
 import { api } from '../api';
+
+const emptyForm = { name: '', description: '', content: '' };
 
 export default function PlaybooksPage() {
   const [playbooks, setPlaybooks] = useState([]);
-  const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: '', description: '', content: '' });
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef(null);
@@ -18,14 +21,34 @@ export default function PlaybooksPage() {
     load();
   }, []);
 
-  async function create(e) {
+  function openCreate() {
+    setEditingId(null);
+    setForm(emptyForm);
+    setShowForm(true);
+    setError(null);
+  }
+
+  function openEdit(pb) {
+    setEditingId(pb.id);
+    setForm({ name: pb.name, description: pb.description || '', content: pb.content });
+    setShowForm(true);
+    setError(null);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingId(null);
+    setForm(emptyForm);
+  }
+
+  async function save(e) {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      await api.post('/ansible/playbooks', form);
-      setShowCreate(false);
-      setForm({ name: '', description: '', content: '' });
+      if (editingId) await api.put(`/ansible/playbooks/${editingId}`, form);
+      else await api.post('/ansible/playbooks', form);
+      closeForm();
       load();
     } catch (err) {
       setError(err.message);
@@ -56,15 +79,15 @@ export default function PlaybooksPage() {
     <div className="page">
       <div className="page-header-row">
         <h1>Playbooks</h1>
-        <button onClick={() => setShowCreate(!showCreate)}>{showCreate ? 'Cancel' : '+ New playbook'}</button>
+        <button onClick={() => (showForm ? closeForm() : openCreate())}>{showForm ? 'Cancel' : '+ New playbook'}</button>
       </div>
 
       {error && <p className="error">{error}</p>}
 
-      {showCreate && (
+      {showForm && (
         <section className="card">
-          <h2>New playbook</h2>
-          <form onSubmit={create} autoComplete="off">
+          <h2>{editingId ? 'Edit playbook' : 'New playbook'}</h2>
+          <form onSubmit={save} autoComplete="off">
             <div className="form-row">
               <label>
                 Name
@@ -88,7 +111,7 @@ export default function PlaybooksPage() {
                 required
               />
             </label>
-            <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save playbook'}</button>
+            <button type="submit" disabled={saving}>{saving ? 'Saving...' : editingId ? 'Save changes' : 'Save playbook'}</button>
           </form>
         </section>
       )}
@@ -104,7 +127,10 @@ export default function PlaybooksPage() {
                 <td className="muted">{pb.is_builtin ? 'Built-in' : `Custom · ${pb.created_by}`}</td>
                 <td className="actions">
                   {!pb.is_builtin && (
-                    <button className="icon-btn" title="Delete" onClick={() => remove(pb)}><Trash2 size={15} /></button>
+                    <>
+                      <button className="icon-btn" title="Edit" onClick={() => openEdit(pb)}><Pencil size={15} /></button>
+                      <button className="icon-btn" title="Delete" onClick={() => remove(pb)}><Trash2 size={15} /></button>
+                    </>
                   )}
                 </td>
               </tr>
