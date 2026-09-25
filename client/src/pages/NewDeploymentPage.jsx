@@ -46,6 +46,10 @@ export default function NewDeploymentPage() {
       setError(`VMID ${form.vmid} is already in use on this node — choose another or leave blank to auto-assign.`);
       return;
     }
+    if (form.networkMode === 'static' && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(form.address)) {
+      setError('IP address needs a CIDR prefix, e.g. 192.168.1.50/24 — Proxmox rejects a bare IP.');
+      return;
+    }
     setPlanning(true);
     setError(null);
     try {
@@ -190,6 +194,9 @@ export default function NewDeploymentPage() {
               <label>
                 IP address / CIDR
                 <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="192.168.1.50/24" required />
+                {form.address && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(form.address) && (
+                  <span className="error">Needs a /prefix, e.g. 192.168.1.50/24 — Proxmox rejects a bare IP</span>
+                )}
               </label>
               <label>
                 Gateway

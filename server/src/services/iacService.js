@@ -80,6 +80,11 @@ function buildNetworkBlock(network, { withDns }) {
       }
     }`;
   }
+  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(network.address || '')) {
+    throw new Error(
+      `Invalid static IP "${network.address}" — Proxmox needs CIDR notation (e.g. "192.168.1.50/24"), not a bare IP address.`
+    );
+  }
   const dnsBlock = withDns && network.dns?.length
     ? `
     dns {
