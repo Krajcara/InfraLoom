@@ -110,12 +110,14 @@ async function checkPlaybook({ playbookId, guests, triggeredBy }) {
     fs.writeFileSync(path.join(dir, 'playbook.yml'), playbook.content);
 
     const result = await runAnsible(dir, ['-i', 'inventory.yml', 'playbook.yml', '--check', '--diff'], { timeoutMs: 300000 });
-    const output = (missing.length ? `Skipped (no credentials): ${missing.join('; ')}\n\n` : '') + result.stdout;
-
-    if (result.code !== 0) {
-      db.prepare("UPDATE ansible_runs SET status='failed', check_output=?, error=? WHERE id=?").run(output, 'Check run failed', id);
-      throw new Error(`ansible-playbook --check failed:\n${output}`);
-    }
+    const checkFailedNote = result.code !== 0
+      ? '\n\n⚠️  This check run reported a failure — but --check mode has known false-negatives for ' +
+        'playbooks that add a package repository and install from it in the same run (the simulated run ' +
+        "doesn't refresh the newly-added repo's package list). Review the output below; if the failure looks " +
+        'like that, approving may still succeed for real. If it looks like a genuine problem (bad credentials, ' +
+        'unreachable host, a real task error unrelated to repo/package timing), fix that first.\n'
+      : '';
+    const output = (missing.length ? `Skipped (no credentials): ${missing.join('; ')}\n\n` : '') + result.stdout + checkFailedNote;
 
     db.prepare("UPDATE ansible_runs SET status='awaiting_approval', check_output=? WHERE id=?").run(output, id);
   } catch (err) {

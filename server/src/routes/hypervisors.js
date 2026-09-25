@@ -221,7 +221,30 @@ router.put('/connections/:id/vms/:vmid/ssh-credentials', requireRole('superadmin
   res.json({ ok: true });
 });
 
-// DELETE /api/hypervisors/connections/:id/vms/:vmid/ssh-credentials
+// POST /api/hypervisors/connections/:id/vms/:vmid/ssh-credentials/push-key
+// Installs InfraLoom's management SSH key onto a guest using its already
+// saved password, then switches that guest to key auth — for guests
+// InfraLoom didn't create itself (so cloud-init never set the key up).
+router.post('/connections/:id/vms/:vmid/ssh-credentials/push-key', requireRole('superadmin', 'admin'), async (req, res) => {
+  const creds = db.prepare('SELECT * FROM ssh_credentials WHERE connection_id = ? AND vmid = ?').get(req.params.id, req.params.vmid);
+  if (!creds) return res.status(400).json({ error: 'Save a host, username, and password for this guest first' });
+
+  try {
+    const { Client: SSHClient } = require('ssh2');
+    const { pushKeyToGuest } = require('../lib/sshKeyService');
+    const privateKeyPath = await pushKeyToGuest(SSHClient, creds);
+    db.prepare("UPDATE ssh_credentials SET private_key = ?, updated_at = datetime('now') WHERE connection_id = ? AND vmid = ?").run(privateKeyPath, req.params.id, req.params.vmid);
+    writeAuditLog({
+      user_id: req.user.id, username: req.user.username, action: 'hypervisor.ssh_key_pushed',
+      module: 'hypervisors', details: { vmid: req.params.vmid }, ip_address: req.ip,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 router.delete('/connections/:id/vms/:vmid/ssh-credentials', requireRole('superadmin', 'admin'), (req, res) => {
   db.prepare('DELETE FROM ssh_credentials WHERE connection_id = ? AND vmid = ?').run(req.params.id, req.params.vmid);
   res.json({ ok: true });

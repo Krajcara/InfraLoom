@@ -289,6 +289,8 @@ function GuestCredentialsForm({ connectionId, guest, onSaved }) {
   const [form, setForm] = useState({ host: guest.ip || '', username: '', password: '', port: isWindows ? 5985 : 22 });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [pushingKey, setPushingKey] = useState(false);
+  const [pushMessage, setPushMessage] = useState(null);
 
   useEffect(() => {
     const path = isWindows
@@ -315,6 +317,20 @@ function GuestCredentialsForm({ connectionId, guest, onSaved }) {
       setError(err.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function pushKey() {
+    setPushingKey(true);
+    setError(null);
+    setPushMessage(null);
+    try {
+      await api.post(`/hypervisors/connections/${connectionId}/vms/${guest.vmid}/ssh-credentials/push-key`);
+      setPushMessage('Key installed — this guest now uses it instead of the saved password.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPushingKey(false);
     }
   }
 
@@ -355,7 +371,13 @@ function GuestCredentialsForm({ connectionId, guest, onSaved }) {
             <input value={form.port} onChange={(e) => setForm({ ...form, port: e.target.value })} />
           </label>
           <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+          {!isWindows && form.password && (
+            <button type="button" onClick={pushKey} disabled={pushingKey}>
+              {pushingKey ? 'Installing...' : 'Install management key'}
+            </button>
+          )}
         </div>
+        {pushMessage && <p className="success">{pushMessage}</p>}
       </form>
     </div>
   );
