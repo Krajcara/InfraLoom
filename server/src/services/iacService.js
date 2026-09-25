@@ -6,6 +6,7 @@ const { spawn } = require('child_process');
 const db = require('../db/database');
 const { buildToken } = require('../lib/proxmoxClient');
 const { resolveSshCreds } = require('./patchService');
+const { ensureManagementKey, hashPassword } = require('../lib/sshKeyService');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 const TOFU_DIR = path.join(PROJECT_ROOT, 'data', 'tofu');
@@ -118,10 +119,33 @@ function buildVmConfig(conn, vars) {
   // Ensures qemu-guest-agent is installed and running once the clone boots
   // for the first time — most cloud images ship it already, but not all
   // do, and this makes it reliable either way rather than assuming.
+  const sshUsername = vars.sshUsername || 'infraloom';
+  const mgmtKey = ensureManagementKey();
+  const passwordLines = vars.sshPassword
+    ? [
+        'chpasswd:',
+        '  users:',
+        `    - name: ${sshUsername}`,
+        `      password: ${hashPassword(vars.sshPassword)}`,
+        '      type: hash',
+        '  expire: false',
+        'ssh_pwauth: true',
+      ]
+    : [];
+
   const cloudInitYaml = [
     '#cloud-config',
     'packages:',
     '  - qemu-guest-agent',
+    'users:',
+    `  - name: ${sshUsername}`,
+    '    groups: sudo',
+    '    shell: /bin/bash',
+    "    sudo: ['ALL=(ALL) NOPASSWD:ALL']",
+    '    lock_passwd: false',
+    '    ssh_authorized_keys:',
+    `      - ${mgmtKey.publicKey}`,
+    ...passwordLines,
     'runcmd:',
     '  - systemctl enable --now qemu-guest-agent',
     '',
@@ -193,6 +217,12 @@ function buildLxcConfig(conn, vars) {
     servers = [${vars.network.dns.map(hclString).join(', ')}]
   }`
     : '';
+  const mgmtKey = ensureManagementKey();
+  const passwordLine = vars.sshPassword ? `\n      password = ${hclString(vars.sshPassword)}` : '';
+  const userAccountBlock = `
+    user_account {
+      keys     = [${hclString(mgmtKey.publicKey)}]${passwordLine}
+    }`;
 
   return (
     buildProviderBlock(conn) +
@@ -200,7 +230,7 @@ function buildLxcConfig(conn, vars) {
 resource "proxmox_virtual_environment_container" "this" {
   node_name = ${hclString(vars.node)}${vmidLine}
   initialization {
-    hostname = ${hclString(vars.name)}${networkBlock}
+    hostname = ${hclString(vars.name)}${userAccountBlock}${networkBlock}
   }${dnsBlock}
 
   cpu {
@@ -343,6 +373,7 @@ async function applyDeployment(id, approvedBy) {
       } catch {
         // apply succeeded but we couldn't read the output value — not fatal
       }
+      if (vmid) saveGuestSshCredentials(deployment, vmid);
     }
 
     db.prepare(
@@ -359,6 +390,28 @@ async function applyDeployment(id, approvedBy) {
 
 function cancelDeployment(id) {
   db.prepare("UPDATE iac_deployments SET status='destroyed' WHERE id=? AND status='awaiting_approval'").run(id);
+}
+
+/** Registers the credentials this deployment set up on the guest — the
+ * management SSH key always, plus a password and/or a known host if
+ * those are available — into ssh_credentials, so Patch Management and
+ * Ansible can reach the guest without a separate manual "set
+ * credentials" step. For DHCP, the host isn't known yet; the row is
+ * still created (key/username/password) with an empty host, same as the
+ * existing manual-IP fallback already used for Hyper-V. */
+function saveGuestSshCredentials(deployment, vmid) {
+  const vars = JSON.parse(deployment.tf_vars || '{}');
+  const username = deployment.guest_type === 'lxc' ? 'root' : (vars.sshUsername || 'infraloom');
+  const host = vars.network?.mode === 'static' ? (vars.network.address || '').split('/')[0] : null;
+  const mgmtKey = ensureManagementKey();
+
+  db.prepare(
+    `INSERT INTO ssh_credentials (connection_id, vmid, host, username, password, private_key)
+     VALUES (?,?,?,?,?,?)
+     ON CONFLICT(connection_id, vmid) DO UPDATE SET
+       host = excluded.host, username = excluded.username, password = excluded.password,
+       private_key = excluded.private_key, updated_at = datetime('now')`
+  ).run(deployment.connection_id, vmid, host, username, vars.sshPassword || null, mgmtKey.privateKeyPath);
 }
 
 module.exports = { planDeployment, applyDeployment, cancelDeployment, buildVmConfig, buildLxcConfig, hclString, hclNumber };

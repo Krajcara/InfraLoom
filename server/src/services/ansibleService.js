@@ -34,17 +34,20 @@ function buildInventory(guests) {
       continue;
     }
     const creds = resolveGuestSshCreds(conn, g.vmid, g.ip);
-    if (!creds.host || !creds.username || !creds.password) {
+    if (!creds.host || !creds.username || !(creds.password || creds.privateKey)) {
       missing.push(`${g.name}: no saved SSH credentials or no known IP`);
       continue;
     }
     const alias = g.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const authLines = creds.privateKey
+      ? `      ansible_ssh_private_key_file: ${JSON.stringify(creds.privateKey)}\n` + (creds.passphrase ? `      ansible_ssh_private_key_passphrase: ${JSON.stringify(creds.passphrase)}\n` : '')
+      : `      ansible_password: ${JSON.stringify(creds.password)}\n`;
     hostLines.push(
       `    ${alias}:\n` +
       `      ansible_host: ${JSON.stringify(creds.host)}\n` +
       `      ansible_port: ${creds.port || 22}\n` +
       `      ansible_user: ${JSON.stringify(creds.username)}\n` +
-      `      ansible_password: ${JSON.stringify(creds.password)}\n` +
+      authLines +
       `      ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"`
     );
   }

@@ -13,6 +13,7 @@ export default function NewDeploymentPage() {
     name: '', vmid: '', templateVmid: '', templateFileId: '', storage: '',
     cores: 2, memoryMb: 2048, diskGb: 20,
     networkMode: 'dhcp', address: '', gateway: '', dns: '1.1.1.1',
+    sshUsername: 'infraloom', sshPassword: '',
   });
   const [deployment, setDeployment] = useState(null);
   const [error, setError] = useState(null);
@@ -60,6 +61,8 @@ export default function NewDeploymentPage() {
           : { mode: 'static', address: form.address, gateway: form.gateway, dns: form.dns.split(',').map((s) => s.trim()).filter(Boolean) },
       };
       if (form.vmid) vars.vmid = form.vmid;
+      vars.sshUsername = form.sshUsername || 'infraloom';
+      if (form.sshPassword) vars.sshPassword = form.sshPassword;
       if (guestType === 'vm') vars.templateVmid = form.templateVmid;
       else vars.templateFileId = form.templateFileId;
 
@@ -208,6 +211,27 @@ export default function NewDeploymentPage() {
               </label>
             </div>
           )}
+        </section>
+
+        <section className="card">
+          <h2>Access</h2>
+          <p className="muted">
+            InfraLoom's own management SSH key is automatically added to this {guestType === 'lxc' ? 'container' : 'VM'} so it's
+            reachable right after creation (used by Patch Management and Ansible) — no manual credentials step needed.
+            A password is optional, as a fallback login method.
+          </p>
+          <div className="form-row">
+            {guestType === 'vm' && (
+              <label>
+                SSH username
+                <input value={form.sshUsername} onChange={(e) => setForm({ ...form, sshUsername: e.target.value })} />
+              </label>
+            )}
+            <label>
+              Password (optional{guestType === 'lxc' ? ', for root' : ''})
+              <input type="password" value={form.sshPassword} onChange={(e) => setForm({ ...form, sshPassword: e.target.value })} autoComplete="new-password" />
+            </label>
+          </div>
         </section>
 
         <button type="submit" disabled={planning}>{planning ? 'Planning...' : 'Plan deployment'}</button>

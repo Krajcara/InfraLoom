@@ -32,7 +32,10 @@ function resolveSshCreds(conn, node) {
  * works for both). */
 function resolveGuestSshCreds(conn, vmid, guestHost) {
   const row = db.prepare('SELECT * FROM ssh_credentials WHERE connection_id = ? AND vmid = ?').get(conn.id, vmid);
-  return { host: row?.host || guestHost, port: row?.port || 22, username: row?.username, password: row?.password };
+  return {
+    host: row?.host || guestHost, port: row?.port || 22, username: row?.username, password: row?.password,
+    privateKey: row?.private_key, passphrase: row?.passphrase,
+  };
 }
 
 /** Saved WinRM credentials for a Windows guest VM — a separate connection
