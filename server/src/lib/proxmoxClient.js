@@ -140,14 +140,33 @@ async function enrichVM(baseUrl, token, node, vm) {
     const diskMaxBytes = vm.maxdisk || 0;
     const diskUsagePct = diskTotal > 0 ? Math.round((diskUsed / diskTotal) * 100) : 0;
 
+    let memUsagePct = isRunning && vm.mem && vm.maxmem ? Math.round((vm.mem / vm.maxmem) * 100) : 0;
+    let memUsedBytes = vm.mem || 0;
+    if (isRunning) {
+      try {
+        const status = await pveGet(baseUrl, `/nodes/${node}/qemu/${vm.vmid}/status/current`, token);
+        // ballooninfo comes from the guest agent's own free-memory report —
+        // unlike the bulk-list `mem` field (host-side allocation, which
+        // counts the guest's disk cache as "used"), this matches what
+        // Proxmox's own Summary page shows.
+        if (status?.ballooninfo?.total_mem && status.ballooninfo.free_mem != null) {
+          const { total_mem, free_mem } = status.ballooninfo;
+          memUsedBytes = total_mem - free_mem;
+          memUsagePct = Math.round((memUsedBytes / total_mem) * 100);
+        }
+      } catch {
+        // guest agent not installed/running — keep the raw mem/maxmem estimate
+      }
+    }
+
     return {
       vmid: vm.vmid, name: vm.name, status: vm.status, type: 'qemu',
       os: mapOs(config.ostype, config.description || vm.name), ip: agentIp,
       cpu_usage: isRunning && vm.cpu != null ? Math.round(vm.cpu * 100) : 0,
-      mem_usage: isRunning && vm.mem && vm.maxmem ? Math.round((vm.mem / vm.maxmem) * 100) : 0,
+      mem_usage: memUsagePct,
       disk_usage: diskUsagePct,
       disk_used_gb: diskTotal > 0 ? (diskUsed / 1073741824).toFixed(1) : null,
-      mem_used_gb: vm.mem ? (vm.mem / 1073741824).toFixed(1) : '0',
+      mem_used_gb: memUsedBytes ? (memUsedBytes / 1073741824).toFixed(1) : '0',
       mem_max_gb: vm.maxmem ? (vm.maxmem / 1073741824).toFixed(1) : '0',
       disk_max_gb: diskTotal > 0 ? (diskTotal / 1073741824).toFixed(1) : diskMaxBytes ? (diskMaxBytes / 1073741824).toFixed(1) : '0',
       uptime_s: vm.uptime || 0, cpus: vm.cpus || config.cores || 1,
