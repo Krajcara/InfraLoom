@@ -1,17 +1,29 @@
 'use strict';
 
+const fs = require('fs');
 const { Client: SSHClient } = require('ssh2');
 
-/** Runs a raw shell command directly on the Proxmox HOST via SSH — no
+/** Runs a raw shell command directly on a remote HOST via SSH — no
  * `pct exec` wrapper, unlike pctExec.js's execInLXC. Used for host-only
  * operations that have no REST API equivalent, like `qm importdisk`
- * during template creation. Reuses the same host-level SSH credentials as
- * LXC patch management (patch_ssh_host/username/password), since both
- * need the identical kind of access — broad, host-level shell control. */
+ * during template creation, or running `gvm-cli` on a connected OpenVAS
+ * server. Supports both password and private-key auth. */
 function execOnHost(creds, command, { timeoutMs = 600000, onOutput } = {}) {
   return new Promise((resolve, reject) => {
-    if (!creds?.username || !creds?.password) {
-      return reject(new Error("This requires SSH access to the Proxmox host itself (see the connection's Patch Management SSH settings)"));
+    if (!creds?.username || !(creds?.password || creds?.privateKey)) {
+      return reject(new Error("This requires SSH access to the host itself (username + password or private key)"));
+    }
+
+    const connectOpts = { host: creds.host, port: creds.port || 22, username: creds.username, readyTimeout: 15000 };
+    if (creds.privateKey) {
+      try {
+        connectOpts.privateKey = fs.readFileSync(creds.privateKey);
+        if (creds.passphrase) connectOpts.passphrase = creds.passphrase;
+      } catch (err) {
+        return reject(new Error(`Could not read private key file (${creds.privateKey}): ${err.message}`));
+      }
+    } else {
+      connectOpts.password = creds.password;
     }
     const client = new SSHClient();
     const timer = setTimeout(() => {
@@ -49,13 +61,9 @@ function execOnHost(creds, command, { timeoutMs = 600000, onOutput } = {}) {
       })
       .on('error', (err) => {
         clearTimeout(timer);
-        reject(new Error(`SSH to Proxmox host (${creds.host}:${creds.port || 22}) failed: ${err.message}`));
+        reject(new Error(`SSH to ${creds.host}:${creds.port || 22} failed: ${err.message}`));
       })
-      .connect({
-        host: creds.host, port: creds.port || 22,
-        username: creds.username, password: creds.password,
-        readyTimeout: 15000,
-      });
+      .connect(connectOpts);
   });
 }
 
