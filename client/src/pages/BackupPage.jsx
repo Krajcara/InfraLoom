@@ -1,3 +1,4 @@
+import { formatDbDate } from '../utils/formatDate';
 import { useEffect, useState } from 'react';
 import { Download, Trash2, RefreshCw, Play } from 'lucide-react';
 import { api } from '../api';
@@ -91,7 +92,7 @@ export default function BackupPage() {
               <tr key={b.filename}>
                 <td className="mono">{b.filename}</td>
                 <td className="muted">{formatSize(b.size)}</td>
-                <td className="muted">{new Date(b.created_at).toLocaleString()}</td>
+                <td className="muted">{formatDbDate(b.created_at)}</td>
                 <td className="actions">
                   <button className="icon-btn" title="Download" onClick={() => download(b.filename)}><Download size={15} /></button>
                   <button className="icon-btn" title="Delete" onClick={() => remove(b.filename)}><Trash2 size={15} /></button>

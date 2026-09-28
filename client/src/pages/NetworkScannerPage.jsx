@@ -1,3 +1,4 @@
+import { formatDbDate } from '../utils/formatDate';
 import { useEffect, useState } from 'react';
 import { RefreshCw, Search, Power, Trash2, ChevronDown, ChevronUp, Star } from 'lucide-react';
 import { api } from '../api';
@@ -242,7 +243,7 @@ function DeviceRow({ device: d, canEdit, expanded, onToggle, onChanged }) {
                   <p className="muted">Recent activity</p>
                   <ul className="widget-list">
                     {events.slice(0, 8).map((e) => (
-                      <li key={e.id} className="muted">{e.event_type} — {e.created_at}</li>
+                      <li key={e.id} className="muted">{e.event_type} — {formatDbDate(e.created_at)}</li>
                     ))}
                   </ul>
                 </div>

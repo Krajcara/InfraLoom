@@ -1,3 +1,4 @@
+import { formatDbDate } from '../utils/formatDate';
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { api } from '../api';
@@ -33,7 +34,7 @@ export default function DeploymentsPage() {
                 <td><span className="status-badge">{d.status}</span></td>
                 <td className="muted">{d.result_vmid ? `#${d.result_vmid}` : (d.error || '—')}</td>
                 <td className="muted">{d.triggered_by}</td>
-                <td className="muted">{d.created_at}</td>
+                <td className="muted">{formatDbDate(d.created_at)}</td>
               </tr>
             ))}
             {deployments.length === 0 && !loading && <tr><td colSpan={7} className="muted">No deployments yet.</td></tr>}

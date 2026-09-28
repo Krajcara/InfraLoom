@@ -1,3 +1,4 @@
+import { formatDbDate } from '../utils/formatDate';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { api } from '../api';
@@ -196,7 +197,7 @@ export default function TemplatesPage() {
                 <td>{j.name}</td>
                 <td className="muted">#{j.vmid}</td>
                 <td><span className="status-badge">{j.status}</span></td>
-                <td className="muted">{j.created_at}</td>
+                <td className="muted">{formatDbDate(j.created_at)}</td>
                 <td className="actions"><button className="btn-link" onClick={() => setActiveJob(j)}>View</button></td>
               </tr>
             ))}

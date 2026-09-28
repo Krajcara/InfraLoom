@@ -1,3 +1,4 @@
+import { formatDbDate } from '../utils/formatDate';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Server, Globe, Key, RefreshCw, CheckCircle, XCircle,
@@ -306,7 +307,7 @@ function ZoneCard({ zone }) {
           {zone.mx?.length > 0 && (
             <p><strong className="muted">MX</strong> {zone.mx.slice(0, 3).map((m, i) => <span key={i} className="mono"> {m.priority} {m.exchange}</span>)}</p>
           )}
-          {zone.checked_at && <p className="muted">Checked: {zone.checked_at}</p>}
+          {zone.checked_at && <p className="muted">Checked: {formatDbDate(zone.checked_at)}</p>}
         </div>
       )}
     </div>
@@ -526,7 +527,7 @@ function ManualCheckTab({ canEdit }) {
               {domains.map((d) => (
                 <tr key={d.id}>
                   <td className="mono">{d.domain}</td>
-                  <td className="muted">{d.created_at}</td>
+                  <td className="muted">{formatDbDate(d.created_at)}</td>
                   <td className="actions">
                     <button className="icon-btn" onClick={() => checkOne(d.domain)} disabled={checking}><RefreshCw size={14} className={checking ? 'spin' : ''} /></button>
                     {canEdit && <button className="icon-btn" onClick={() => removeDomain(d)}><Trash2 size={14} /></button>}

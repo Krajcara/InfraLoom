@@ -1,3 +1,4 @@
+import { formatDbDate } from '../utils/formatDate';
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -294,7 +295,7 @@ function ApiKeysSection({ apiKeys, onChanged, onDone, onError }) {
             <tr key={k.id}>
               <td>{k.name}</td>
               <td><code>{k.key_prefix}...</code></td>
-              <td>{k.created_at}</td>
+              <td>{formatDbDate(k.created_at)}</td>
               <td>{k.last_used_at || '—'}</td>
               <td>
                 {k.revoked_at ? (

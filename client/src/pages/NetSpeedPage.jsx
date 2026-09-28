@@ -1,3 +1,4 @@
+import { formatDbDate } from '../utils/formatDate';
 import { useEffect, useState } from 'react';
 import { Gauge, ArrowDown, ArrowUp, Activity, Trash2, Play } from 'lucide-react';
 import { api } from '../api';
@@ -162,7 +163,7 @@ export default function NetSpeedPage() {
           <tbody>
             {tests.map((t) => (
               <tr key={t.id}>
-                <td className="mono">{t.created_at}</td>
+                <td className="mono">{formatDbDate(t.created_at)}</td>
                 <td className="muted">{PROVIDERS.find((p) => p[0] === t.provider)?.[1] || t.provider}</td>
                 <td>{t.download != null ? `${t.download} Mbps` : '—'}</td>
                 <td>{t.upload != null ? `${t.upload} Mbps` : '—'}</td>

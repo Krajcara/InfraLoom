@@ -1,3 +1,4 @@
+import { formatDbDate } from '../utils/formatDate';
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 
@@ -100,7 +101,7 @@ export default function AuditLogPage() {
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}>
-              <td className="mono">{r.created_at}</td>
+              <td className="mono">{formatDbDate(r.created_at)}</td>
               <td>{r.username || '—'}</td>
               <td>{r.action}</td>
               <td>{r.module || '—'}</td>
