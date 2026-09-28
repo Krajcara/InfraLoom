@@ -114,11 +114,13 @@ success "Greenbone stack is up."
 info "Creating a dedicated 'infraloom' GMP user (rather than using the built-in admin account)..."
 GVM_USER="infraloom"
 GVM_PASSWORD=$(openssl rand -hex 16)
-docker compose exec -T -u gvmd gvmd gvmd --create-user="$GVM_USER" --new-password="$GVM_PASSWORD" </dev/null || {
-  warn "Could not create a dedicated user automatically. Check 'docker compose logs gvmd' in $GVM_DIR, or run:"
-  warn "  docker compose exec -u gvmd gvmd gvmd --create-user=infraloom --new-password=<a-strong-password>"
-  read -rp "Enter the GMP password to register with InfraLoom: " GVM_PASSWORD
-}
+if ! docker compose exec -T -u gvmd gvmd gvmd --create-user="$GVM_USER" --new-password="$GVM_PASSWORD" </dev/null; then
+  info "'$GVM_USER' likely already exists from an earlier attempt — resetting its password instead."
+  if ! docker compose exec -T -u gvmd gvmd gvmd --user="$GVM_USER" --new-password="$GVM_PASSWORD" </dev/null; then
+    echo "Could not create or reset the '$GVM_USER' GMP user. Check 'docker compose logs gvmd' in $GVM_DIR, fix manually, then re-run this script with a fresh token."
+    exit 1
+  fi
+fi
 docker compose exec -T -u gvmd gvmd gvmd --role=Admin --user="$GVM_USER" 2>/dev/null </dev/null || warn "Could not confirm the Admin role was granted — check manually if scans don't work."
 
 # ─── Register with InfraLoom ───────────────────────────────────────────────
