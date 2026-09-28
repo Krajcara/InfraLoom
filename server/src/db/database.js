@@ -517,8 +517,10 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS vuln_connections (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT NOT NULL,
-    gmp_host      TEXT NOT NULL,
-    gmp_port      INTEGER NOT NULL DEFAULT 9390,
+    ssh_host      TEXT NOT NULL,
+    ssh_port      INTEGER NOT NULL DEFAULT 22,
+    ssh_username  TEXT NOT NULL DEFAULT 'root',
+    compose_path  TEXT NOT NULL DEFAULT '/opt/greenbone/docker-compose.yml',
     gmp_username  TEXT NOT NULL,
     gmp_password  TEXT NOT NULL,
     enabled       INTEGER DEFAULT 1,
@@ -558,6 +560,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_vuln_findings_scan ON vuln_findings(scan_id);
   CREATE INDEX IF NOT EXISTS idx_vuln_findings_severity ON vuln_findings(severity);
 `);
+ensureColumn('vuln_connections', 'ssh_host', 'TEXT');
+ensureColumn('vuln_connections', 'ssh_port', "INTEGER DEFAULT 22");
+ensureColumn('vuln_connections', 'ssh_username', "TEXT DEFAULT 'root'");
+ensureColumn('vuln_connections', 'compose_path', "TEXT DEFAULT '/opt/greenbone/docker-compose.yml'");
 
 
 // ── Automation: OpenTofu-provisioned infrastructure ──────────────────────

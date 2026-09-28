@@ -1,23 +1,18 @@
 #!/usr/bin/env bash
 #
-# install-openvas.sh — installs Greenbone Vulnerability Management (GVM /
-# OpenVAS) directly on this VM via Debian's native `gvm` package (no
-# Docker needed), exposes GMP over TCP so InfraLoom (on a different host)
-# can connect, and registers itself with InfraLoom automatically at the end.
+# install-openvas.sh — installs Greenbone Community Edition (OpenVAS) via
+# Docker Compose, using Greenbone's own official compose file, and
+# registers itself with InfraLoom via SSH access (not GMP/TCP — Greenbone's
+# official compose setup only exposes GMP over an internal unix socket,
+# reached via the bundled gvm-tools container; InfraLoom talks to it by
+# SSHing into this host and running `docker compose exec gvm-tools gvm-cli`).
 #
-# Requires Debian 12 (Bookworm) — Debian is one of the distros Greenbone
-# packages GVM for natively via apt. Ubuntu doesn't reliably carry the
-# `gvm` package in its default repos; if you're on Ubuntu, this script
-# will tell you so and stop rather than guess at a workaround.
-#
-# UNTESTED NOTICE: this could not be run against a real target while
-# writing it (a fresh feed sync alone takes 1-3+ hours, more than this
-# sandbox can practically run). The steps follow Debian/Greenbone's
-# documented `gvm-setup` flow, which is the long-established path (unlike
-# an earlier version of this script that guessed at a Docker Compose URL
-# and got a 404 — apt packaging has been stable for GVM on Debian for
-# years, so this should be firmer ground, but you're still the first real
-# test of this exact script). Read through before running.
+# UNTESTED NOTICE: Docker isn't available in the sandbox this was written
+# in, so the actual `docker compose up` + feed sync could not be run here.
+# The compose file itself was fetched directly from Greenbone's own docs
+# repo (https://github.com/greenbone/docs, src/_static/compose.yaml) as of
+# writing, so it should be current — but you're still the first real test
+# of this exact script end-to-end.
 #
 # Usage:
 #   sudo bash install-openvas.sh --infraloom-url https://infraloom.example.com --token <token>
@@ -49,91 +44,82 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-GMP_PORT=9390
+GVM_DIR="/opt/greenbone"
 
-# ─── OS check ──────────────────────────────────────────────────────────────
-if ! grep -qi "debian" /etc/os-release 2>/dev/null; then
-  echo "This script targets Debian (the gvm apt package isn't reliably available on Ubuntu)."
-  echo "Detected: $(grep PRETTY_NAME /etc/os-release 2>/dev/null || echo 'unknown OS')"
-  echo "Easiest fix: recreate this VM from a Debian 12 template instead."
+# ─── SSH access for InfraLoom ──────────────────────────────────────────────
+# InfraLoom talks to this host over SSH (not GMP/TCP — see notice above).
+# Fetch InfraLoom's own management public key and add it to root's
+# authorized_keys, the same key InfraLoom already uses for VMs it creates
+# itself via its Automation module.
+info "Fetching InfraLoom's management SSH key..."
+PUBKEY=$(curl -sk "$INFRALOOM_URL/api/vulnerability/management-key" | grep -oE '"publicKey":"[^"]+"' | sed -E 's/"publicKey":"([^"]+)"/\1/')
+if [ -z "$PUBKEY" ]; then
+  echo "Could not fetch InfraLoom's management key from $INFRALOOM_URL — check the URL is reachable from this VM."
+  exit 1
+fi
+mkdir -p /root/.ssh && chmod 700 /root/.ssh
+grep -qxF "$PUBKEY" /root/.ssh/authorized_keys 2>/dev/null || echo "$PUBKEY" >> /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+success "InfraLoom's key added to root's authorized_keys."
+
+# ─── Docker ────────────────────────────────────────────────────────────────
+if ! command -v docker >/dev/null 2>&1; then
+  info "Installing Docker..."
+  curl -fsSL https://get.docker.com | sh
+  systemctl enable --now docker
+  success "Docker installed."
+else
+  success "Docker already installed."
+fi
+
+if ! docker compose version >/dev/null 2>&1; then
+  echo "Docker Compose plugin not found — check 'docker compose version' manually, the Docker install above should include it."
   exit 1
 fi
 
-# ─── Install GVM ────────────────────────────────────────────────────────────
-info "Installing GVM (gvmd, openvas-scanner, gsad, postgresql, redis) via apt — this pulls in a fair number of packages..."
-apt-get update -qq
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gvm >/dev/null
-success "Packages installed."
+# ─── Greenbone Community Edition (official compose file) ──────────────────
+mkdir -p "$GVM_DIR"
+cd "$GVM_DIR"
 
-# ─── First-time setup (feed sync happens here — the slow part) ────────────
-info "Running gvm-setup — this creates the database, an initial admin user, and syncs the"
-info "vulnerability-test feed. On a fresh install this commonly takes 1-3+ hours; it's"
-info "downloading several GB of vulnerability signatures. Please be patient."
-info "You can watch progress in another terminal with: tail -f /var/log/gvm/gvm-setup.log"
-
-SETUP_LOG="/tmp/gvm-setup-output.log"
-gvm-setup 2>&1 | tee "$SETUP_LOG"
-
-# gvm-setup prints the generated admin password near the end, in a line
-# that looks like: "User created with password 'xxxxxxxx'."
-# VERIFY this pattern still matches what your version prints — if the
-# grep below comes up empty, search $SETUP_LOG yourself for "password".
-ADMIN_PASSWORD=$(grep -oE "password '[^']+'" "$SETUP_LOG" | tail -1 | sed -E "s/password '([^']+)'/\1/")
-
-if [ -z "$ADMIN_PASSWORD" ]; then
-  warn "Couldn't automatically find the generated admin password in gvm-setup's output."
-  warn "Check $SETUP_LOG for a line mentioning the admin password, or reset it with:"
-  warn "  runuser -u _gvm -- gvmd --user=admin --new-password=<a-strong-password>"
-  read -rp "Enter the admin password to register with InfraLoom: " ADMIN_PASSWORD
+if [ ! -f docker-compose.yml ]; then
+  info "Downloading Greenbone's official compose file..."
+  curl -fsSL -o docker-compose.yml \
+    https://raw.githubusercontent.com/greenbone/docs/main/src/_static/compose.yaml \
+    || { echo "Could not download the compose file — check https://github.com/greenbone/docs/blob/main/src/_static/compose.yaml is still there, download it manually to $GVM_DIR/docker-compose.yml, then re-run this script."; exit 1; }
 fi
-success "GVM setup complete."
 
-info "Verifying the install..."
-gvm-check-setup || warn "gvm-check-setup reported some issues above — GVM may still work, but worth reviewing."
+info "Starting Greenbone containers (pulls a number of images from registry.community.greenbone.net, may take a while)..."
+docker compose up -d
 
-# ─── Dedicated API user for InfraLoom (rather than using admin directly) ──
-info "Creating a dedicated 'infraloom' GMP user..."
+info "Waiting for the vulnerability-test feed to finish its first sync — this is normally the slow part,"
+info "1-3+ hours on a fresh install. Watch progress with: docker compose -f $GVM_DIR/docker-compose.yml logs -f vulnerability-tests"
+info "This script polls every 2 minutes and continues once gvmd is responding."
+
+READY=0
+for i in $(seq 1 90); do  # up to ~3 hours
+  if docker compose exec -T gvmd gvmd --get-users >/dev/null 2>&1; then
+    READY=1
+    break
+  fi
+  sleep 120
+done
+
+if [ "$READY" -ne 1 ]; then
+  echo "gvmd did not become ready within the expected time. Check 'docker compose logs gvmd' in $GVM_DIR and re-run this script once it's healthy — it will pick up from here."
+  exit 1
+fi
+success "Greenbone stack is up."
+
+# ─── Dedicated GMP user for InfraLoom ──────────────────────────────────────
+info "Creating a dedicated 'infraloom' GMP user (rather than using the built-in admin account)..."
 GVM_USER="infraloom"
 GVM_PASSWORD=$(openssl rand -hex 16)
-runuser -u _gvm -- gvmd --create-user="$GVM_USER" --new-password="$GVM_PASSWORD" || {
-  warn "Could not create a dedicated user — falling back to the admin account for registration."
-  GVM_USER="admin"
-  GVM_PASSWORD="$ADMIN_PASSWORD"
+docker compose exec -T gvmd gvmd --create-user="$GVM_USER" --new-password="$GVM_PASSWORD" || {
+  warn "Could not create a dedicated user automatically. Check 'docker compose logs gvmd' in $GVM_DIR, or run:"
+  warn "  docker compose exec gvmd gvmd --create-user=infraloom --new-password=<a-strong-password>"
+  read -rp "Enter the GMP password to register with InfraLoom: " GVM_PASSWORD
 }
-if [ "$GVM_USER" = "infraloom" ]; then
-  runuser -u _gvm -- gvmd --role=Admin --user="$GVM_USER" || warn "Could not grant Admin role to the infraloom user — it may have limited permissions."
-fi
-
-# ─── Expose GMP over TCP ────────────────────────────────────────────────────
-# By default gvmd only listens on a local unix socket. InfraLoom is on a
-# different host, so gvmd needs to also listen on TCP. This adds a
-# systemd override for the gvmd service. VERIFY this against
-# `systemctl cat gvmd` on your system — the exact unit/binary path can
-# vary slightly by Debian version.
-info "Configuring gvmd to accept GMP connections over TCP (port $GMP_PORT)..."
-mkdir -p /etc/systemd/system/gvmd.service.d
-cat > /etc/systemd/system/gvmd.service.d/override.conf << EOF
-[Service]
-ExecStart=
-ExecStart=/usr/sbin/gvmd --foreground --osp-vt-update=/run/ospd/ospd-openvas.sock --listen-group=_gvm --listen=0.0.0.0 --port=$GMP_PORT
-EOF
-systemctl daemon-reload
-systemctl restart gvmd
-sleep 5
-
-if ! ss -tlnp 2>/dev/null | grep -q ":$GMP_PORT "; then
-  warn "gvmd doesn't appear to be listening on port $GMP_PORT yet. Check 'systemctl status gvmd' and"
-  warn "'journalctl -u gvmd -n 50'. You may need to adjust the ExecStart line in"
-  warn "/etc/systemd/system/gvmd.service.d/override.conf to match your gvmd's actual binary path/options"
-  warn "(run 'systemctl cat gvmd' before this script's override to see the original for reference)."
-else
-  success "gvmd is listening on 0.0.0.0:$GMP_PORT."
-fi
-
-# Also allow this port through the local firewall, if ufw is active.
-if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
-  ufw allow "$GMP_PORT"/tcp >/dev/null 2>&1 || true
-fi
+docker compose exec -T gvmd gvmd --role=Admin --user="$GVM_USER" 2>/dev/null || warn "Could not confirm the Admin role was granted — check manually if scans don't work."
 
 # ─── Register with InfraLoom ───────────────────────────────────────────────
 HOST_IP=$(hostname -I | awk '{print $1}')
@@ -141,15 +127,14 @@ info "Registering this server ($HOST_IP) with InfraLoom at $INFRALOOM_URL..."
 
 RESPONSE=$(curl -sk -X POST "$INFRALOOM_URL/api/vulnerability/register" \
   -H "Content-Type: application/json" \
-  -d "{\"token\":\"$TOKEN\",\"name\":\"OpenVAS ($HOST_IP)\",\"gmp_host\":\"$HOST_IP\",\"gmp_port\":$GMP_PORT,\"gmp_username\":\"$GVM_USER\",\"gmp_password\":\"$GVM_PASSWORD\"}")
+  -d "{\"token\":\"$TOKEN\",\"name\":\"OpenVAS ($HOST_IP)\",\"ssh_host\":\"$HOST_IP\",\"ssh_port\":22,\"ssh_username\":\"root\",\"compose_path\":\"$GVM_DIR/docker-compose.yml\",\"gmp_username\":\"$GVM_USER\",\"gmp_password\":\"$GVM_PASSWORD\"}")
 
 if echo "$RESPONSE" | grep -q '"ok":true'; then
   success "Registered with InfraLoom successfully."
   success "Setup complete. GMP username: $GVM_USER — the password was sent to InfraLoom directly and isn't printed here."
 else
   echo "Registration failed. InfraLoom responded: $RESPONSE"
-  echo "GVM itself is still running — you can register it manually from the Vulnerability Scan page if needed,"
+  echo "Greenbone itself is still running — you can register it manually from the Vulnerability Scan page if needed,"
   echo "or re-run this script with a fresh token (it will skip the parts already done)."
   exit 1
 fi
-
