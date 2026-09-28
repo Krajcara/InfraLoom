@@ -97,7 +97,7 @@ info "This script polls every 2 minutes and continues once gvmd is responding."
 
 READY=0
 for i in $(seq 1 90); do  # up to ~3 hours
-  if docker compose exec -T gvmd gvmd --get-users >/dev/null 2>&1; then
+  if docker compose exec -T -u gvmd gvmd gvmd --get-users >/dev/null 2>&1; then
     READY=1
     break
   fi
@@ -114,12 +114,12 @@ success "Greenbone stack is up."
 info "Creating a dedicated 'infraloom' GMP user (rather than using the built-in admin account)..."
 GVM_USER="infraloom"
 GVM_PASSWORD=$(openssl rand -hex 16)
-docker compose exec -T gvmd gvmd --create-user="$GVM_USER" --new-password="$GVM_PASSWORD" || {
+docker compose exec -T -u gvmd gvmd gvmd --create-user="$GVM_USER" --new-password="$GVM_PASSWORD" || {
   warn "Could not create a dedicated user automatically. Check 'docker compose logs gvmd' in $GVM_DIR, or run:"
-  warn "  docker compose exec gvmd gvmd --create-user=infraloom --new-password=<a-strong-password>"
+  warn "  docker compose exec -u gvmd gvmd gvmd --create-user=infraloom --new-password=<a-strong-password>"
   read -rp "Enter the GMP password to register with InfraLoom: " GVM_PASSWORD
 }
-docker compose exec -T gvmd gvmd --role=Admin --user="$GVM_USER" 2>/dev/null || warn "Could not confirm the Admin role was granted — check manually if scans don't work."
+docker compose exec -T -u gvmd gvmd gvmd --role=Admin --user="$GVM_USER" 2>/dev/null || warn "Could not confirm the Admin role was granted — check manually if scans don't work."
 
 # ─── Register with InfraLoom ───────────────────────────────────────────────
 HOST_IP=$(hostname -I | awk '{print $1}')
