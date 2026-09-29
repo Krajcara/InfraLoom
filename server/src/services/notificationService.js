@@ -17,7 +17,7 @@ const EVENT_TYPES = [
   { id: 'hypervisor_up', label: 'Hypervisor connection recovered' },
 ];
 
-const CHANNEL_NAMES = ['telegram', 'slack', 'discord', 'ntfy', 'pushover', 'email'];
+const CHANNEL_NAMES = ['app', 'telegram', 'slack', 'discord', 'ntfy', 'pushover', 'email'];
 
 function getRawSettings() {
   const rows = db.prepare('SELECT key, value FROM settings').all();
@@ -223,15 +223,17 @@ function recordInAppNotification(message, eventType) {
 async function notify(message, eventType = null) {
   // In-app notifications are a passive record (you check the bell when
   // you're ready), unlike a phone push — so they're recorded even during
-  // quiet hours. Only the noisy external channels below are suppressed.
-  recordInAppNotification(message, eventType);
+  // quiet hours, but still respect the per-event 'app' channel toggle.
+  const rules = getNotificationRules();
+  if (!eventType || isChannelEventEnabled(rules, 'app', eventType)) {
+    recordInAppNotification(message, eventType);
+  }
 
   if (eventType && isQuietHours()) {
     return { skipped: 'quiet_hours' };
   }
 
   const s = getRawSettings();
-  const rules = getNotificationRules();
   const results = {};
   for (const [name, send] of Object.entries(SENDERS)) {
     if (eventType && !isChannelEventEnabled(rules, name, eventType)) continue;
