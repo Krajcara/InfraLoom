@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
 
 const emptyForm = {
-  name: '', brand: 'other', model: '', ip_address: '', username: '', device_password: '', notes: '',
+  name: '', brand: 'other', model: '', ip_address: '', username: '', device_password: '', notes: '', api_token: '',
   snmp_version: '2c', snmp_community: 'public', snmp_port: 161, snmp_username: '',
   snmp_auth_protocol: 'SHA', snmp_auth_password: '', snmp_priv_protocol: 'AES', snmp_priv_password: '',
   snmp_security_level: 'authPriv',
@@ -64,7 +64,7 @@ export default function NetworkDevicesPage({ apiPath, title }) {
   function openEdit(d) {
     setForm({
       id: d.id, name: d.name, brand: d.brand, model: d.model || '', ip_address: d.ip_address,
-      username: d.username || '', device_password: '', notes: d.notes || '',
+      username: d.username || '', device_password: '', notes: d.notes || '', api_token: '',
       snmp_version: d.snmp_version, snmp_community: d.snmp_community, snmp_port: d.snmp_port,
       snmp_username: d.snmp_username || '', snmp_auth_protocol: d.snmp_auth_protocol, snmp_auth_password: '',
       snmp_priv_protocol: d.snmp_priv_protocol, snmp_priv_password: '', snmp_security_level: d.snmp_security_level,
@@ -118,6 +118,21 @@ export default function NetworkDevicesPage({ apiPath, title }) {
       setSnmpResult({ id: d.id, connected: false, error: err.message });
     } finally {
       setSnmpLoading(null);
+    }
+  }
+
+  const [syncing, setSyncing] = useState(null);
+  async function sync(d) {
+    setSyncing(d.id);
+    setError(null);
+    try {
+      const data = await api.post(`/${apiPath}/${d.id}/sync`);
+      flash(`Synced: ${data.switches} switches, ${data.accessPoints} access points.`);
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSyncing(null);
     }
   }
 
@@ -183,6 +198,20 @@ export default function NetworkDevicesPage({ apiPath, title }) {
               Notes
               <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} />
             </label>
+
+            {apiPath === 'routers' && form.brand === 'fortigate' && (
+              <label>
+                FortiGate API token
+                <input
+                  type="password"
+                  value={form.api_token}
+                  onChange={(e) => setForm({ ...form, api_token: e.target.value })}
+                  placeholder={form.id ? 'unchanged' : 'generated in FortiGate: System > Administrators > REST API Admin'}
+                  autoComplete="new-password"
+                  name="fortigate_token_field"
+                />
+              </label>
+            )}
 
             <button type="button" className="btn-link" onClick={() => setShowSnmp(!showSnmp)}>
               {showSnmp ? '− Hide SNMP settings (optional)' : '+ SNMP settings (optional)'}
@@ -260,7 +289,17 @@ export default function NetworkDevicesPage({ apiPath, title }) {
         <tbody>
           {devices.map((d) => (
             <tr key={d.id}>
-              <td>{d.name}</td>
+              <td>
+                {d.name}
+                {d.discovered_from_router_id && (
+                  <>
+                    {' '}
+                    <span className="status-badge" title={d.discovered_missing_at ? `Not seen since ${d.discovered_missing_at}` : `Discovered via router #${d.discovered_from_router_id}`}>
+                      {d.discovered_missing_at ? 'offline (auto)' : 'auto-discovered'}
+                    </span>
+                  </>
+                )}
+              </td>
               <td className="muted">{d.brand}</td>
               <td className="mono">{d.ip_address}</td>
               <td><span className={`status-badge status-${d.last_status}`}>{d.last_status}</span></td>
@@ -278,6 +317,11 @@ export default function NetworkDevicesPage({ apiPath, title }) {
                 <button className="btn-link" onClick={() => checkSnmp(d)} disabled={snmpLoading === d.id}>
                   {snmpLoading === d.id ? 'Checking SNMP...' : 'SNMP check'}
                 </button>
+                {apiPath === 'routers' && d.brand === 'fortigate' && canEdit && (
+                  <button className="btn-link" onClick={() => sync(d)} disabled={syncing === d.id} title={d.last_sync_status || 'Never synced'}>
+                    {syncing === d.id ? 'Syncing...' : 'Sync switches/APs'}
+                  </button>
+                )}
                 {canEdit && <button className="btn-link" onClick={() => openEdit(d)}>Edit</button>}
                 {canDelete && <button className="btn-link danger" onClick={() => remove(d)}>Delete</button>}
               </td>

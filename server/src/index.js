@@ -143,6 +143,7 @@ require('./services/networkScanService').initScheduler();
 require('./services/hypervisorHealthService').initScheduler();
 require('./services/hypervisorMetricsService').initScheduler();
 require('./services/backupService').initScheduler();
+require('./services/fortigateSyncService').initScheduler();
 setTimeout(() => require('./services/sslChecker').checkAllSSL(false), 5000);
 
 process.on('SIGTERM', () => {

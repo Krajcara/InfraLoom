@@ -256,6 +256,23 @@ for (const table of ['routers', 'switches', 'access_points']) {
     );
   `);
 }
+// FortiGate (or other future controller-style) API access — lives on the
+// router row, since that's the device being polled.
+ensureColumn('routers', 'api_token', 'TEXT');
+ensureColumn('routers', 'last_sync_at', 'TEXT');
+ensureColumn('routers', 'last_sync_status', 'TEXT');
+// Discovery tracking on switches/access_points — set when a row was
+// created/last confirmed by a controller sync rather than added by hand.
+// discovered_missing_at is set the first time a sync no longer reports a
+// previously-discovered device (shown as offline), and cleared if it
+// reappears — the row itself is never deleted by a sync.
+for (const table of ['switches', 'access_points']) {
+  ensureColumn(table, 'discovered_from_router_id', 'INTEGER');
+  ensureColumn(table, 'discovered_serial', 'TEXT'); // the controller's stable identifier for this device, used to match it across syncs
+  ensureColumn(table, 'last_seen_at', 'TEXT');
+  ensureColumn(table, 'discovered_missing_at', 'TEXT');
+}
+
 
 // ── Phase 8 — Network: DNS + DNS Analytics ──────────────────────────────
 db.exec(`

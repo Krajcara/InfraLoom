@@ -29,6 +29,7 @@ function createDeviceRouter(table, moduleLabel) {
     return {
       ...row,
       device_password: row.device_password ? '***' : null,
+      api_token: row.api_token ? '***' : null,
       last_status: m?.last_status || 'unknown',
       last_latency_ms: m?.last_latency_ms ?? null,
       last_checked_at: m?.last_checked_at || null,
@@ -44,7 +45,7 @@ function createDeviceRouter(table, moduleLabel) {
   // POST /api/{table}
   router.post('/', requireRole('superadmin', 'admin', 'operator'), (req, res) => {
     const {
-      name, brand, model, ip_address, username, device_password, notes,
+      name, brand, model, ip_address, username, device_password, notes, api_token,
       snmp_version, snmp_community, snmp_port, snmp_username,
       snmp_auth_protocol, snmp_auth_password, snmp_priv_protocol, snmp_priv_password, snmp_security_level,
     } = req.body || {};
@@ -76,6 +77,10 @@ function createDeviceRouter(table, moduleLabel) {
         snmp_priv_protocol || 'AES', snmp_priv_password || null, snmp_security_level || 'authPriv'
       );
 
+    if (table === 'routers' && api_token) {
+      db.prepare('UPDATE routers SET api_token = ? WHERE id = ?').run(api_token, r.lastInsertRowid);
+    }
+
     writeAuditLog({
       user_id: req.user.id, username: req.user.username, action: `${moduleLabel}.create`,
       entity_type: moduleLabel, entity_id: r.lastInsertRowid, module: moduleLabel,
@@ -91,7 +96,7 @@ function createDeviceRouter(table, moduleLabel) {
     if (!existing) return res.status(404).json({ error: 'Not found' });
 
     const {
-      name, brand, model, ip_address, username, device_password, notes,
+      name, brand, model, ip_address, username, device_password, notes, api_token,
       snmp_version, snmp_community, snmp_port, snmp_username,
       snmp_auth_protocol, snmp_auth_password, snmp_priv_protocol, snmp_priv_password, snmp_security_level,
     } = req.body || {};
@@ -120,6 +125,10 @@ function createDeviceRouter(table, moduleLabel) {
       snmp_security_level ?? existing.snmp_security_level,
       req.params.id
     );
+
+    if (table === 'routers' && api_token !== undefined && api_token !== '***') {
+      db.prepare('UPDATE routers SET api_token = ? WHERE id = ?').run(api_token || null, req.params.id);
+    }
 
     // Keep the linked monitor's label/target in sync.
     if (existing.monitor_id) {
@@ -185,6 +194,27 @@ function createDeviceRouter(table, moduleLabel) {
     const result = await pollSnmp(existing.ip_address, cfg);
     res.json(result);
   });
+
+  // POST /api/{table}/:id/sync — pulls managed switches/APs from this
+  // router (FortiGate only). Only registered for the routers table.
+  if (table === 'routers') {
+    router.post('/:id/sync', requireRole('superadmin', 'admin', 'operator'), async (req, res) => {
+      const existing = db.prepare('SELECT * FROM routers WHERE id = ?').get(req.params.id);
+      if (!existing) return res.status(404).json({ error: 'Not found' });
+      try {
+        const { syncRouter } = require('../services/fortigateSyncService');
+        const result = await syncRouter(req.params.id);
+        writeAuditLog({
+          user_id: req.user.id, username: req.user.username, action: 'routers.sync',
+          entity_type: 'routers', entity_id: req.params.id, module: 'routers',
+          details: result, ip_address: req.ip,
+        });
+        res.json({ ok: true, ...result });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+  }
 
   return router;
 }
