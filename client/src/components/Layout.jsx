@@ -38,7 +38,6 @@ const NAV_GROUPS = [
       { to: '/network-scanner', label: 'Network Scanner' },
       { to: '/patch-management', label: 'Patch Management' },
       { to: '/ssh', label: 'SSH', roles: ['superadmin', 'admin'] },
-      { to: '/vulnerability-scan', label: 'Vulnerability Scan', roles: ['superadmin', 'admin'] },
     ],
   },
   {

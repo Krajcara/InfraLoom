@@ -13,7 +13,6 @@ import BackupPage from './pages/BackupPage';
 import NewDeploymentPage from './pages/NewDeploymentPage';
 import DeploymentsPage from './pages/DeploymentsPage';
 import TemplatesPage from './pages/TemplatesPage';
-import VulnerabilityScanPage from './pages/VulnerabilityScanPage';
 import PlaybooksPage from './pages/PlaybooksPage';
 import RunPlaybookPage from './pages/RunPlaybookPage';
 import AuditLogPage from './pages/AuditLogPage';
@@ -70,14 +69,6 @@ export default function App() {
             element={
               <ProtectedRoute roles={['superadmin', 'admin']}>
                 <SshPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/vulnerability-scan"
-            element={
-              <ProtectedRoute roles={['superadmin', 'admin']}>
-                <VulnerabilityScanPage />
               </ProtectedRoute>
             }
           />
