@@ -22,11 +22,11 @@ async function fetchManagedDevices(router) {
   const api = client(router);
 
   const [switchRes, apRes] = await Promise.all([
-    api.get('/api/v2/monitor/switch-controller/managed-switch').catch((err) => {
-      throw new Error(`Could not fetch managed switches: ${err.response?.status === 401 ? 'invalid API token' : err.message}`);
+    api.get('/api/v2/monitor/switch-controller/managed-switch', { params: { vdom: 'root' } }).catch((err) => {
+      throw new Error(`Could not fetch managed switches: ${err.response?.status === 401 ? 'invalid API token' : err.response?.status === 404 ? '404 — endpoint not found (see note below)' : err.message}`);
     }),
-    api.get('/api/v2/monitor/wifi/managed_ap').catch((err) => {
-      throw new Error(`Could not fetch managed access points: ${err.response?.status === 401 ? 'invalid API token' : err.message}`);
+    api.get('/api/v2/monitor/wifi/managed_ap', { params: { vdom: 'root' } }).catch((err) => {
+      throw new Error(`Could not fetch managed access points: ${err.response?.status === 401 ? 'invalid API token' : err.response?.status === 404 ? '404 — endpoint not found (see note below)' : err.message}`);
     }),
   ]);
 
