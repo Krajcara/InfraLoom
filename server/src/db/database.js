@@ -503,95 +503,13 @@ db.exec(`
 ensureColumn('ansible_runs', 'playbook_ids', 'TEXT'); // JSON array of playbook ids run in this batch — supersedes the single playbook_id/playbook_name pair for new runs
 ensureColumn('ansible_playbooks', 'port', 'TEXT'); // informational only — which port the installed app listens on, shown in the list
 
-// ── Vulnerability Scanning (OpenVAS/Greenbone) ────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS vuln_registration_tokens (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    token       TEXT NOT NULL UNIQUE,
-    created_by  TEXT,
-    created_at  TEXT DEFAULT (datetime('now')),
-    expires_at  TEXT NOT NULL,
-    used_at     TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS vuln_connections (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    name          TEXT NOT NULL,
-    ssh_host      TEXT NOT NULL,
-    ssh_port      INTEGER NOT NULL DEFAULT 22,
-    ssh_username  TEXT NOT NULL DEFAULT 'root',
-    compose_path  TEXT NOT NULL DEFAULT '/opt/greenbone/docker-compose.yml',
-    gmp_username  TEXT NOT NULL,
-    gmp_password  TEXT NOT NULL,
-    enabled       INTEGER DEFAULT 1,
-    last_status   TEXT,           -- last connectivity check result, informational
-    registered_at TEXT DEFAULT (datetime('now')),
-    created_at    TEXT DEFAULT (datetime('now')),
-    updated_at    TEXT DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS vuln_scans (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    connection_id   INTEGER NOT NULL,
-    name            TEXT NOT NULL,
-    targets         TEXT NOT NULL,   -- JSON array of IPs/hostnames scanned
-    gvm_task_id     TEXT,            -- the task UUID on the GVM side, once created
-    gvm_report_id   TEXT,            -- the resulting report UUID, once available
-    status          TEXT NOT NULL DEFAULT 'pending', -- pending | running | completed | failed
-    summary         TEXT,            -- JSON: {critical, high, medium, low, log}
-    triggered_by    TEXT,
-    created_at      TEXT DEFAULT (datetime('now')),
-    completed_at    TEXT,
-    FOREIGN KEY (connection_id) REFERENCES vuln_connections(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS vuln_findings (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    scan_id     INTEGER NOT NULL,
-    host        TEXT NOT NULL,
-    port        TEXT,
-    severity    REAL,             -- CVSS score, 0-10
-    threat      TEXT,             -- Critical | High | Medium | Low | Log
-    name        TEXT NOT NULL,
-    cve         TEXT,
-    description TEXT,
-    FOREIGN KEY (scan_id) REFERENCES vuln_scans(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_vuln_findings_scan ON vuln_findings(scan_id);
-  CREATE INDEX IF NOT EXISTS idx_vuln_findings_severity ON vuln_findings(severity);
-`);
-// If this table still has the legacy NOT NULL gmp_host column (from before
-// the switch to SSH-based access), rebuild it cleanly — SQLite can't drop a
-// NOT NULL constraint via ALTER TABLE, and no registration has ever
-// succeeded against the old schema, so there's nothing real to preserve.
-{
-  const existingCols = db.prepare("PRAGMA table_info(vuln_connections)").all();
-  const hasLegacyGmpHost = existingCols.some((c) => c.name === 'gmp_host' && c.notnull);
-  if (hasLegacyGmpHost) {
-    db.exec('DROP TABLE IF EXISTS vuln_connections');
-    db.exec(`
-      CREATE TABLE vuln_connections (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        name          TEXT NOT NULL,
-        ssh_host      TEXT NOT NULL,
-        ssh_port      INTEGER NOT NULL DEFAULT 22,
-        ssh_username  TEXT NOT NULL DEFAULT 'root',
-        compose_path  TEXT NOT NULL DEFAULT '/opt/greenbone/docker-compose.yml',
-        gmp_username  TEXT NOT NULL,
-        gmp_password  TEXT NOT NULL,
-        enabled       INTEGER DEFAULT 1,
-        last_status   TEXT,
-        registered_at TEXT DEFAULT (datetime('now')),
-        created_at    TEXT DEFAULT (datetime('now')),
-        updated_at    TEXT DEFAULT (datetime('now'))
-      );
-    `);
-  }
-}
-ensureColumn('vuln_connections', 'ssh_host', 'TEXT');
-ensureColumn('vuln_connections', 'ssh_port', "INTEGER DEFAULT 22");
-ensureColumn('vuln_connections', 'ssh_username', "TEXT DEFAULT 'root'");
-ensureColumn('vuln_connections', 'compose_path', "TEXT DEFAULT '/opt/greenbone/docker-compose.yml'");
+// Vulnerability Scanning (OpenVAS/Greenbone) was removed — drop any tables
+// an earlier version of this app may have already created on this
+// install, so nothing orphaned is left behind.
+db.exec('DROP TABLE IF EXISTS vuln_findings');
+db.exec('DROP TABLE IF EXISTS vuln_scans');
+db.exec('DROP TABLE IF EXISTS vuln_connections');
+db.exec('DROP TABLE IF EXISTS vuln_registration_tokens');
 
 
 // ── Automation: OpenTofu-provisioned infrastructure ──────────────────────

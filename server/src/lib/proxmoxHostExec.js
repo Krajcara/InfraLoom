@@ -6,8 +6,7 @@ const { Client: SSHClient } = require('ssh2');
 /** Runs a raw shell command directly on a remote HOST via SSH — no
  * `pct exec` wrapper, unlike pctExec.js's execInLXC. Used for host-only
  * operations that have no REST API equivalent, like `qm importdisk`
- * during template creation, or running `gvm-cli` on a connected OpenVAS
- * server. Supports both password and private-key auth. */
+ * during template creation. Supports both password and private-key auth. */
 function execOnHost(creds, command, { timeoutMs = 600000, onOutput } = {}) {
   return new Promise((resolve, reject) => {
     if (!creds?.username || !(creds?.password || creds?.privateKey)) {
