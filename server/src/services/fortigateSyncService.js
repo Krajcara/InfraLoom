@@ -48,19 +48,21 @@ async function syncRouter(routerId) {
   if (!router) throw new Error('Router not found');
   if (router.brand !== 'fortigate') throw new Error('Only FortiGate (brand: fortigate) routers support sync');
 
-  try {
-    const { switches, accessPoints } = await fetchManagedDevices(router);
-    upsertDiscovered('switches', routerId, switches);
-    upsertDiscovered('access_points', routerId, accessPoints);
-    db.prepare("UPDATE routers SET last_sync_at = datetime('now'), last_sync_status = ? WHERE id = ?").run(
-      `ok: ${switches.length} switches, ${accessPoints.length} access points`,
-      routerId
-    );
-    return { switches: switches.length, accessPoints: accessPoints.length };
-  } catch (err) {
-    db.prepare("UPDATE routers SET last_sync_at = datetime('now'), last_sync_status = ? WHERE id = ?").run(`error: ${err.message}`, routerId);
-    throw err;
+  const { switches, accessPoints, errors } = await fetchManagedDevices(router);
+  upsertDiscovered('switches', routerId, switches);
+  upsertDiscovered('access_points', routerId, accessPoints);
+
+  const parts = [];
+  parts.push(errors.switches ? `switches: ${errors.switches}` : `${switches.length} switches`);
+  parts.push(errors.accessPoints ? `access points: ${errors.accessPoints}` : `${accessPoints.length} access points`);
+  const status = (errors.switches ? 'error' : 'ok') === 'ok' && (errors.accessPoints ? 'error' : 'ok') === 'ok' ? 'ok' : (errors.switches && errors.accessPoints ? 'error' : 'partial');
+
+  db.prepare("UPDATE routers SET last_sync_at = datetime('now'), last_sync_status = ? WHERE id = ?").run(`${status}: ${parts.join(', ')}`, routerId);
+
+  if (errors.switches && errors.accessPoints) {
+    throw new Error(`Both endpoints failed — ${parts.join('; ')}`);
   }
+  return { switches: switches.length, accessPoints: accessPoints.length, errors };
 }
 
 async function syncAllFortiGates() {
