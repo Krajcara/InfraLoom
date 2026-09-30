@@ -49,6 +49,7 @@ async function checkOne(conn) {
 async function runHealthCheck() {
   const connections = db.prepare('SELECT * FROM hypervisor_connections WHERE enabled = 1 AND health_check_enabled = 1').all();
   await Promise.allSettled(connections.map(checkOne));
+  if (global.io) global.io.emit('hypervisor:health-checked', {});
 }
 
 let cronTask = null;

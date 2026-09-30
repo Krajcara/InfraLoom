@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSocket } from '../hooks/useSocket';
 import {
   DndContext,
   PointerSensor,
@@ -199,12 +200,15 @@ function SortableWidget({ widget, onHide }) {
 function UptimeWidgetBody() {
   const [state, setState] = useState({ loading: true, error: null, monitors: [] });
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api
       .get('/monitors')
       .then((data) => setState({ loading: false, error: null, monitors: data.monitors }))
       .catch((err) => setState({ loading: false, error: err.message, monitors: [] }));
   }, []);
+
+  useEffect(load, [load]);
+  useSocket({ 'monitor:status': load });
 
   if (state.loading) return <p className="muted">Loading...</p>;
   if (state.error) return <p className="error">{state.error}</p>;
@@ -268,12 +272,15 @@ function DnsWidgetBody() {
 function NetSpeedWidgetBody() {
   const [state, setState] = useState({ loading: true, error: null, test: null });
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api
       .get('/netspeed/status')
       .then((data) => setState({ loading: false, error: null, test: data.last_test }))
       .catch((err) => setState({ loading: false, error: err.message, test: null }));
   }, []);
+
+  useEffect(load, [load]);
+  useSocket({ 'netspeed:done': load });
 
   if (state.loading) return <p className="muted">Loading...</p>;
   if (state.error) return <p className="error">{state.error}</p>;
@@ -289,7 +296,7 @@ function NetSpeedWidgetBody() {
 function PatchesWidgetBody() {
   const [state, setState] = useState({ loading: true, error: null, counts: null, topGuest: null });
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api
       .get('/patch-management/overview')
       .then((data) => {
@@ -316,6 +323,9 @@ function PatchesWidgetBody() {
       })
       .catch((err) => setState({ loading: false, error: err.message, counts: null, topGuest: null }));
   }, []);
+
+  useEffect(load, [load]);
+  useSocket({ 'patch:complete': load, 'patch:bulk-complete': load });
 
   if (state.loading) return <p className="muted">Loading...</p>;
   if (state.error) return <p className="error">{state.error}</p>;
@@ -354,12 +364,15 @@ function PatchesWidgetBody() {
 function NetscanWidgetBody() {
   const [state, setState] = useState({ loading: true, error: null, online: 0, total: 0 });
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api
       .get('/network-scanner/status')
       .then((data) => setState({ loading: false, error: null, online: data.online, total: data.total }))
       .catch((err) => setState({ loading: false, error: err.message, online: 0, total: 0 }));
   }, []);
+
+  useEffect(load, [load]);
+  useSocket({ 'netscan:complete': load, 'netscan:device': load });
 
   if (state.loading) return <p className="muted">Loading...</p>;
   if (state.error) return <p className="error">{state.error}</p>;
@@ -371,7 +384,7 @@ function NetscanWidgetBody() {
 function HypervisorsWidgetBody() {
   const [state, setState] = useState({ loading: true, error: null, byType: {}, connections: 0 });
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api
       .get('/hypervisors/nodes')
       .then((data) => {
@@ -388,6 +401,9 @@ function HypervisorsWidgetBody() {
       })
       .catch((err) => setState({ loading: false, error: err.message, byType: {}, connections: 0 }));
   }, []);
+
+  useEffect(load, [load]);
+  useSocket({ 'hypervisor:health-checked': load });
 
   if (state.loading) return <p className="muted">Loading...</p>;
   if (state.error) return <p className="error">{state.error}</p>;
@@ -434,7 +450,7 @@ function MyIpWidgetBody() {
 function DeviceTypeWidgetBody({ apiPath, noun }) {
   const [state, setState] = useState({ loading: true, error: null, down: [], total: 0 });
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api
       .get(`/${apiPath}`)
       .then((data) => {
@@ -443,6 +459,9 @@ function DeviceTypeWidgetBody({ apiPath, noun }) {
       })
       .catch((err) => setState({ loading: false, error: err.message, down: [], total: 0 }));
   }, [apiPath]);
+
+  useEffect(load, [load]);
+  useSocket({ 'monitor:status': load });
 
   if (state.loading) return <p className="muted">Loading...</p>;
   if (state.error) return <p className="error">{state.error}</p>;
