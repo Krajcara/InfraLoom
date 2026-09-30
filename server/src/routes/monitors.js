@@ -26,7 +26,7 @@ router.use(requireAuth);
 
 // GET /api/monitors
 router.get('/', (req, res) => {
-  res.json({ monitors: db.prepare('SELECT * FROM monitors ORDER BY label').all() });
+  res.json({ monitors: db.prepare('SELECT * FROM monitors WHERE hidden = 0 ORDER BY label').all() });
 });
 
 // GET /api/monitors/:id/checks?hours=3

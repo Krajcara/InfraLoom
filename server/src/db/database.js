@@ -528,6 +528,11 @@ db.exec('DROP TABLE IF EXISTS vuln_scans');
 db.exec('DROP TABLE IF EXISTS vuln_connections');
 db.exec('DROP TABLE IF EXISTS vuln_registration_tokens');
 
+ensureColumn('monitors', 'hidden', 'INTEGER DEFAULT 0'); // 1 = still checked normally, just not shown in the general Monitors list (used for routers/switches/APs, which show their own status on their own card)
+for (const table of ['routers', 'switches', 'access_points']) {
+  db.exec(`UPDATE monitors SET hidden = 1 WHERE id IN (SELECT monitor_id FROM ${table} WHERE monitor_id IS NOT NULL) AND hidden = 0`);
+}
+
 // Backfill: any router/switch/access_point row without a monitor_id (e.g.
 // discovered via FortiGate sync before that created one, or an older row
 // from before this was mandatory) gets one now — the monitor worker
@@ -536,7 +541,7 @@ db.exec('DROP TABLE IF EXISTS vuln_registration_tokens');
 for (const table of ['routers', 'switches', 'access_points']) {
   const missing = db.prepare(`SELECT id, name, ip_address FROM ${table} WHERE monitor_id IS NULL AND ip_address IS NOT NULL AND ip_address != '' AND ip_address != '0.0.0.0'`).all();
   if (missing.length) {
-    const insertMonitor = db.prepare(`INSERT INTO monitors (label, type, target, interval_s) VALUES (?, 'icmp', ?, 60)`);
+    const insertMonitor = db.prepare(`INSERT INTO monitors (label, type, target, interval_s, hidden) VALUES (?, 'icmp', ?, 60, 1)`);
     const linkMonitor = db.prepare(`UPDATE ${table} SET monitor_id = ? WHERE id = ?`);
     for (const row of missing) {
       const result = insertMonitor.run(row.name, row.ip_address);

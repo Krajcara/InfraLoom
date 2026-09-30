@@ -55,7 +55,7 @@ function createDeviceRouter(table, moduleLabel) {
 
     // Ping is mandatory: back every device with an icmp monitor.
     const monitorResult = db
-      .prepare(`INSERT INTO monitors (label, type, target, interval_s) VALUES (?, 'icmp', ?, 60)`)
+      .prepare(`INSERT INTO monitors (label, type, target, interval_s, hidden) VALUES (?, 'icmp', ?, 60, 1)`)
       .run(name.trim(), ip_address.trim());
     const monitorId = monitorResult.lastInsertRowid;
     const worker = getMonitorWorker();

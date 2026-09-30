@@ -48,7 +48,7 @@ function upsertDiscovered(table, routerId, devices) {
       // one, so it's actually pinged rather than sitting at "unknown" forever.
       let monitorId = null;
       if (dev.ip_address) {
-        const monitorResult = db.prepare(`INSERT INTO monitors (label, type, target, interval_s) VALUES (?, 'icmp', ?, 60)`).run(dev.name, dev.ip_address);
+        const monitorResult = db.prepare(`INSERT INTO monitors (label, type, target, interval_s, hidden) VALUES (?, 'icmp', ?, 60, 1)`).run(dev.name, dev.ip_address);
         monitorId = monitorResult.lastInsertRowid;
         worker?.registerMonitor(db.prepare('SELECT * FROM monitors WHERE id = ?').get(monitorId));
       }
