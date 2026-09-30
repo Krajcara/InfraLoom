@@ -30,6 +30,7 @@ export default function NewK8sClusterPage() {
     startingAddress: '', gateway: '', dns: '1.1.1.1',
     controlPlaneCount: 1, workerCount: 2,
     nodeIps: [], // one CIDR string per node, control-planes first then workers — index matches nodeLabels()
+    nodeVmids: [], // one optional VMID string per node, same index/order as nodeIps — blank entries auto-assign
   });
   const [error, setError] = useState(null);
   const [starting, setStarting] = useState(false);
@@ -60,9 +61,11 @@ export default function NewK8sClusterPage() {
   useEffect(() => {
     const total = (parseInt(form.controlPlaneCount, 10) || 0) + (parseInt(form.workerCount, 10) || 0);
     setForm((f) => {
-      const next = f.nodeIps.slice(0, total);
-      while (next.length < total) next.push('');
-      return { ...f, nodeIps: next };
+      const nextIps = f.nodeIps.slice(0, total);
+      while (nextIps.length < total) nextIps.push('');
+      const nextVmids = f.nodeVmids.slice(0, total);
+      while (nextVmids.length < total) nextVmids.push('');
+      return { ...f, nodeIps: nextIps, nodeVmids: nextVmids };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.controlPlaneCount, form.workerCount]);
@@ -85,12 +88,32 @@ export default function NewK8sClusterPage() {
     });
   }
 
+  function setNodeVmid(index, value) {
+    setForm((f) => {
+      const next = [...f.nodeVmids];
+      next[index] = value;
+      return { ...f, nodeVmids: next };
+    });
+  }
+
   async function start(e) {
     e.preventDefault();
     const cidrPattern = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/;
     const badIp = form.nodeIps.find((ip) => !cidrPattern.test(ip));
     if (badIp !== undefined) {
       setError('Every node needs a valid IP/CIDR, e.g. 10.1.0.50/24 — one is missing or invalid.');
+      return;
+    }
+    const usedVmids = templates?.usedVmids || [];
+    const enteredVmids = form.nodeVmids.filter(Boolean).map((v) => parseInt(v, 10));
+    const collision = enteredVmids.find((v) => usedVmids.includes(v));
+    if (collision !== undefined) {
+      setError(`VMID ${collision} is already in use on this node — choose another or leave it blank to auto-assign.`);
+      return;
+    }
+    const dupe = enteredVmids.find((v, i) => enteredVmids.indexOf(v) !== i);
+    if (dupe !== undefined) {
+      setError(`VMID ${dupe} is entered for more than one node — each node needs a unique VMID.`);
       return;
     }
     setStarting(true);
@@ -101,6 +124,7 @@ export default function NewK8sClusterPage() {
         cores: form.cores, memoryMb: form.memoryMb, diskGb: form.diskGb,
         network: { gateway: form.gateway, dns: form.dns.split(',').map((s) => s.trim()).filter(Boolean) },
         nodeIps: form.nodeIps,
+        nodeVmids: form.nodeVmids.map((v) => (v ? parseInt(v, 10) : null)),
         controlPlaneCount: form.controlPlaneCount, workerCount: form.workerCount,
       });
       setClusterId(d.clusterId);
@@ -212,12 +236,26 @@ export default function NewK8sClusterPage() {
             <button type="button" onClick={autoFillIps}>Auto-fill IPs below</button>
           </div>
 
-          <p className="muted">Each node's IP address:</p>
+          <p className="muted">Each node's IP address and VMID:</p>
           {nodeLabels(form.controlPlaneCount, form.workerCount).map((label, i) => (
-            <label key={i}>
-              {label}
-              <input value={form.nodeIps[i] || ''} onChange={(e) => setNodeIp(i, e.target.value)} placeholder="10.1.0.50/24" required />
-            </label>
+            <div className="form-row" key={i}>
+              <label>
+                {label} — IP
+                <input value={form.nodeIps[i] || ''} onChange={(e) => setNodeIp(i, e.target.value)} placeholder="10.1.0.50/24" required />
+              </label>
+              <label>
+                {label} — VMID
+                <input
+                  type="number" min="100"
+                  value={form.nodeVmids[i] || ''}
+                  onChange={(e) => setNodeVmid(i, e.target.value)}
+                  placeholder="auto-assign"
+                />
+                {form.nodeVmids[i] && templates?.usedVmids.includes(parseInt(form.nodeVmids[i], 10)) && (
+                  <span className="error">Already in use on this node</span>
+                )}
+              </label>
+            </div>
           ))}
         </section>
 

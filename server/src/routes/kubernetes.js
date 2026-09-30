@@ -119,7 +119,7 @@ router.get('/connections/:id/namespaces', async (req, res) => {
 
 // POST /api/kubernetes/clusters — provision a new cluster
 router.post('/clusters', requireRole('superadmin', 'admin'), async (req, res) => {
-  const { name, connectionId, node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, controlPlaneCount, workerCount } = req.body || {};
+  const { name, connectionId, node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, nodeVmids, controlPlaneCount, workerCount } = req.body || {};
   if (!name?.trim() || !connectionId || !node || !templateVmid) {
     return res.status(400).json({ error: 'name, connectionId, node, and templateVmid are required' });
   }
@@ -135,7 +135,7 @@ router.post('/clusters', requireRole('superadmin', 'admin'), async (req, res) =>
     const result = await startClusterProvision({
       name: name.trim(), connectionId, conn, node, storage, templateVmid,
       cores: parseInt(cores, 10) || 2, memoryMb: parseInt(memoryMb, 10) || 4096, diskGb: parseInt(diskGb, 10) || 20,
-      network, nodeIps, controlPlaneCount: parseInt(controlPlaneCount, 10) || 1, workerCount: parseInt(workerCount, 10) || 0,
+      network, nodeIps, nodeVmids: Array.isArray(nodeVmids) ? nodeVmids : [], controlPlaneCount: parseInt(controlPlaneCount, 10) || 1, workerCount: parseInt(workerCount, 10) || 0,
       triggeredBy: req.user.username,
     });
 
