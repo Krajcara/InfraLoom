@@ -528,6 +528,24 @@ db.exec('DROP TABLE IF EXISTS vuln_scans');
 db.exec('DROP TABLE IF EXISTS vuln_connections');
 db.exec('DROP TABLE IF EXISTS vuln_registration_tokens');
 
+// Backfill: any router/switch/access_point row without a monitor_id (e.g.
+// discovered via FortiGate sync before that created one, or an older row
+// from before this was mandatory) gets one now — the monitor worker
+// loads every enabled monitor at startup, so this alone is enough for
+// them to start actually being pinged again.
+for (const table of ['routers', 'switches', 'access_points']) {
+  const missing = db.prepare(`SELECT id, name, ip_address FROM ${table} WHERE monitor_id IS NULL AND ip_address IS NOT NULL AND ip_address != '' AND ip_address != '0.0.0.0'`).all();
+  if (missing.length) {
+    const insertMonitor = db.prepare(`INSERT INTO monitors (label, type, target, interval_s) VALUES (?, 'icmp', ?, 60)`);
+    const linkMonitor = db.prepare(`UPDATE ${table} SET monitor_id = ? WHERE id = ?`);
+    for (const row of missing) {
+      const result = insertMonitor.run(row.name, row.ip_address);
+      linkMonitor.run(result.lastInsertRowid, row.id);
+    }
+    console.log(`[db] Backfilled ping monitors for ${missing.length} existing ${table} row(s) that had none.`);
+  }
+}
+
 
 // ── Automation: OpenTofu-provisioned infrastructure ──────────────────────
 db.exec(`
