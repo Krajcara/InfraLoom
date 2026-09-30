@@ -110,7 +110,7 @@ export default function NewK8sClusterPage() {
             Base template (cloud image)
             <select value={form.templateVmid} onChange={(e) => setForm({ ...form, templateVmid: e.target.value })}>
               <option value="">Select...</option>
-              {templates?.templates.map((t) => <option key={t.vmid} value={t.vmid}>{t.name}</option>)}
+              {templates?.vmTemplates.map((t) => <option key={t.vmid} value={t.vmid}>{t.name} (#{t.vmid})</option>)}
             </select>
           </label>
         </section>
