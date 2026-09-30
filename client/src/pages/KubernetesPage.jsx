@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Trash2 } from 'lucide-react';
 import { api } from '../api';
 import { formatDbDate } from '../utils/formatDate';
@@ -60,7 +61,10 @@ export default function KubernetesPage() {
     <div className="page">
       <div className="page-header-row">
         <h1>Kubernetes</h1>
-        <button onClick={() => setShowForm(!showForm)}>{showForm ? 'Cancel' : '+ Connect cluster'}</button>
+        <div className="form-row">
+          <Link to="/kubernetes/new"><button type="button">+ Provision new cluster</button></Link>
+          <button onClick={() => setShowForm(!showForm)}>{showForm ? 'Cancel' : '+ Connect existing cluster'}</button>
+        </div>
       </div>
       <p className="muted">
         Connects using a read-only service account token — see the "install-k3s-test.sh" script for how to create

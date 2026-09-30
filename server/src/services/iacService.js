@@ -414,4 +414,4 @@ function saveGuestSshCredentials(deployment, vmid) {
   ).run(deployment.connection_id, vmid, host, username, vars.sshPassword || null, mgmtKey.privateKeyPath);
 }
 
-module.exports = { planDeployment, applyDeployment, cancelDeployment, buildVmConfig, buildLxcConfig, hclString, hclNumber };
+module.exports = { planDeployment, applyDeployment, cancelDeployment, buildVmConfig, buildLxcConfig, hclString, hclNumber, runTofu, DEPLOYMENTS_DIR };

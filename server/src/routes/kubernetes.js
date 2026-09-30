@@ -117,4 +117,47 @@ router.get('/connections/:id/namespaces', async (req, res) => {
   }
 });
 
+// POST /api/kubernetes/clusters — provision a new cluster
+router.post('/clusters', requireRole('superadmin', 'admin'), async (req, res) => {
+  const { name, connectionId, node, storage, templateVmid, cores, memoryMb, diskGb, network, controlPlaneCount, workerCount } = req.body || {};
+  if (!name?.trim() || !connectionId || !node || !templateVmid) {
+    return res.status(400).json({ error: 'name, connectionId, node, and templateVmid are required' });
+  }
+  try {
+    const proxmoxClient = require('../lib/proxmoxClient');
+    const conn = db.prepare('SELECT * FROM hypervisor_connections WHERE id = ?').get(connectionId);
+    if (!conn) return res.status(404).json({ error: 'Hypervisor connection not found' });
+
+    const { startClusterProvision } = require('../services/k8sProvisionService');
+    const result = await startClusterProvision({
+      name: name.trim(), connectionId, conn, node, storage, templateVmid,
+      cores: parseInt(cores, 10) || 2, memoryMb: parseInt(memoryMb, 10) || 4096, diskGb: parseInt(diskGb, 10) || 20,
+      network, controlPlaneCount: parseInt(controlPlaneCount, 10) || 1, workerCount: parseInt(workerCount, 10) || 0,
+      triggeredBy: req.user.username,
+    });
+
+    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'kubernetes.cluster_provision', module: 'kubernetes', entity_id: result.clusterId, details: { name, ...result }, ip_address: req.ip });
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/kubernetes/clusters
+router.get('/clusters', (req, res) => {
+  const clusters = db.prepare('SELECT * FROM k8s_clusters ORDER BY created_at DESC').all();
+  res.json({ clusters: clusters.map((c) => ({ ...c, node_config: JSON.parse(c.node_config), progress_log: c.progress_log ? JSON.parse(c.progress_log) : [] })) });
+});
+
+// GET /api/kubernetes/clusters/:id
+router.get('/clusters/:id', (req, res) => {
+  const cluster = db.prepare('SELECT * FROM k8s_clusters WHERE id = ?').get(req.params.id);
+  if (!cluster) return res.status(404).json({ error: 'Not found' });
+  const nodes = db.prepare('SELECT * FROM k8s_cluster_nodes WHERE cluster_id = ?').all(req.params.id);
+  res.json({
+    cluster: { ...cluster, node_config: JSON.parse(cluster.node_config), progress_log: cluster.progress_log ? JSON.parse(cluster.progress_log) : [] },
+    nodes,
+  });
+});
+
 module.exports = router;

@@ -522,6 +522,33 @@ ensureColumn('ansible_playbooks', 'port', 'TEXT'); // informational only — whi
 
 // ── Kubernetes (Phase 1 — connect + monitor existing clusters) ───────────
 db.exec(`
+  CREATE TABLE IF NOT EXISTS k8s_clusters (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                TEXT NOT NULL,
+    connection_id       INTEGER NOT NULL,  -- hypervisor connection used to provision the VMs
+    node_config         TEXT NOT NULL,     -- JSON: {node, storage, templateVmid, cores, memoryMb, diskGb, network, controlPlaneCount, workerCount}
+    status              TEXT NOT NULL DEFAULT 'provisioning', -- provisioning | ready | failed
+    k8s_connection_id   INTEGER,           -- FK to k8s_connections once the cluster is registered for monitoring
+    progress_log        TEXT,              -- JSON array of {step, status, message, at}
+    error               TEXT,
+    triggered_by        TEXT,
+    created_at          TEXT DEFAULT (datetime('now')),
+    completed_at        TEXT,
+    FOREIGN KEY (k8s_connection_id) REFERENCES k8s_connections(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS k8s_cluster_nodes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    cluster_id  INTEGER NOT NULL,
+    role        TEXT NOT NULL,  -- control-plane | worker
+    vmid        INTEGER,
+    name        TEXT,
+    ip_address  TEXT,
+    status      TEXT DEFAULT 'pending', -- pending | provisioning | installed | ready | failed
+    error       TEXT,
+    FOREIGN KEY (cluster_id) REFERENCES k8s_clusters(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS k8s_connections (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT NOT NULL,
