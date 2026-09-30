@@ -88,8 +88,12 @@ async function checkTcp(monitor) {
 async function checkIcmp(monitor) {
   const start = Date.now();
   try {
-    const { execSync } = require('child_process');
-    execSync(`ping -c 1 -W ${monitor.timeout_s || 5} ${monitor.target}`, { timeout: (monitor.timeout_s || 10) * 1000 });
+    const { execFile } = require('child_process');
+    await new Promise((resolve, reject) => {
+      execFile('ping', ['-c', '1', '-W', String(monitor.timeout_s || 5), monitor.target], { timeout: (monitor.timeout_s || 10) * 1000 }, (err) => {
+        if (err) reject(err); else resolve();
+      });
+    });
     return { status: 'up', latency_ms: Date.now() - start };
   } catch {
     return { status: 'down', latency_ms: Date.now() - start, error_msg: 'Host not responding to ping' };
@@ -253,6 +257,8 @@ function sweepPushMonitors() {
 
 // ── Register / unregister / init ─────────────────────────────────────────
 
+let registrationCounter = 0;
+
 function registerMonitor(monitor) {
   if (timers.has(monitor.id)) clearInterval(timers.get(monitor.id));
   if (!monitor.enabled || monitor.type === 'push') return;
@@ -266,6 +272,12 @@ function registerMonitor(monitor) {
     }
   }, ms);
   timers.set(monitor.id, t);
+  // Stagger the first check across up to ~30s (200ms apart, per monitor
+  // registered so far) instead of every monitor firing at the same 1500ms
+  // mark — with many monitors (e.g. dozens of FortiGate-discovered
+  // switches/APs), a synchronized startup burst of ping subprocesses and
+  // their synchronous DB writes was blocking the whole app.
+  const initialDelay = 1500 + (registrationCounter++ % 150) * 200;
   setTimeout(() => {
     try {
       const m = db.prepare('SELECT * FROM monitors WHERE id = ?').get(monitor.id);
@@ -273,7 +285,7 @@ function registerMonitor(monitor) {
     } catch {
       // ignore
     }
-  }, 1500);
+  }, initialDelay);
 }
 
 function unregisterMonitor(monitorId) {
