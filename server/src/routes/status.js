@@ -19,7 +19,7 @@ router.get('/public', (req, res) => {
   const monitors = db
     .prepare(
       `SELECT id, label, type, last_status, last_latency_ms, last_checked_at, ssl_days, ssl_expiry, ssl_error
-       FROM monitors WHERE enabled = 1 ORDER BY label`
+       FROM monitors WHERE enabled = 1 AND hidden = 0 ORDER BY label`
     )
     .all();
   res.json({ monitors });
@@ -52,12 +52,12 @@ router.get('/public/dashboard', async (req, res) => {
       .map((d) => ({ name: d.name, detail: d.ip_address, status: d.last_status === 'up' ? 'up' : d.last_status === 'down' ? 'down' : 'unknown' }));
 
   const monitors = db
-    .prepare("SELECT label, last_status, ssl_days FROM monitors WHERE enabled = 1 ORDER BY label")
+    .prepare("SELECT label, last_status, ssl_days FROM monitors WHERE enabled = 1 AND hidden = 0 ORDER BY label")
     .all()
     .map((m) => ({ name: m.label, status: m.last_status === 'up' ? 'up' : m.last_status === 'down' ? 'down' : m.last_status === 'degraded' ? 'degraded' : 'unknown' }));
 
   const sslExpiring = db
-    .prepare("SELECT label, ssl_days FROM monitors WHERE enabled = 1 AND ssl_days IS NOT NULL AND ssl_days <= 14 ORDER BY ssl_days ASC LIMIT 5")
+    .prepare("SELECT label, ssl_days FROM monitors WHERE enabled = 1 AND hidden = 0 AND ssl_days IS NOT NULL AND ssl_days <= 14 ORDER BY ssl_days ASC LIMIT 5")
     .all();
   const licencesExpiring = db
     .prepare("SELECT vendor, licence_type, expiry_date, julianday(expiry_date) - julianday('now') as days_left FROM licences WHERE hidden = 0 AND expiry_date IS NOT NULL AND julianday(expiry_date) - julianday('now') <= 14 ORDER BY expiry_date ASC LIMIT 5")
