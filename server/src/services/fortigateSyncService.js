@@ -3,6 +3,14 @@
 const db = require('../db/database');
 const { fetchManagedDevices } = require('../lib/fortigateClient');
 
+function getMonitorWorker() {
+  try {
+    return require('./monitorWorker');
+  } catch {
+    return null;
+  }
+}
+
 function getSetting(key, fallback) {
   return db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value ?? fallback;
 }
@@ -13,12 +21,13 @@ function getSetting(key, fallback) {
  * (shown as offline) rather than deleted. */
 function upsertDiscovered(table, routerId, devices) {
   const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
-  const existing = db.prepare(`SELECT id, discovered_serial FROM ${table} WHERE discovered_from_router_id = ?`).all(routerId);
-  const existingBySerial = new Map(existing.map((r) => [r.discovered_serial, r.id]));
+  const existing = db.prepare(`SELECT id, discovered_serial, monitor_id, ip_address FROM ${table} WHERE discovered_from_router_id = ?`).all(routerId);
+  const existingBySerial = new Map(existing.map((r) => [r.discovered_serial, r]));
   const seenSerials = new Set();
+  const worker = getMonitorWorker();
 
   const insert = db.prepare(
-    `INSERT INTO ${table} (name, brand, model, ip_address, discovered_from_router_id, discovered_serial, last_seen_at) VALUES (?,?,?,?,?,?,?)`
+    `INSERT INTO ${table} (name, brand, model, ip_address, discovered_from_router_id, discovered_serial, last_seen_at, monitor_id) VALUES (?,?,?,?,?,?,?,?)`
   );
   const update = db.prepare(
     `UPDATE ${table} SET name=?, model=?, ip_address=?, last_seen_at=?, discovered_missing_at=NULL WHERE id=?`
@@ -27,11 +36,23 @@ function upsertDiscovered(table, routerId, devices) {
   for (const dev of devices) {
     if (!dev.serial) continue;
     seenSerials.add(dev.serial);
-    const existingId = existingBySerial.get(dev.serial);
-    if (existingId) {
-      update.run(dev.name, dev.model, dev.ip_address, now, existingId);
+    const existingRow = existingBySerial.get(dev.serial);
+    if (existingRow) {
+      update.run(dev.name, dev.model, dev.ip_address, now, existingRow.id);
+      // Keep the ping target in sync if the device's IP changed since the last sync.
+      if (existingRow.monitor_id && dev.ip_address && dev.ip_address !== existingRow.ip_address) {
+        db.prepare('UPDATE monitors SET target = ? WHERE id = ?').run(dev.ip_address, existingRow.monitor_id);
+      }
     } else {
-      insert.run(dev.name, 'fortigate', dev.model, dev.ip_address || '0.0.0.0', routerId, dev.serial, now);
+      // New device — back it with an ICMP monitor, same as a manually-added
+      // one, so it's actually pinged rather than sitting at "unknown" forever.
+      let monitorId = null;
+      if (dev.ip_address) {
+        const monitorResult = db.prepare(`INSERT INTO monitors (label, type, target, interval_s) VALUES (?, 'icmp', ?, 60)`).run(dev.name, dev.ip_address);
+        monitorId = monitorResult.lastInsertRowid;
+        worker?.registerMonitor(db.prepare('SELECT * FROM monitors WHERE id = ?').get(monitorId));
+      }
+      insert.run(dev.name, 'fortigate', dev.model, dev.ip_address || '0.0.0.0', routerId, dev.serial, now, monitorId);
     }
   }
 
