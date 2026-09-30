@@ -20,15 +20,18 @@ function ipOnly(cidr) {
   return cidr.split('/')[0];
 }
 
-async function startClusterProvision({ name, connectionId, conn, node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, nodeVmids, controlPlaneCount, workerCount, triggeredBy }) {
+async function startClusterProvision({ name, connectionId, conn, node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, nodeVmids, nodeNames, controlPlaneCount, workerCount, triggeredBy }) {
   if (controlPlaneCount < 1) throw new Error('At least one control-plane node is required');
   const totalNodes = controlPlaneCount + workerCount;
   if (!Array.isArray(nodeIps) || nodeIps.length !== totalNodes) {
     throw new Error(`Expected exactly ${totalNodes} node IP address(es) (one per node), got ${nodeIps?.length ?? 0}`);
   }
   const vmids = Array.isArray(nodeVmids) && nodeVmids.length === totalNodes ? nodeVmids : new Array(totalNodes).fill(null);
+  const customNames = Array.isArray(nodeNames) && nodeNames.length === totalNodes ? nodeNames : new Array(totalNodes).fill(null);
+  const nonBlankNames = customNames.filter(Boolean);
+  if (new Set(nonBlankNames).size !== nonBlankNames.length) throw new Error('Node names must be unique — the same name was entered for more than one node');
 
-  const nodeConfig = { node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, nodeVmids: vmids, controlPlaneCount, workerCount };
+  const nodeConfig = { node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, nodeVmids: vmids, nodeNames: customNames, controlPlaneCount, workerCount };
   const result = db
     .prepare(`INSERT INTO k8s_clusters (name, connection_id, node_config, status, triggered_by) VALUES (?,?,?,'provisioning',?)`)
     .run(name, connectionId, JSON.stringify(nodeConfig), triggeredBy);
@@ -37,14 +40,16 @@ async function startClusterProvision({ name, connectionId, conn, node, storage, 
   const nodeRows = [];
   for (let i = 0; i < controlPlaneCount; i++) {
     const ip = nodeIps[i];
-    const r = db.prepare(`INSERT INTO k8s_cluster_nodes (cluster_id, role, name, ip_address, vmid) VALUES (?,'control-plane',?,?,?)`).run(clusterId, `${name}-cp-${i + 1}`, ipOnly(ip), vmids[i] || null);
-    nodeRows.push({ id: r.lastInsertRowid, role: 'control-plane', name: `${name}-cp-${i + 1}`, ip: ipOnly(ip), cidr: ip, vmid: vmids[i] || null });
+    const nodeName = customNames[i] || `${name}-cp-${i + 1}`;
+    const r = db.prepare(`INSERT INTO k8s_cluster_nodes (cluster_id, role, name, ip_address, vmid) VALUES (?,'control-plane',?,?,?)`).run(clusterId, nodeName, ipOnly(ip), vmids[i] || null);
+    nodeRows.push({ id: r.lastInsertRowid, role: 'control-plane', name: nodeName, ip: ipOnly(ip), cidr: ip, vmid: vmids[i] || null });
   }
   for (let i = 0; i < workerCount; i++) {
     const ip = nodeIps[controlPlaneCount + i];
     const wVmid = vmids[controlPlaneCount + i];
-    const r = db.prepare(`INSERT INTO k8s_cluster_nodes (cluster_id, role, name, ip_address, vmid) VALUES (?,'worker',?,?,?)`).run(clusterId, `${name}-worker-${i + 1}`, ipOnly(ip), wVmid || null);
-    nodeRows.push({ id: r.lastInsertRowid, role: 'worker', name: `${name}-worker-${i + 1}`, ip: ipOnly(ip), cidr: ip, vmid: wVmid || null });
+    const nodeName = customNames[controlPlaneCount + i] || `${name}-worker-${i + 1}`;
+    const r = db.prepare(`INSERT INTO k8s_cluster_nodes (cluster_id, role, name, ip_address, vmid) VALUES (?,'worker',?,?,?)`).run(clusterId, nodeName, ipOnly(ip), wVmid || null);
+    nodeRows.push({ id: r.lastInsertRowid, role: 'worker', name: nodeName, ip: ipOnly(ip), cidr: ip, vmid: wVmid || null });
   }
 
   // Runs in the background — the HTTP caller gets the cluster id back
@@ -61,6 +66,7 @@ async function startClusterProvision({ name, connectionId, conn, node, storage, 
 async function provisionOneVm(connectionId, conn, node, storage, templateVmid, cores, memoryMb, diskGb, cidr, network, nodeRow) {
   const vars = {
     node, storage, templateVmid, cores, memoryMb, diskGb,
+    name: nodeRow.name,
     network: { mode: 'static', address: cidr, gateway: network.gateway, dns: network.dns },
     sshUsername: 'infraloom',
   };

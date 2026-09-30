@@ -31,6 +31,7 @@ export default function NewK8sClusterPage() {
     controlPlaneCount: 1, workerCount: 2,
     nodeIps: [], // one CIDR string per node, control-planes first then workers — index matches nodeLabels()
     nodeVmids: [], // one optional VMID string per node, same index/order as nodeIps — blank entries auto-assign
+    nodeNames: [], // one optional name per node, same index/order — blank entries fall back to "{cluster}-cp-N" / "{cluster}-worker-N"
   });
   const [error, setError] = useState(null);
   const [starting, setStarting] = useState(false);
@@ -65,7 +66,9 @@ export default function NewK8sClusterPage() {
       while (nextIps.length < total) nextIps.push('');
       const nextVmids = f.nodeVmids.slice(0, total);
       while (nextVmids.length < total) nextVmids.push('');
-      return { ...f, nodeIps: nextIps, nodeVmids: nextVmids };
+      const nextNames = f.nodeNames.slice(0, total);
+      while (nextNames.length < total) nextNames.push('');
+      return { ...f, nodeIps: nextIps, nodeVmids: nextVmids, nodeNames: nextNames };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.controlPlaneCount, form.workerCount]);
@@ -96,6 +99,14 @@ export default function NewK8sClusterPage() {
     });
   }
 
+  function setNodeName(index, value) {
+    setForm((f) => {
+      const next = [...f.nodeNames];
+      next[index] = value;
+      return { ...f, nodeNames: next };
+    });
+  }
+
   async function start(e) {
     e.preventDefault();
     const cidrPattern = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/;
@@ -116,6 +127,12 @@ export default function NewK8sClusterPage() {
       setError(`VMID ${dupe} is entered for more than one node — each node needs a unique VMID.`);
       return;
     }
+    const enteredNames = form.nodeNames.filter(Boolean);
+    const dupeName = enteredNames.find((n, i) => enteredNames.indexOf(n) !== i);
+    if (dupeName) {
+      setError(`Name "${dupeName}" is entered for more than one node — each node needs a unique name.`);
+      return;
+    }
     setStarting(true);
     setError(null);
     try {
@@ -125,6 +142,7 @@ export default function NewK8sClusterPage() {
         network: { gateway: form.gateway, dns: form.dns.split(',').map((s) => s.trim()).filter(Boolean) },
         nodeIps: form.nodeIps,
         nodeVmids: form.nodeVmids.map((v) => (v ? parseInt(v, 10) : null)),
+        nodeNames: form.nodeNames.map((n) => n.trim() || null),
         controlPlaneCount: form.controlPlaneCount, workerCount: form.workerCount,
       });
       setClusterId(d.clusterId);
@@ -236,9 +254,17 @@ export default function NewK8sClusterPage() {
             <button type="button" onClick={autoFillIps}>Auto-fill IPs below</button>
           </div>
 
-          <p className="muted">Each node's IP address and VMID:</p>
+          <p className="muted">Each node's name, IP address, and VMID:</p>
           {nodeLabels(form.controlPlaneCount, form.workerCount).map((label, i) => (
             <div className="form-row" key={i}>
+              <label>
+                {label} — Name
+                <input
+                  value={form.nodeNames[i] || ''}
+                  onChange={(e) => setNodeName(i, e.target.value)}
+                  placeholder={`${form.name || 'cluster'}-${label.toLowerCase().replace(' ', '-')}`}
+                />
+              </label>
               <label>
                 {label} — IP
                 <input value={form.nodeIps[i] || ''} onChange={(e) => setNodeIp(i, e.target.value)} placeholder="10.1.0.50/24" required />
