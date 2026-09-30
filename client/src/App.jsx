@@ -31,6 +31,7 @@ import DnsAnalyticsPage from './pages/DnsAnalyticsPage';
 import NetSpeedPage from './pages/NetSpeedPage';
 import MyIpPage from './pages/MyIpPage';
 import HypervisorsPage from './pages/HypervisorsPage';
+import KubernetesPage from './pages/KubernetesPage';
 import NetworkScannerPage from './pages/NetworkScannerPage';
 import PatchManagementPage from './pages/PatchManagementPage';
 
@@ -62,6 +63,7 @@ export default function App() {
           <Route path="/netspeed" element={<NetSpeedPage />} />
           <Route path="/myip" element={<MyIpPage />} />
           <Route path="/hypervisors" element={<HypervisorsPage />} />
+          <Route path="/kubernetes" element={<KubernetesPage />} />
           <Route path="/network-scanner" element={<NetworkScannerPage />} />
           <Route path="/patch-management" element={<PatchManagementPage />} />
           <Route

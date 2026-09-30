@@ -520,6 +520,21 @@ db.exec(`
 ensureColumn('ansible_runs', 'playbook_ids', 'TEXT'); // JSON array of playbook ids run in this batch — supersedes the single playbook_id/playbook_name pair for new runs
 ensureColumn('ansible_playbooks', 'port', 'TEXT'); // informational only — which port the installed app listens on, shown in the list
 
+// ── Kubernetes (Phase 1 — connect + monitor existing clusters) ───────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS k8s_connections (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    api_server    TEXT NOT NULL,   -- e.g. https://10.1.0.208:6443
+    token         TEXT NOT NULL,   -- service account bearer token
+    enabled       INTEGER DEFAULT 1,
+    last_status   TEXT,
+    last_checked_at TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT DEFAULT (datetime('now'))
+  );
+`);
+
 // Vulnerability Scanning (OpenVAS/Greenbone) was removed — drop any tables
 // an earlier version of this app may have already created on this
 // install, so nothing orphaned is left behind.

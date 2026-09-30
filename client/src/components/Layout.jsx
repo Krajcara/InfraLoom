@@ -35,6 +35,7 @@ const NAV_GROUPS = [
     label: 'Infrastructure',
     items: [
       { to: '/hypervisors', label: 'Hypervisors' },
+      { to: '/kubernetes', label: 'Kubernetes' },
       { to: '/network-scanner', label: 'Network Scanner' },
       { to: '/patch-management', label: 'Patch Management' },
       { to: '/ssh', label: 'SSH', roles: ['superadmin', 'admin'] },
