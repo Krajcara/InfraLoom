@@ -16,41 +16,31 @@ function log(clusterId, step, status, message) {
   if (global.io) global.io.emit('k8s-cluster:progress', { clusterId, step, status, message });
 }
 
-/** Increments the host portion of an IPv4/CIDR string by n, e.g.
- * bumpIp('10.1.0.50/24', 2) -> '10.1.0.52/24'. Only handles the common
- * case (no octet overflow across the 4th octet); good enough for the
- * small, sequential blocks a test/small cluster needs. */
-function bumpIp(cidr, n) {
-  const [ip, prefix] = cidr.split('/');
-  const parts = ip.split('.').map(Number);
-  parts[3] += n;
-  if (parts[3] > 254) throw new Error(`IP range overflow bumping ${cidr} by ${n} — pick a starting IP with more room after it`);
-  return `${parts.join('.')}/${prefix}`;
-}
-
 function ipOnly(cidr) {
   return cidr.split('/')[0];
 }
 
-async function startClusterProvision({ name, connectionId, conn, node, storage, templateVmid, cores, memoryMb, diskGb, network, controlPlaneCount, workerCount, triggeredBy }) {
+async function startClusterProvision({ name, connectionId, conn, node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, controlPlaneCount, workerCount, triggeredBy }) {
   if (controlPlaneCount < 1) throw new Error('At least one control-plane node is required');
-  if (!network?.address || network.mode === 'dhcp') throw new Error('Cluster nodes need a static starting IP — DHCP is not supported here, since InfraLoom needs to know each node\'s address to install and join k3s over SSH.');
+  const totalNodes = controlPlaneCount + workerCount;
+  if (!Array.isArray(nodeIps) || nodeIps.length !== totalNodes) {
+    throw new Error(`Expected exactly ${totalNodes} node IP address(es) (one per node), got ${nodeIps?.length ?? 0}`);
+  }
 
-  const nodeConfig = { node, storage, templateVmid, cores, memoryMb, diskGb, network, controlPlaneCount, workerCount };
+  const nodeConfig = { node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, controlPlaneCount, workerCount };
   const result = db
     .prepare(`INSERT INTO k8s_clusters (name, connection_id, node_config, status, triggered_by) VALUES (?,?,?,'provisioning',?)`)
     .run(name, connectionId, JSON.stringify(nodeConfig), triggeredBy);
   const clusterId = result.lastInsertRowid;
 
-  const totalNodes = controlPlaneCount + workerCount;
   const nodeRows = [];
   for (let i = 0; i < controlPlaneCount; i++) {
-    const ip = bumpIp(network.address, i);
+    const ip = nodeIps[i];
     const r = db.prepare(`INSERT INTO k8s_cluster_nodes (cluster_id, role, name, ip_address) VALUES (?,'control-plane',?,?)`).run(clusterId, `${name}-cp-${i + 1}`, ipOnly(ip));
     nodeRows.push({ id: r.lastInsertRowid, role: 'control-plane', name: `${name}-cp-${i + 1}`, ip: ipOnly(ip), cidr: ip });
   }
   for (let i = 0; i < workerCount; i++) {
-    const ip = bumpIp(network.address, controlPlaneCount + i);
+    const ip = nodeIps[controlPlaneCount + i];
     const r = db.prepare(`INSERT INTO k8s_cluster_nodes (cluster_id, role, name, ip_address) VALUES (?,'worker',?,?)`).run(clusterId, `${name}-worker-${i + 1}`, ipOnly(ip));
     nodeRows.push({ id: r.lastInsertRowid, role: 'worker', name: `${name}-worker-${i + 1}`, ip: ipOnly(ip), cidr: ip });
   }

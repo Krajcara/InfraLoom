@@ -2,6 +2,22 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useSocket } from '../hooks/useSocket';
 
+function nodeLabels(controlPlaneCount, workerCount) {
+  const labels = [];
+  for (let i = 0; i < controlPlaneCount; i++) labels.push(`Control-plane ${i + 1}`);
+  for (let i = 0; i < workerCount; i++) labels.push(`Worker ${i + 1}`);
+  return labels;
+}
+
+function bumpIp(cidr, n) {
+  const m = cidr.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/);
+  if (!m) return '';
+  const [, a, b, c, d, prefix] = m;
+  const last = parseInt(d, 10) + n;
+  if (last > 254) return '';
+  return `${a}.${b}.${c}.${last}/${prefix}`;
+}
+
 export default function NewK8sClusterPage() {
   const [connections, setConnections] = useState([]);
   const [connId, setConnId] = useState(null);
@@ -11,8 +27,9 @@ export default function NewK8sClusterPage() {
   const [form, setForm] = useState({
     name: '', templateVmid: '', storage: '',
     cores: 2, memoryMb: 4096, diskGb: 20,
-    address: '', gateway: '', dns: '1.1.1.1',
+    startingAddress: '', gateway: '', dns: '1.1.1.1',
     controlPlaneCount: 1, workerCount: 2,
+    nodeIps: [], // one CIDR string per node, control-planes first then workers — index matches nodeLabels()
   });
   const [error, setError] = useState(null);
   const [starting, setStarting] = useState(false);
@@ -40,10 +57,40 @@ export default function NewK8sClusterPage() {
     api.get(`/automation/connections/${connId}/templates?node=${node}`).then(setTemplates).catch((err) => setError(err.message));
   }, [connId, node]);
 
+  useEffect(() => {
+    const total = (parseInt(form.controlPlaneCount, 10) || 0) + (parseInt(form.workerCount, 10) || 0);
+    setForm((f) => {
+      const next = f.nodeIps.slice(0, total);
+      while (next.length < total) next.push('');
+      return { ...f, nodeIps: next };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.controlPlaneCount, form.workerCount]);
+
+  function autoFillIps() {
+    if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(form.startingAddress)) {
+      setError('Enter a valid starting IP/CIDR first, e.g. 10.1.0.50/24.');
+      return;
+    }
+    setError(null);
+    const total = form.nodeIps.length;
+    setForm((f) => ({ ...f, nodeIps: Array.from({ length: total }, (_, i) => bumpIp(f.startingAddress, i)) }));
+  }
+
+  function setNodeIp(index, value) {
+    setForm((f) => {
+      const next = [...f.nodeIps];
+      next[index] = value;
+      return { ...f, nodeIps: next };
+    });
+  }
+
   async function start(e) {
     e.preventDefault();
-    if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(form.address)) {
-      setError('Starting IP address needs a CIDR prefix, e.g. 10.1.0.50/24.');
+    const cidrPattern = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/;
+    const badIp = form.nodeIps.find((ip) => !cidrPattern.test(ip));
+    if (badIp !== undefined) {
+      setError('Every node needs a valid IP/CIDR, e.g. 10.1.0.50/24 — one is missing or invalid.');
       return;
     }
     setStarting(true);
@@ -52,7 +99,8 @@ export default function NewK8sClusterPage() {
       const d = await api.post('/kubernetes/clusters', {
         name: form.name, connectionId: connId, node, storage: form.storage, templateVmid: parseInt(form.templateVmid, 10),
         cores: form.cores, memoryMb: form.memoryMb, diskGb: form.diskGb,
-        network: { address: form.address, gateway: form.gateway, dns: form.dns.split(',').map((s) => s.trim()).filter(Boolean) },
+        network: { gateway: form.gateway, dns: form.dns.split(',').map((s) => s.trim()).filter(Boolean) },
+        nodeIps: form.nodeIps,
         controlPlaneCount: form.controlPlaneCount, workerCount: form.workerCount,
       });
       setClusterId(d.clusterId);
@@ -147,10 +195,6 @@ export default function NewK8sClusterPage() {
           <h2>Network (static IPs required)</h2>
           <div className="form-row">
             <label>
-              Starting IP / CIDR
-              <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="10.1.0.50/24" required />
-            </label>
-            <label>
               Gateway
               <input value={form.gateway} onChange={(e) => setForm({ ...form, gateway: e.target.value })} placeholder="10.1.0.1" required />
             </label>
@@ -159,6 +203,22 @@ export default function NewK8sClusterPage() {
               <input value={form.dns} onChange={(e) => setForm({ ...form, dns: e.target.value })} />
             </label>
           </div>
+
+          <div className="form-row" style={{ alignItems: 'flex-end' }}>
+            <label>
+              Starting IP / CIDR (optional — fills the fields below sequentially)
+              <input value={form.startingAddress} onChange={(e) => setForm({ ...form, startingAddress: e.target.value })} placeholder="10.1.0.50/24" />
+            </label>
+            <button type="button" onClick={autoFillIps}>Auto-fill IPs below</button>
+          </div>
+
+          <p className="muted">Each node's IP address:</p>
+          {nodeLabels(form.controlPlaneCount, form.workerCount).map((label, i) => (
+            <label key={i}>
+              {label}
+              <input value={form.nodeIps[i] || ''} onChange={(e) => setNodeIp(i, e.target.value)} placeholder="10.1.0.50/24" required />
+            </label>
+          ))}
         </section>
 
         <button type="submit" disabled={starting}>{starting ? 'Starting...' : `Create cluster (${totalNodes} nodes)`}</button>

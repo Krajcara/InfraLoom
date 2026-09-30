@@ -119,12 +119,15 @@ router.get('/connections/:id/namespaces', async (req, res) => {
 
 // POST /api/kubernetes/clusters — provision a new cluster
 router.post('/clusters', requireRole('superadmin', 'admin'), async (req, res) => {
-  const { name, connectionId, node, storage, templateVmid, cores, memoryMb, diskGb, network, controlPlaneCount, workerCount } = req.body || {};
+  const { name, connectionId, node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, controlPlaneCount, workerCount } = req.body || {};
   if (!name?.trim() || !connectionId || !node || !templateVmid) {
     return res.status(400).json({ error: 'name, connectionId, node, and templateVmid are required' });
   }
+  const totalNodes = (parseInt(controlPlaneCount, 10) || 1) + (parseInt(workerCount, 10) || 0);
+  if (!Array.isArray(nodeIps) || nodeIps.length !== totalNodes || nodeIps.some((ip) => !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(ip))) {
+    return res.status(400).json({ error: `nodeIps must have exactly ${totalNodes} valid CIDR addresses (one per node)` });
+  }
   try {
-    const proxmoxClient = require('../lib/proxmoxClient');
     const conn = db.prepare('SELECT * FROM hypervisor_connections WHERE id = ?').get(connectionId);
     if (!conn) return res.status(404).json({ error: 'Hypervisor connection not found' });
 
@@ -132,7 +135,7 @@ router.post('/clusters', requireRole('superadmin', 'admin'), async (req, res) =>
     const result = await startClusterProvision({
       name: name.trim(), connectionId, conn, node, storage, templateVmid,
       cores: parseInt(cores, 10) || 2, memoryMb: parseInt(memoryMb, 10) || 4096, diskGb: parseInt(diskGb, 10) || 20,
-      network, controlPlaneCount: parseInt(controlPlaneCount, 10) || 1, workerCount: parseInt(workerCount, 10) || 0,
+      network, nodeIps, controlPlaneCount: parseInt(controlPlaneCount, 10) || 1, workerCount: parseInt(workerCount, 10) || 0,
       triggeredBy: req.user.username,
     });
 
