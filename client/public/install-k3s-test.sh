@@ -57,7 +57,7 @@ success "k3s API server is ready."
 
 # ─── Create a dedicated read-only service account + durable token ──────────
 info "Creating a read-only 'infraloom-readonly' service account..."
-cat <<'EOF' | k3s kubectl apply -f - </dev/null
+cat <<'EOF' | k3s kubectl apply -f -
 apiVersion: v1
 kind: ServiceAccount
 metadata:
