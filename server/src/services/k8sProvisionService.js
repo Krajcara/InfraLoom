@@ -149,13 +149,44 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
   // that the SSH command returning means success.
   const workers = nodeRows.filter((n) => n.role === 'worker');
   for (const w of workers) {
-    log(clusterId, 'join-workers', 'running', `Installing k3s agent on ${w.name}...`);
+    log(clusterId, 'join-workers', 'running', `Installing k3s agent on ${w.name} (backgrounded, polling for completion)...`);
     const wCreds = { host: w.ip, port: 22, username: 'infraloom', privateKey: KEY_PATH };
+
+    // Kick off the install in the background on the remote host and
+    // return immediately — a single long-running foreground SSH exec was
+    // consistently hitting its timeout with no visibility into whether it
+    // was genuinely stuck or just slow. Backgrounding it means this SSH
+    // call itself finishes in seconds regardless, and we get real
+    // progress visibility via the log file instead of guessing.
     await execOnHost(
       wCreds,
-      `curl -sfL https://get.k3s.io | sudo env K3S_URL=https://${primaryCp.ip}:6443 K3S_TOKEN=${joinToken} sh -`,
-      { timeoutMs: 600000 } // up to 10 minutes — first-time agent joins pull several container images
+      `rm -f /tmp/k3s-join.log /tmp/k3s-join.done; nohup sh -c 'curl -sfL https://get.k3s.io | sudo env K3S_URL=https://${primaryCp.ip}:6443 K3S_TOKEN=${joinToken} sh -; echo \\$? > /tmp/k3s-join.done' > /tmp/k3s-join.log 2>&1 < /dev/null &\ndisown || true\nsleep 1\necho started`,
+      { timeoutMs: 20000 }
     );
+
+    log(clusterId, 'join-workers', 'running', `Waiting for the k3s-agent install to finish on ${w.name}...`);
+    let installExitCode = null;
+    let lastLogTail = '';
+    const installDeadline = Date.now() + 600000; // up to 10 minutes
+    while (Date.now() < installDeadline) {
+      const r = await execOnHost(wCreds, 'cat /tmp/k3s-join.done 2>/dev/null; echo ---; tail -c 2000 /tmp/k3s-join.log 2>/dev/null', { timeoutMs: 15000 }).catch(() => null);
+      if (r) {
+        const [donePart, logPart] = r.stdout.split('---\n');
+        lastLogTail = (logPart || '').trim();
+        if (donePart?.trim()) {
+          installExitCode = parseInt(donePart.trim(), 10);
+          break;
+        }
+      }
+      await new Promise((res) => setTimeout(res, 10000));
+    }
+    if (installExitCode === null) {
+      throw new Error(`k3s-agent install on ${w.name} did not finish within 10 minutes. Last log output:\n${lastLogTail || '(no output captured)'}`);
+    }
+    if (installExitCode !== 0) {
+      throw new Error(`k3s-agent install on ${w.name} failed (exit ${installExitCode}). Last log output:\n${lastLogTail || '(no output captured)'}`);
+    }
+    log(clusterId, 'join-workers', 'running', `k3s-agent install finished on ${w.name}.`);
 
     log(clusterId, 'join-workers', 'running', `Waiting for ${w.name} to register and become Ready...`);
     let joined = false;
