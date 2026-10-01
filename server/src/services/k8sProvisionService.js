@@ -125,7 +125,7 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
   const primaryCp = nodeRows.find((n) => n.role === 'control-plane');
   const cpCreds = { host: primaryCp.ip, port: 22, username: 'infraloom', privateKey: KEY_PATH };
   log(clusterId, 'install-control-plane', 'running', `Installing k3s server on ${primaryCp.name}...`);
-  await execOnHost(cpCreds, 'curl -sfL https://get.k3s.io | sudo INSTALL_K3S_EXEC="--disable traefik --disable servicelb" sh -', { timeoutMs: 180000 });
+  await execOnHost(cpCreds, 'curl -sfL https://get.k3s.io | sudo env INSTALL_K3S_EXEC="--disable traefik --disable servicelb" sh -', { timeoutMs: 180000 });
 
   // Wait for the API server itself, then grab the join token.
   const readyDeadline = Date.now() + 120000;
@@ -147,7 +147,7 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
     const wCreds = { host: w.ip, port: 22, username: 'infraloom', privateKey: KEY_PATH };
     await execOnHost(
       wCreds,
-      `curl -sfL https://get.k3s.io | sudo K3S_URL=https://${primaryCp.ip}:6443 K3S_TOKEN=${joinToken} sh -`,
+      `curl -sfL https://get.k3s.io | sudo env K3S_URL=https://${primaryCp.ip}:6443 K3S_TOKEN=${joinToken} sh -`,
       { timeoutMs: 180000 }
     );
     db.prepare("UPDATE k8s_cluster_nodes SET status='ready' WHERE id=?").run(w.id);
