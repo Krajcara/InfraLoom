@@ -141,6 +141,15 @@ router.post('/test/notification', requireAuth, requireRole('superadmin', 'admin'
 });
 
 // GET /api/settings/notification-rules — matrix metadata + saved rules + quiet hours
+// GET /api/settings/management-ssh-key — the public half of InfraLoom's
+// own SSH key, automatically added to every VM/LXC and Kubernetes node it
+// creates. The private key never leaves the server.
+router.get('/management-ssh-key', requireAuth, (req, res) => {
+  const { ensureManagementKey } = require('../lib/sshKeyService');
+  const key = ensureManagementKey();
+  res.json({ publicKey: key.publicKey });
+});
+
 router.get('/notification-rules', requireAuth, (req, res) => {
   const { EVENT_TYPES, CHANNEL_NAMES, getNotificationRules } = require('../services/notificationService');
   const s = getSettings(false);

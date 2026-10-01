@@ -14,7 +14,38 @@ export default function SettingsPage() {
       {canEdit && <SmtpSection />}
       {canEdit && <NotificationsSection />}
       {canEdit && <NotificationRulesSection />}
+      <ManagementSshKeySection />
     </div>
+  );
+}
+
+function ManagementSshKeySection() {
+  const [publicKey, setPublicKey] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    api.get('/settings/management-ssh-key').then((d) => setPublicKey(d.publicKey));
+  }, []);
+
+  function copy() {
+    navigator.clipboard.writeText(publicKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <section className="card">
+      <h2>Management SSH key</h2>
+      <p className="muted">
+        InfraLoom's own SSH key, automatically added to every VM/LXC and Kubernetes node it creates — this is how it
+        reaches them afterward (checking SSH, running patches, installing k3s, etc.), regardless of whatever
+        username/password you also set for a node. Only the public half is ever shown or leaves the server.
+      </p>
+      <div className="form-row">
+        <textarea readOnly value={publicKey} rows={3} className="mono" style={{ flex: 1 }} />
+        <button type="button" onClick={copy}>{copied ? 'Copied!' : 'Copy'}</button>
+      </div>
+    </section>
   );
 }
 
