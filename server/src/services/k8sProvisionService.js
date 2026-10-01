@@ -141,16 +141,37 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
   log(clusterId, 'install-control-plane', 'done', `${primaryCp.name} is ready.`);
 
   // ─── Join every worker ───────────────────────────────────────────────────
+  // The install script's own exit doesn't reliably mean the node actually
+  // registered (image pulls for CNI/kube-proxy etc. can make a first-time
+  // join take several minutes) — so after kicking off the install, this
+  // separately polls the control-plane's own node list until the new
+  // node's name actually shows up and is Ready, rather than just trusting
+  // that the SSH command returning means success.
   const workers = nodeRows.filter((n) => n.role === 'worker');
   for (const w of workers) {
-    log(clusterId, 'join-workers', 'running', `Joining ${w.name}...`);
+    log(clusterId, 'join-workers', 'running', `Installing k3s agent on ${w.name}...`);
     const wCreds = { host: w.ip, port: 22, username: 'infraloom', privateKey: KEY_PATH };
     await execOnHost(
       wCreds,
       `curl -sfL https://get.k3s.io | sudo env K3S_URL=https://${primaryCp.ip}:6443 K3S_TOKEN=${joinToken} sh -`,
-      { timeoutMs: 180000 }
+      { timeoutMs: 600000 } // up to 10 minutes — first-time agent joins pull several container images
     );
+
+    log(clusterId, 'join-workers', 'running', `Waiting for ${w.name} to register and become Ready...`);
+    let joined = false;
+    const joinDeadline = Date.now() + 300000; // up to 5 more minutes for the node to actually appear Ready
+    while (Date.now() < joinDeadline) {
+      const r = await execOnHost(cpCreds, `sudo k3s kubectl get node ${w.name} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`, { timeoutMs: 15000 }).catch(() => ({ exitCode: 1, stdout: '' }));
+      if (r.exitCode === 0 && r.stdout.trim() === 'True') {
+        joined = true;
+        break;
+      }
+      await new Promise((res) => setTimeout(res, 10000));
+    }
+    if (!joined) throw new Error(`${w.name} installed k3s but never appeared Ready in 'kubectl get nodes' — check 'systemctl status k3s-agent' and 'journalctl -u k3s-agent -n 100' on that node.`);
+
     db.prepare("UPDATE k8s_cluster_nodes SET status='ready' WHERE id=?").run(w.id);
+    log(clusterId, 'join-workers', 'running', `${w.name} is Ready.`);
   }
   if (workers.length) log(clusterId, 'join-workers', 'done', `${workers.length} worker(s) joined.`);
 
