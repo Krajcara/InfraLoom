@@ -119,6 +119,46 @@ export default function UsersPage() {
   return (
     <div className="page">
       <h1>Users</h1>
+
+      <section className="card">
+        <h2>What each role can do</h2>
+        <table className="table">
+          <thead><tr><th>Role</th><th>Can do</th><th>Cannot do</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Viewer</strong></td>
+              <td className="muted">View everything — dashboards, inventory, monitors, logs, scan results, etc.</td>
+              <td className="muted">Create, edit, run, or delete anything. No access to User Management.</td>
+            </tr>
+            <tr>
+              <td><strong>Operator</strong></td>
+              <td className="muted">
+                Everything a Viewer can, plus day-to-day actions: add devices/monitors, run Ansible playbooks, start
+                scans and deployments, renew licences, reveal stored passwords.
+              </td>
+              <td className="muted">
+                Delete anything, manage connections/credentials (hypervisors, Kubernetes, FortiGate, OpenVAS),
+                provision Kubernetes clusters, change Settings. No access to User Management.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Admin</strong></td>
+              <td className="muted">
+                Everything an Operator can, plus deleting things, managing all connections/credentials, provisioning
+                Kubernetes clusters, changing Settings, and managing users — but only Operator/Viewer accounts, not
+                Admin or Superadmin.
+              </td>
+              <td className="muted">Run system updates. Create or manage Admin/Superadmin accounts.</td>
+            </tr>
+            <tr>
+              <td><strong>Superadmin</strong></td>
+              <td className="muted">Everything — including running system updates and managing accounts of any role.</td>
+              <td className="muted">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
       {message && <p className="success">{message}</p>}
       {error && <p className="error">{error}</p>}
       {createdInfo && (
