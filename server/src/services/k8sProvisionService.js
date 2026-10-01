@@ -192,11 +192,21 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
       { timeoutMs: 20000 }
     );
 
-    log(clusterId, 'join-workers', 'running', `Waiting for the k3s-agent install to finish on ${w.name}...`);
+    // k3s's installer ends with `systemctl start k3s-agent`, which BLOCKS
+    // until the service reports ready — and that can hang indefinitely if
+    // the agent is stuck retrying its registration with the control
+    // plane, even though everything up to that point (download, binary
+    // install, systemd unit setup) completed in seconds. So: only wait
+    // briefly here to catch quick/early failures (bad download, curl
+    // error) — beyond that, stop waiting on the script and rely entirely
+    // on asking the control plane directly whether the node joined, which
+    // is the real signal that matters regardless of whether that one
+    // systemd call ever returns.
+    log(clusterId, 'join-workers', 'running', `Waiting briefly to catch early failures on ${w.name}...`);
     let installExitCode = null;
     let lastLogTail = '';
-    const installDeadline = Date.now() + 600000; // up to 10 minutes
-    while (Date.now() < installDeadline) {
+    const quickCheckDeadline = Date.now() + 90000; // ~90s — plenty for download+systemd setup, per observed timing
+    while (Date.now() < quickCheckDeadline) {
       const r = await execOnHost(wCreds, 'cat /tmp/k3s-join.done 2>/dev/null; echo ---; tail -c 2000 /tmp/k3s-join.log 2>/dev/null', { timeoutMs: 15000 }).catch(() => null);
       if (r) {
         const [donePart, logPart] = r.stdout.split('---\n');
@@ -208,17 +218,16 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
       }
       await new Promise((res) => setTimeout(res, 10000));
     }
-    if (installExitCode === null) {
-      throw new Error(`k3s-agent install on ${w.name} did not finish within 10 minutes. Last log output:\n${lastLogTail || '(no output captured)'}`);
+    if (installExitCode !== null && installExitCode !== 0) {
+      throw new Error(`k3s-agent install on ${w.name} failed early (exit ${installExitCode}). Last log output:\n${lastLogTail || '(no output captured)'}`);
     }
-    if (installExitCode !== 0) {
-      throw new Error(`k3s-agent install on ${w.name} failed (exit ${installExitCode}). Last log output:\n${lastLogTail || '(no output captured)'}`);
-    }
-    log(clusterId, 'join-workers', 'running', `k3s-agent install finished on ${w.name}.`);
+    log(clusterId, 'join-workers', 'running', installExitCode === 0
+      ? `k3s-agent install finished on ${w.name}.`
+      : `Install script still running on ${w.name} (likely waiting on its own 'systemctl start') — checking the cluster directly instead of waiting on it further.`);
 
     log(clusterId, 'join-workers', 'running', `Waiting for ${w.name} to register and become Ready...`);
     let joined = false;
-    const joinDeadline = Date.now() + 300000; // up to 5 more minutes for the node to actually appear Ready
+    const joinDeadline = Date.now() + 480000; // up to 8 more minutes for the node to actually appear Ready
     while (Date.now() < joinDeadline) {
       const r = await execOnHost(cpCreds, `sudo k3s kubectl get node ${w.name} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`, { timeoutMs: 15000 }).catch(() => ({ exitCode: 1, stdout: '' }));
       if (r.exitCode === 0 && r.stdout.trim() === 'True') {
