@@ -153,7 +153,7 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
   const primaryCp = nodeRows.find((n) => n.role === 'control-plane');
   const cpCreds = { host: primaryCp.ip, port: 22, username: primaryCp.sshUsername, privateKey: KEY_PATH };
   log(clusterId, 'install-control-plane', 'running', `Installing k3s server on ${primaryCp.name}...`);
-  await execOnHost(cpCreds, 'curl -sfL https://get.k3s.io | sudo env INSTALL_K3S_EXEC="--disable traefik --disable servicelb" sh -', { timeoutMs: 180000 });
+  await execOnHost(cpCreds, `curl -sfL https://get.k3s.io | sudo env K3S_NODE_NAME=${primaryCp.name} INSTALL_K3S_EXEC="--disable traefik --disable servicelb" sh -`, { timeoutMs: 180000 });
 
   // Wait for the API server itself, then grab the join token.
   const readyDeadline = Date.now() + 120000;
@@ -188,7 +188,7 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
     // progress visibility via the log file instead of guessing.
     await execOnHost(
       wCreds,
-      `rm -f /tmp/k3s-join.log /tmp/k3s-join.done; nohup sh -c 'curl -sfL https://get.k3s.io | sudo env K3S_URL=https://${primaryCp.ip}:6443 K3S_TOKEN=${joinToken} sh -; echo \\$? > /tmp/k3s-join.done' > /tmp/k3s-join.log 2>&1 < /dev/null &\ndisown || true\nsleep 1\necho started`,
+      `rm -f /tmp/k3s-join.log /tmp/k3s-join.done; nohup sh -c 'curl -sfL https://get.k3s.io | sudo env K3S_URL=https://${primaryCp.ip}:6443 K3S_TOKEN=${joinToken} K3S_NODE_NAME=${w.name} sh -; echo \\$? > /tmp/k3s-join.done' > /tmp/k3s-join.log 2>&1 < /dev/null &\ndisown || true\nsleep 1\necho started`,
       { timeoutMs: 20000 }
     );
 
