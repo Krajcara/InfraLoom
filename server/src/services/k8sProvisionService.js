@@ -204,19 +204,23 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
     // systemd call ever returns.
     log(clusterId, 'join-workers', 'running', `Waiting briefly to catch early failures on ${w.name}...`);
     let installExitCode = null;
-    let lastLogTail = '';
     const quickCheckDeadline = Date.now() + 90000; // ~90s — plenty for download+systemd setup, per observed timing
     while (Date.now() < quickCheckDeadline) {
-      const r = await execOnHost(wCreds, 'cat /tmp/k3s-join.done 2>/dev/null; echo ---; tail -c 2000 /tmp/k3s-join.log 2>/dev/null', { timeoutMs: 15000 }).catch(() => null);
-      if (r) {
-        const [donePart, logPart] = r.stdout.split('---\n');
-        lastLogTail = (logPart || '').trim();
-        if (donePart?.trim()) {
-          installExitCode = parseInt(donePart.trim(), 10);
-          break;
-        }
+      // A single, unambiguous check — just the done-file's content, with
+      // no second command/delimiter to misparse if the log happens to
+      // contain something that looks like our marker.
+      const r = await execOnHost(wCreds, 'cat /tmp/k3s-join.done 2>/dev/null', { timeoutMs: 15000 }).catch(() => null);
+      const trimmed = r?.stdout?.trim();
+      if (trimmed && /^\d+$/.test(trimmed)) {
+        installExitCode = parseInt(trimmed, 10);
+        break;
       }
       await new Promise((res) => setTimeout(res, 10000));
+    }
+    let lastLogTail = '';
+    if (installExitCode !== null && installExitCode !== 0) {
+      const logR = await execOnHost(wCreds, 'tail -c 2000 /tmp/k3s-join.log 2>/dev/null', { timeoutMs: 15000 }).catch(() => null);
+      lastLogTail = logR?.stdout?.trim() || '';
     }
     if (installExitCode !== null && installExitCode !== 0) {
       throw new Error(`k3s-agent install on ${w.name} failed early (exit ${installExitCode}). Last log output:\n${lastLogTail || '(no output captured)'}`);
