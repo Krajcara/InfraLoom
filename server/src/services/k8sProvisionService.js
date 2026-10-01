@@ -20,7 +20,7 @@ function ipOnly(cidr) {
   return cidr.split('/')[0];
 }
 
-async function startClusterProvision({ name, connectionId, conn, node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, nodeVmids, nodeNames, controlPlaneCount, workerCount, triggeredBy }) {
+async function startClusterProvision({ name, connectionId, conn, node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, nodeVmids, nodeNames, nodeSshUsernames, nodeSshPasswords, controlPlaneCount, workerCount, triggeredBy }) {
   if (controlPlaneCount < 1) throw new Error('At least one control-plane node is required');
   const totalNodes = controlPlaneCount + workerCount;
   if (!Array.isArray(nodeIps) || nodeIps.length !== totalNodes) {
@@ -28,6 +28,8 @@ async function startClusterProvision({ name, connectionId, conn, node, storage, 
   }
   const vmids = Array.isArray(nodeVmids) && nodeVmids.length === totalNodes ? nodeVmids : new Array(totalNodes).fill(null);
   const customNames = Array.isArray(nodeNames) && nodeNames.length === totalNodes ? nodeNames : new Array(totalNodes).fill(null);
+  const sshUsers = Array.isArray(nodeSshUsernames) && nodeSshUsernames.length === totalNodes ? nodeSshUsernames : new Array(totalNodes).fill(null);
+  const sshPasswords = Array.isArray(nodeSshPasswords) && nodeSshPasswords.length === totalNodes ? nodeSshPasswords : new Array(totalNodes).fill(null);
   const nonBlankNames = customNames.filter(Boolean);
   if (new Set(nonBlankNames).size !== nonBlankNames.length) throw new Error('Node names must be unique — the same name was entered for more than one node');
 
@@ -41,15 +43,17 @@ async function startClusterProvision({ name, connectionId, conn, node, storage, 
   for (let i = 0; i < controlPlaneCount; i++) {
     const ip = nodeIps[i];
     const nodeName = customNames[i] || `${name}-cp-${i + 1}`;
+    const sshUsername = sshUsers[i] || 'infraloom';
     const r = db.prepare(`INSERT INTO k8s_cluster_nodes (cluster_id, role, name, ip_address, vmid) VALUES (?,'control-plane',?,?,?)`).run(clusterId, nodeName, ipOnly(ip), vmids[i] || null);
-    nodeRows.push({ id: r.lastInsertRowid, role: 'control-plane', name: nodeName, ip: ipOnly(ip), cidr: ip, vmid: vmids[i] || null });
+    nodeRows.push({ id: r.lastInsertRowid, role: 'control-plane', name: nodeName, ip: ipOnly(ip), cidr: ip, vmid: vmids[i] || null, sshUsername, sshPassword: sshPasswords[i] || null });
   }
   for (let i = 0; i < workerCount; i++) {
     const ip = nodeIps[controlPlaneCount + i];
     const wVmid = vmids[controlPlaneCount + i];
     const nodeName = customNames[controlPlaneCount + i] || `${name}-worker-${i + 1}`;
+    const sshUsername = sshUsers[controlPlaneCount + i] || 'infraloom';
     const r = db.prepare(`INSERT INTO k8s_cluster_nodes (cluster_id, role, name, ip_address, vmid) VALUES (?,'worker',?,?,?)`).run(clusterId, nodeName, ipOnly(ip), wVmid || null);
-    nodeRows.push({ id: r.lastInsertRowid, role: 'worker', name: nodeName, ip: ipOnly(ip), cidr: ip, vmid: wVmid || null });
+    nodeRows.push({ id: r.lastInsertRowid, role: 'worker', name: nodeName, ip: ipOnly(ip), cidr: ip, vmid: wVmid || null, sshUsername, sshPassword: sshPasswords[controlPlaneCount + i] || null });
   }
 
   // Runs in the background — the HTTP caller gets the cluster id back
@@ -68,9 +72,10 @@ async function provisionOneVm(connectionId, conn, node, storage, templateVmid, c
     node, storage, templateVmid, cores, memoryMb, diskGb,
     name: nodeRow.name,
     network: { mode: 'static', address: cidr, gateway: network.gateway, dns: network.dns },
-    sshUsername: 'infraloom',
+    sshUsername: nodeRow.sshUsername || 'infraloom',
   };
   if (nodeRow.vmid) vars.vmid = nodeRow.vmid;
+  if (nodeRow.sshPassword) vars.sshPassword = nodeRow.sshPassword;
   const tfConfig = buildVmConfig(conn, vars);
   const dir = path.join(DEPLOYMENTS_DIR, `k8s-node-${nodeRow.id}`);
   fs.mkdirSync(dir, { recursive: true });
@@ -80,14 +85,37 @@ async function provisionOneVm(connectionId, conn, node, storage, templateVmid, c
   if (init.code !== 0) throw new Error(`tofu init failed for ${nodeRow.name}: ${init.stdout}\n${init.stderr}`);
   const apply = await runTofu(dir, ['apply', '-input=false', '-auto-approve'], { timeoutMs: 300000 });
   if (apply.code !== 0) throw new Error(`tofu apply failed for ${nodeRow.name}: ${apply.stdout}\n${apply.stderr}`);
+
+  // Discover the real VMID (Proxmox auto-assigns one if the form left it
+  // blank) so k8s_cluster_nodes reflects reality and SSH Terminal/Patch
+  // Management can find this guest later.
+  let realVmid = nodeRow.vmid || null;
+  try {
+    const outputResult = await runTofu(dir, ['output', '-json', 'vmid'], { timeoutMs: 30000 });
+    realVmid = JSON.parse(outputResult.stdout).value?.toString() ?? realVmid;
+  } catch {
+    // apply succeeded but we couldn't read the output value — not fatal, keep whatever we had
+  }
+  if (realVmid) {
+    db.prepare('UPDATE k8s_cluster_nodes SET vmid = ? WHERE id = ?').run(realVmid, nodeRow.id);
+    const mgmtKey = ensureManagementKey();
+    db.prepare(
+      `INSERT INTO ssh_credentials (connection_id, vmid, host, username, password, private_key)
+       VALUES (?,?,?,?,?,?)
+       ON CONFLICT(connection_id, vmid) DO UPDATE SET
+         host = excluded.host, username = excluded.username, password = excluded.password,
+         private_key = excluded.private_key, updated_at = datetime('now')`
+    ).run(connectionId, realVmid, nodeRow.ip, vars.sshUsername, nodeRow.sshPassword || null, mgmtKey.privateKeyPath);
+  }
+  nodeRow.vmid = realVmid;
 }
 
 /** Polls SSH reachability (using InfraLoom's own management key, which
  * the VM's cloud-init already trusts) rather than assuming a fixed boot
  * delay — cloning + first boot + cloud-init user setup takes variable
  * time depending on host load. */
-async function waitForSsh(ip, timeoutMs = 300000) {
-  const creds = { host: ip, port: 22, username: 'infraloom', privateKey: KEY_PATH };
+async function waitForSsh(ip, username, timeoutMs = 300000) {
+  const creds = { host: ip, port: 22, username, privateKey: KEY_PATH };
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -117,13 +145,13 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
   // ─── Wait for SSH on every node ─────────────────────────────────────────
   log(clusterId, 'wait-ssh', 'running', 'Waiting for nodes to boot and become SSH-reachable...');
   for (const nr of nodeRows) {
-    await waitForSsh(nr.ip);
+    await waitForSsh(nr.ip, nr.sshUsername);
   }
   log(clusterId, 'wait-ssh', 'done', 'All nodes are SSH-reachable.');
 
   // ─── Install k3s server on the first control-plane node ────────────────
   const primaryCp = nodeRows.find((n) => n.role === 'control-plane');
-  const cpCreds = { host: primaryCp.ip, port: 22, username: 'infraloom', privateKey: KEY_PATH };
+  const cpCreds = { host: primaryCp.ip, port: 22, username: primaryCp.sshUsername, privateKey: KEY_PATH };
   log(clusterId, 'install-control-plane', 'running', `Installing k3s server on ${primaryCp.name}...`);
   await execOnHost(cpCreds, 'curl -sfL https://get.k3s.io | sudo env INSTALL_K3S_EXEC="--disable traefik --disable servicelb" sh -', { timeoutMs: 180000 });
 
@@ -150,7 +178,7 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
   const workers = nodeRows.filter((n) => n.role === 'worker');
   for (const w of workers) {
     log(clusterId, 'join-workers', 'running', `Installing k3s agent on ${w.name} (backgrounded, polling for completion)...`);
-    const wCreds = { host: w.ip, port: 22, username: 'infraloom', privateKey: KEY_PATH };
+    const wCreds = { host: w.ip, port: 22, username: w.sshUsername, privateKey: KEY_PATH };
 
     // Kick off the install in the background on the remote host and
     // return immediately — a single long-running foreground SSH exec was

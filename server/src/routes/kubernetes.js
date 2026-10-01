@@ -119,7 +119,7 @@ router.get('/connections/:id/namespaces', async (req, res) => {
 
 // POST /api/kubernetes/clusters — provision a new cluster
 router.post('/clusters', requireRole('superadmin', 'admin'), async (req, res) => {
-  const { name, connectionId, node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, nodeVmids, nodeNames, controlPlaneCount, workerCount } = req.body || {};
+  const { name, connectionId, node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, nodeVmids, nodeNames, nodeSshUsernames, nodeSshPasswords, controlPlaneCount, workerCount } = req.body || {};
   if (!name?.trim() || !connectionId || !node || !templateVmid) {
     return res.status(400).json({ error: 'name, connectionId, node, and templateVmid are required' });
   }
@@ -136,6 +136,7 @@ router.post('/clusters', requireRole('superadmin', 'admin'), async (req, res) =>
       name: name.trim(), connectionId, conn, node, storage, templateVmid,
       cores: parseInt(cores, 10) || 2, memoryMb: parseInt(memoryMb, 10) || 4096, diskGb: parseInt(diskGb, 10) || 20,
       network, nodeIps, nodeVmids: Array.isArray(nodeVmids) ? nodeVmids : [], nodeNames: Array.isArray(nodeNames) ? nodeNames : [],
+      nodeSshUsernames: Array.isArray(nodeSshUsernames) ? nodeSshUsernames : [], nodeSshPasswords: Array.isArray(nodeSshPasswords) ? nodeSshPasswords : [],
       controlPlaneCount: parseInt(controlPlaneCount, 10) || 1, workerCount: parseInt(workerCount, 10) || 0,
       triggeredBy: req.user.username,
     });

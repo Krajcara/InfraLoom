@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
-import { useSocket } from '../hooks/useSocket';
 
 function nodeLabels(controlPlaneCount, workerCount) {
   const labels = [];
@@ -32,10 +32,12 @@ export default function NewK8sClusterPage() {
     nodeIps: [], // one CIDR string per node, control-planes first then workers — index matches nodeLabels()
     nodeVmids: [], // one optional VMID string per node, same index/order as nodeIps — blank entries auto-assign
     nodeNames: [], // one optional name per node, same index/order — blank entries fall back to "{cluster}-cp-N" / "{cluster}-worker-N"
+    nodeSshUsernames: [], // one optional username per node — blank entries default to "infraloom"
+    nodeSshPasswords: [], // one optional password per node — InfraLoom's own management SSH key is always added too, this is in addition to it
   });
   const [error, setError] = useState(null);
   const [starting, setStarting] = useState(false);
-  const [clusterId, setClusterId] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     api.get('/hypervisors/connections').then((d) => {
@@ -68,7 +70,11 @@ export default function NewK8sClusterPage() {
       while (nextVmids.length < total) nextVmids.push('');
       const nextNames = f.nodeNames.slice(0, total);
       while (nextNames.length < total) nextNames.push('');
-      return { ...f, nodeIps: nextIps, nodeVmids: nextVmids, nodeNames: nextNames };
+      const nextSshUsers = f.nodeSshUsernames.slice(0, total);
+      while (nextSshUsers.length < total) nextSshUsers.push('');
+      const nextSshPasswords = f.nodeSshPasswords.slice(0, total);
+      while (nextSshPasswords.length < total) nextSshPasswords.push('');
+      return { ...f, nodeIps: nextIps, nodeVmids: nextVmids, nodeNames: nextNames, nodeSshUsernames: nextSshUsers, nodeSshPasswords: nextSshPasswords };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.controlPlaneCount, form.workerCount]);
@@ -104,6 +110,22 @@ export default function NewK8sClusterPage() {
       const next = [...f.nodeNames];
       next[index] = value;
       return { ...f, nodeNames: next };
+    });
+  }
+
+  function setNodeSshUsername(index, value) {
+    setForm((f) => {
+      const next = [...f.nodeSshUsernames];
+      next[index] = value;
+      return { ...f, nodeSshUsernames: next };
+    });
+  }
+
+  function setNodeSshPassword(index, value) {
+    setForm((f) => {
+      const next = [...f.nodeSshPasswords];
+      next[index] = value;
+      return { ...f, nodeSshPasswords: next };
     });
   }
 
@@ -143,18 +165,16 @@ export default function NewK8sClusterPage() {
         nodeIps: form.nodeIps,
         nodeVmids: form.nodeVmids.map((v) => (v ? parseInt(v, 10) : null)),
         nodeNames: form.nodeNames.map((n) => n.trim() || null),
+        nodeSshUsernames: form.nodeSshUsernames.map((u) => u.trim() || null),
+        nodeSshPasswords: form.nodeSshPasswords.map((p) => p || null),
         controlPlaneCount: form.controlPlaneCount, workerCount: form.workerCount,
       });
-      setClusterId(d.clusterId);
+      navigate(`/kubernetes/clusters/${d.clusterId}`);
     } catch (err) {
       setError(err.message);
     } finally {
       setStarting(false);
     }
-  }
-
-  if (clusterId) {
-    return <ProvisionProgress clusterId={clusterId} onClose={() => setClusterId(null)} />;
   }
 
   const totalNodes = (parseInt(form.controlPlaneCount, 10) || 0) + (parseInt(form.workerCount, 10) || 0);
@@ -254,33 +274,58 @@ export default function NewK8sClusterPage() {
             <button type="button" onClick={autoFillIps}>Auto-fill IPs below</button>
           </div>
 
-          <p className="muted">Each node's name, IP address, and VMID:</p>
+          <p className="muted">
+            Each node's name, IP address, VMID, and SSH login. InfraLoom's own management SSH key is always added
+            regardless (used for provisioning) — the username/password here are for your own direct access.
+          </p>
           {nodeLabels(form.controlPlaneCount, form.workerCount).map((label, i) => (
-            <div className="form-row" key={i}>
-              <label>
-                {label} — Name
-                <input
-                  value={form.nodeNames[i] || ''}
-                  onChange={(e) => setNodeName(i, e.target.value)}
-                  placeholder={`${form.name || 'cluster'}-${label.toLowerCase().replace(' ', '-')}`}
-                />
-              </label>
-              <label>
-                {label} — IP
-                <input value={form.nodeIps[i] || ''} onChange={(e) => setNodeIp(i, e.target.value)} placeholder="10.1.0.50/24" required />
-              </label>
-              <label>
-                {label} — VMID
-                <input
-                  type="number" min="100"
-                  value={form.nodeVmids[i] || ''}
-                  onChange={(e) => setNodeVmid(i, e.target.value)}
-                  placeholder="auto-assign"
-                />
-                {form.nodeVmids[i] && templates?.usedVmids.includes(parseInt(form.nodeVmids[i], 10)) && (
-                  <span className="error">Already in use on this node</span>
-                )}
-              </label>
+            <div key={i}>
+              <div className="form-row">
+                <label>
+                  {label} — Name
+                  <input
+                    value={form.nodeNames[i] || ''}
+                    onChange={(e) => setNodeName(i, e.target.value)}
+                    placeholder={`${form.name || 'cluster'}-${label.toLowerCase().replace(' ', '-')}`}
+                  />
+                </label>
+                <label>
+                  {label} — IP
+                  <input value={form.nodeIps[i] || ''} onChange={(e) => setNodeIp(i, e.target.value)} placeholder="10.1.0.50/24" required />
+                </label>
+                <label>
+                  {label} — VMID
+                  <input
+                    type="number" min="100"
+                    value={form.nodeVmids[i] || ''}
+                    onChange={(e) => setNodeVmid(i, e.target.value)}
+                    placeholder="auto-assign"
+                  />
+                  {form.nodeVmids[i] && templates?.usedVmids.includes(parseInt(form.nodeVmids[i], 10)) && (
+                    <span className="error">Already in use on this node</span>
+                  )}
+                </label>
+              </div>
+              <div className="form-row">
+                <label>
+                  {label} — SSH username
+                  <input
+                    value={form.nodeSshUsernames[i] || ''}
+                    onChange={(e) => setNodeSshUsername(i, e.target.value)}
+                    placeholder="infraloom"
+                  />
+                </label>
+                <label>
+                  {label} — SSH password (optional)
+                  <input
+                    type="password"
+                    value={form.nodeSshPasswords[i] || ''}
+                    onChange={(e) => setNodeSshPassword(i, e.target.value)}
+                    placeholder="leave blank for key-only"
+                    autoComplete="new-password"
+                  />
+                </label>
+              </div>
             </div>
           ))}
         </section>
@@ -291,58 +336,4 @@ export default function NewK8sClusterPage() {
   );
 }
 
-function ProvisionProgress({ clusterId, onClose }) {
-  const [cluster, setCluster] = useState(null);
-  const [nodes, setNodes] = useState([]);
 
-  function load() {
-    api.get(`/kubernetes/clusters/${clusterId}`).then((d) => {
-      setCluster(d.cluster);
-      setNodes(d.nodes);
-    });
-  }
-
-  useEffect(load, [clusterId]);
-  useSocket({ 'k8s-cluster:progress': (payload) => { if (payload.clusterId === clusterId) load(); } });
-
-  if (!cluster) return <div className="page"><p className="muted">Loading...</p></div>;
-
-  return (
-    <div className="page">
-      <div className="page-header-row">
-        <h1>{cluster.name}</h1>
-        <button onClick={onClose}>Back</button>
-      </div>
-      <p className="muted">Status: <strong>{cluster.status}</strong></p>
-      {cluster.error && <p className="error">{cluster.error}</p>}
-
-      <section className="card">
-        <h2>Nodes</h2>
-        <table className="table">
-          <thead><tr><th>Name</th><th>Role</th><th>IP</th><th>Status</th></tr></thead>
-          <tbody>
-            {nodes.map((n) => (
-              <tr key={n.id}>
-                <td>{n.name}</td>
-                <td className="muted">{n.role}</td>
-                <td className="mono">{n.ip_address}</td>
-                <td><span className="status-badge">{n.status}</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="card">
-        <h2>Progress</h2>
-        <ul>
-          {cluster.progress_log.map((p, i) => (
-            <li key={i} className={p.status === 'failed' ? 'error' : 'muted'}>
-              <strong>{p.step}</strong>: {p.message}
-            </li>
-          ))}
-        </ul>
-      </section>
-    </div>
-  );
-}

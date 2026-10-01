@@ -33,6 +33,7 @@ import MyIpPage from './pages/MyIpPage';
 import HypervisorsPage from './pages/HypervisorsPage';
 import KubernetesPage from './pages/KubernetesPage';
 import NewK8sClusterPage from './pages/NewK8sClusterPage';
+import KubernetesClusterDetailPage from './pages/KubernetesClusterDetailPage';
 import NetworkScannerPage from './pages/NetworkScannerPage';
 import PatchManagementPage from './pages/PatchManagementPage';
 
@@ -66,6 +67,7 @@ export default function App() {
           <Route path="/hypervisors" element={<HypervisorsPage />} />
           <Route path="/kubernetes" element={<KubernetesPage />} />
           <Route path="/kubernetes/new" element={<NewK8sClusterPage />} />
+          <Route path="/kubernetes/clusters/:id" element={<KubernetesClusterDetailPage />} />
           <Route path="/network-scanner" element={<NetworkScannerPage />} />
           <Route path="/patch-management" element={<PatchManagementPage />} />
           <Route

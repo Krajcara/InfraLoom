@@ -6,6 +6,7 @@ import { formatDbDate } from '../utils/formatDate';
 
 export default function KubernetesPage() {
   const [connections, setConnections] = useState([]);
+  const [clusters, setClusters] = useState([]);
   const [form, setForm] = useState({ name: '', api_server: '', token: '' });
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -14,6 +15,7 @@ export default function KubernetesPage() {
 
   function load() {
     api.get('/kubernetes/connections').then((d) => setConnections(d.connections));
+    api.get('/kubernetes/clusters').then((d) => setClusters(d.clusters));
   }
 
   useEffect(load, []);
@@ -72,6 +74,25 @@ export default function KubernetesPage() {
       </p>
 
       {error && <p className="error">{error}</p>}
+
+      {clusters.length > 0 && (
+        <section className="card">
+          <h2>Provisioned clusters</h2>
+          <table className="table">
+            <thead><tr><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead>
+            <tbody>
+              {clusters.map((c) => (
+                <tr key={c.id}>
+                  <td>{c.name}</td>
+                  <td><span className={`status-badge ${c.status === 'failed' ? 'status-down' : c.status === 'ready' ? 'status-up' : ''}`}>{c.status}</span></td>
+                  <td className="muted">{formatDbDate(c.created_at)}</td>
+                  <td className="actions"><Link to={`/kubernetes/clusters/${c.id}`}><button type="button" className="btn-link">View progress</button></Link></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {showForm && (
         <section className="card">
