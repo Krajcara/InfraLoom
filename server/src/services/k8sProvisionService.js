@@ -304,4 +304,33 @@ function nodeConfigNameFallback(clusterId) {
   return row?.name || `Cluster ${clusterId}`;
 }
 
-module.exports = { startClusterProvision };
+/** Deletes a cluster record. Best-effort destroys each node's VM via
+ * `tofu destroy` first (a failed/partial provision often leaves real VMs
+ * behind) — a node that never got far enough to have a deployment
+ * directory, or whose destroy fails, is skipped rather than blocking the
+ * whole deletion, since the goal is cleaning up InfraLoom's own records
+ * either way. */
+async function deleteCluster(clusterId) {
+  const cluster = db.prepare('SELECT * FROM k8s_clusters WHERE id = ?').get(clusterId);
+  if (!cluster) throw new Error('Cluster not found');
+  const nodes = db.prepare('SELECT * FROM k8s_cluster_nodes WHERE cluster_id = ?').all(clusterId);
+
+  const destroyResults = [];
+  for (const n of nodes) {
+    const dir = path.join(DEPLOYMENTS_DIR, `k8s-node-${n.id}`);
+    if (!fs.existsSync(path.join(dir, 'main.tf'))) continue; // never got far enough to create a deployment — nothing to destroy
+    try {
+      const result = await runTofu(dir, ['destroy', '-input=false', '-auto-approve'], { timeoutMs: 180000 });
+      destroyResults.push({ node: n.name, ok: result.code === 0, output: result.code === 0 ? null : `${result.stdout}\n${result.stderr}`.slice(-2000) });
+    } catch (err) {
+      destroyResults.push({ node: n.name, ok: false, output: err.message });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  db.prepare('DELETE FROM k8s_clusters WHERE id = ?').run(clusterId); // cascades to k8s_cluster_nodes
+  return destroyResults;
+}
+
+module.exports = { startClusterProvision, deleteCluster };

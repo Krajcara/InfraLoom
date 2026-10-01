@@ -55,6 +55,16 @@ export default function KubernetesPage() {
     }
   }
 
+  async function removeCluster(cluster) {
+    if (!confirm(`Delete "${cluster.name}"? This tries to destroy any VMs it created first, then removes the record either way.`)) return;
+    try {
+      await api.del(`/kubernetes/clusters/${cluster.id}`);
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   if (activeId) {
     return <ClusterDetail connId={activeId} onClose={() => { setActiveId(null); load(); }} />;
   }
@@ -86,7 +96,10 @@ export default function KubernetesPage() {
                   <td>{c.name}</td>
                   <td><span className={`status-badge ${c.status === 'failed' ? 'status-down' : c.status === 'ready' ? 'status-up' : ''}`}>{c.status}</span></td>
                   <td className="muted">{formatDbDate(c.created_at)}</td>
-                  <td className="actions"><Link to={`/kubernetes/clusters/${c.id}`}><button type="button" className="btn-link">View progress</button></Link></td>
+                  <td className="actions">
+                    <Link to={`/kubernetes/clusters/${c.id}`}><button type="button" className="btn-link">View progress</button></Link>
+                    <button className="icon-btn" title="Delete" onClick={() => removeCluster(c)}><Trash2 size={15} /></button>
+                  </td>
                 </tr>
               ))}
             </tbody>

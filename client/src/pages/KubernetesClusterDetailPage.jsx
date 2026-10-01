@@ -19,13 +19,26 @@ export default function KubernetesClusterDetailPage() {
   useEffect(load, [id]);
   useSocket({ 'k8s-cluster:progress': (payload) => { if (String(payload.clusterId) === String(id)) load(); } });
 
+  async function remove() {
+    if (!confirm(`Delete "${cluster.name}"? This tries to destroy any VMs it created first, then removes the record either way.`)) return;
+    try {
+      await api.del(`/kubernetes/clusters/${id}`);
+      navigate('/kubernetes');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   if (!cluster) return <div className="page"><p className="muted">Loading...</p></div>;
 
   return (
     <div className="page">
       <div className="page-header-row">
         <h1>{cluster.name}</h1>
-        <button onClick={() => navigate('/kubernetes')}>Back to Kubernetes</button>
+        <div className="form-row">
+          <button onClick={remove}>Delete</button>
+          <button onClick={() => navigate('/kubernetes')}>Back to Kubernetes</button>
+        </div>
       </div>
       <p className="muted">
         Status: <strong>{cluster.status}</strong>

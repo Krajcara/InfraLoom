@@ -165,4 +165,17 @@ router.get('/clusters/:id', (req, res) => {
   });
 });
 
+// DELETE /api/kubernetes/clusters/:id — best-effort destroys each node's
+// VM (if it got far enough to exist) then removes the records.
+router.delete('/clusters/:id', requireRole('superadmin', 'admin'), async (req, res) => {
+  try {
+    const { deleteCluster } = require('../services/k8sProvisionService');
+    const destroyResults = await deleteCluster(req.params.id);
+    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'kubernetes.cluster_delete', module: 'kubernetes', entity_id: req.params.id, details: { destroyResults }, ip_address: req.ip });
+    res.json({ ok: true, destroyResults });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
