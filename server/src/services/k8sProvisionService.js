@@ -240,7 +240,10 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
       }
       await new Promise((res) => setTimeout(res, 10000));
     }
-    if (!joined) throw new Error(`${w.name} installed k3s but never appeared Ready in 'kubectl get nodes' — check 'systemctl status k3s-agent' and 'journalctl -u k3s-agent -n 100' on that node.`);
+    if (!joined) {
+      const journal = await execOnHost(wCreds, 'sudo journalctl -u k3s-agent -n 40 --no-pager 2>&1').catch((err) => ({ stdout: `(could not fetch journal: ${err.message})` }));
+      throw new Error(`${w.name} installed k3s but never appeared Ready in 'kubectl get nodes'. Its own journalctl -u k3s-agent (last 40 lines):\n${journal.stdout}`);
+    }
 
     db.prepare("UPDATE k8s_cluster_nodes SET status='ready' WHERE id=?").run(w.id);
     log(clusterId, 'join-workers', 'running', `${w.name} is Ready.`);
