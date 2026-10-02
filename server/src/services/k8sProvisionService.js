@@ -233,7 +233,7 @@ async function runProvisioning(clusterId, connectionId, conn, nodeConfig, nodeRo
     let joined = false;
     const joinDeadline = Date.now() + 480000; // up to 8 more minutes for the node to actually appear Ready
     while (Date.now() < joinDeadline) {
-      const r = await execOnHost(cpCreds, `sudo k3s kubectl get node ${w.name} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`, { timeoutMs: 15000 }).catch(() => ({ exitCode: 1, stdout: '' }));
+      const r = await execOnHost(cpCreds, `sudo k3s kubectl get node ${w.name.toLowerCase()} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`, { timeoutMs: 15000 }).catch(() => ({ exitCode: 1, stdout: '' }));
       if (r.exitCode === 0 && r.stdout.trim() === 'True') {
         joined = true;
         break;
