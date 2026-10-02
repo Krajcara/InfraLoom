@@ -117,6 +117,123 @@ router.get('/connections/:id/namespaces', async (req, res) => {
   }
 });
 
+// POST /api/kubernetes/connections/:id/deployer-token — set the separate,
+// write-capable service account token for this connection. Kept distinct
+// from the read-only monitoring token.
+router.post('/connections/:id/deployer-token', requireRole('superadmin', 'admin'), async (req, res) => {
+  const { token } = req.body || {};
+  if (!token?.trim()) return res.status(400).json({ error: 'token is required' });
+  const conn = db.prepare('SELECT * FROM k8s_connections WHERE id = ?').get(req.params.id);
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  try {
+    await k8s.checkConnection({ ...conn, token: token.trim() }); // basic sanity check — at least a valid, reachable token
+  } catch (err) {
+    return res.status(400).json({ error: `Could not verify token: ${err.message}` });
+  }
+  db.prepare("UPDATE k8s_connections SET deployer_token = ?, updated_at = datetime('now') WHERE id = ?").run(token.trim(), req.params.id);
+  writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'kubernetes.deployer_token_set', module: 'kubernetes', entity_id: conn.id, ip_address: req.ip });
+  res.json({ ok: true });
+});
+
+// POST /api/kubernetes/connections/:id/deploy — form-based simple deploy
+router.post('/connections/:id/deploy', requireRole('superadmin', 'admin', 'operator'), async (req, res) => {
+  const conn = db.prepare('SELECT * FROM k8s_connections WHERE id = ?').get(req.params.id);
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  const { name, namespace, image, replicas, containerPort, servicePort } = req.body || {};
+  if (!name?.trim() || !image?.trim()) return res.status(400).json({ error: 'name and image are required' });
+  try {
+    const results = await k8s.deployWorkload(conn, {
+      name: name.trim(), namespace: namespace?.trim() || 'default', image: image.trim(),
+      replicas: parseInt(replicas, 10) || 1,
+      containerPort: containerPort ? parseInt(containerPort, 10) : null,
+      servicePort: servicePort ? parseInt(servicePort, 10) : null,
+    });
+    for (const r of results) {
+      db.prepare(
+        `INSERT INTO k8s_workloads (connection_id, namespace, name, kind, triggered_by) VALUES (?,?,?,?,?)
+         ON CONFLICT DO NOTHING`
+      ).run(conn.id, r.namespace, r.name, r.kind, req.user.username);
+    }
+    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'kubernetes.deploy', module: 'kubernetes', entity_id: conn.id, details: { name, image }, ip_address: req.ip });
+    res.json({ ok: true, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/kubernetes/connections/:id/apply-yaml — raw YAML/JSON manifest(s)
+router.post('/connections/:id/apply-yaml', requireRole('superadmin', 'admin', 'operator'), async (req, res) => {
+  const conn = db.prepare('SELECT * FROM k8s_connections WHERE id = ?').get(req.params.id);
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  const { yaml: yamlText } = req.body || {};
+  if (!yamlText?.trim()) return res.status(400).json({ error: 'yaml is required' });
+  try {
+    const yaml = require('js-yaml');
+    const docs = yaml.loadAll(yamlText).filter(Boolean);
+    if (!docs.length) return res.status(400).json({ error: 'No valid YAML documents found' });
+    const results = [];
+    for (const doc of docs) {
+      const r = await k8s.applyManifest(conn, doc);
+      results.push(r);
+      db.prepare(
+        `INSERT INTO k8s_workloads (connection_id, namespace, name, kind, manifest, triggered_by) VALUES (?,?,?,?,?,?)
+         ON CONFLICT DO NOTHING`
+      ).run(conn.id, r.namespace, r.name, r.kind, yamlText, req.user.username);
+    }
+    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'kubernetes.apply_yaml', module: 'kubernetes', entity_id: conn.id, details: { count: results.length }, ip_address: req.ip });
+    res.json({ ok: true, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/kubernetes/connections/:id/workloads — InfraLoom's own deploy history
+router.get('/connections/:id/workloads', (req, res) => {
+  res.json({ workloads: db.prepare('SELECT id, namespace, name, kind, triggered_by, created_at, updated_at FROM k8s_workloads WHERE connection_id = ? ORDER BY updated_at DESC').all(req.params.id) });
+});
+
+// POST /api/kubernetes/connections/:id/scale
+router.post('/connections/:id/scale', requireRole('superadmin', 'admin', 'operator'), async (req, res) => {
+  const conn = db.prepare('SELECT * FROM k8s_connections WHERE id = ?').get(req.params.id);
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  const { namespace, name, replicas } = req.body || {};
+  try {
+    const result = await k8s.scaleDeployment(conn, { namespace, name, replicas: parseInt(replicas, 10) });
+    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'kubernetes.scale', module: 'kubernetes', entity_id: conn.id, details: { namespace, name, replicas }, ip_address: req.ip });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/kubernetes/connections/:id/restart
+router.post('/connections/:id/restart', requireRole('superadmin', 'admin', 'operator'), async (req, res) => {
+  const conn = db.prepare('SELECT * FROM k8s_connections WHERE id = ?').get(req.params.id);
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  const { namespace, name } = req.body || {};
+  try {
+    const result = await k8s.restartDeployment(conn, { namespace, name });
+    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'kubernetes.restart', module: 'kubernetes', entity_id: conn.id, details: { namespace, name }, ip_address: req.ip });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/kubernetes/connections/:id/workloads/:kind/:namespace/:name
+router.delete('/connections/:id/workloads/:kind/:namespace/:name', requireRole('superadmin', 'admin'), async (req, res) => {
+  const conn = db.prepare('SELECT * FROM k8s_connections WHERE id = ?').get(req.params.id);
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  try {
+    await k8s.deleteResource(conn, { kind: req.params.kind, namespace: req.params.namespace, name: req.params.name });
+    db.prepare('DELETE FROM k8s_workloads WHERE connection_id = ? AND kind = ? AND namespace = ? AND name = ?').run(conn.id, req.params.kind, req.params.namespace, req.params.name);
+    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'kubernetes.delete_workload', module: 'kubernetes', entity_id: conn.id, details: req.params, ip_address: req.ip });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/kubernetes/clusters — provision a new cluster
 router.post('/clusters', requireRole('superadmin', 'admin'), async (req, res) => {
   const { name, connectionId, node, storage, templateVmid, cores, memoryMb, diskGb, network, nodeIps, nodeVmids, nodeNames, nodeSshUsernames, nodeSshPasswords, controlPlaneCount, workerCount } = req.body || {};

@@ -549,11 +549,25 @@ db.exec(`
     FOREIGN KEY (cluster_id) REFERENCES k8s_clusters(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS k8s_workloads (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id INTEGER NOT NULL,
+    namespace     TEXT NOT NULL DEFAULT 'default',
+    name          TEXT NOT NULL,
+    kind          TEXT NOT NULL,  -- Deployment | Service | ConfigMap | Secret | Namespace | Pod | ...
+    manifest      TEXT,           -- the raw YAML/JSON last applied, for reference
+    triggered_by  TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (connection_id) REFERENCES k8s_connections(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS k8s_connections (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT NOT NULL,
     api_server    TEXT NOT NULL,   -- e.g. https://10.1.0.208:6443
-    token         TEXT NOT NULL,   -- service account bearer token
+    token         TEXT NOT NULL,   -- read-only service account bearer token, used for monitoring
+    deployer_token TEXT,           -- separate, write-capable service account token — null until the user sets up deploy access
     enabled       INTEGER DEFAULT 1,
     last_status   TEXT,
     last_checked_at TEXT,
