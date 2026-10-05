@@ -2698,3 +2698,20 @@ textarea {
 .ups-panel { border-top: 1px solid #2a2e38; margin-top: 12px; padding-top: 12px; }
 .btn-link.active { text-decoration: underline; }
 @media (max-width: 520px) { .ups-grid { grid-template-columns: 1fr; } .ups-metrics { grid-template-columns: 1fr; } }
+
+/* TV: UPS power-failure banner + neutral "no data" dot */
+.tv-alert-banner-danger {
+  background: rgba(255, 107, 107, 0.12);
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+}
+.tv-alert-banner-danger .tv-alert-dot { background: #ff6b6b; }
+.tv-status-unknown { background: #6b7280; }
+.tv-badge-neutral {
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: rgba(139, 143, 153, 0.15);
+  color: #8b8f99;
+}

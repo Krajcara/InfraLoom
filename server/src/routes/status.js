@@ -110,13 +110,43 @@ router.get('/public/dashboard', async (req, res) => {
     })
   );
 
+  // UPS — public view: name, state and battery/load numbers only (no addresses, no SNMP details).
+  // Running on battery counts as degraded (loads are still powered), a nearly flat battery,
+  // an output that is off, or an unreachable UPS count as down.
+  const UPS_TV = {
+    online: ['up', 'On mains'],
+    bypass: ['degraded', 'Bypass'],
+    on_battery: ['degraded', 'On battery'],
+    low_battery: ['down', 'Low battery'],
+    off: ['down', 'Output off'],
+    offline: ['down', 'Not responding'],
+  };
+  let upsRows = [];
+  try {
+    upsRows = db.prepare('SELECT name, last_status, last_reading FROM ups_devices WHERE enabled = 1 ORDER BY name').all();
+  } catch (err) {
+    // An optional section must never take the whole public status page down.
+    console.error('[status] UPS section skipped:', err.message);
+  }
+  const ups = upsRows
+    .map((u) => {
+      const [status, label] = UPS_TV[u.last_status] || ['unknown', 'No data'];
+      let r = null;
+      try { r = u.last_reading ? JSON.parse(u.last_reading) : null; } catch { /* corrupt row: show no numbers */ }
+      const live = r && u.last_status !== 'offline'; // numbers from before the UPS went silent would be misleading
+      return {
+        name: u.name, status, state: u.last_status || 'unknown', label,
+        charge_pct: live ? r.charge_pct : null, runtime_min: live ? r.runtime_min : null, load_pct: live ? r.output_load_pct : null,
+      };
+    });
+
   const routers = deviceList('routers');
   const switches = deviceList('switches');
   const accessPoints = deviceList('access_points');
   const allHvNodes = [...hvByType.proxmox, ...hvByType.esxi, ...hvByType.hyperv];
 
   // Overall Operational/Degraded/Down/Total across every individually-tracked item.
-  const allItems = [...monitors, ...routers, ...switches, ...accessPoints, ...dnsResults, ...allHvNodes];
+  const allItems = [...monitors, ...routers, ...switches, ...accessPoints, ...dnsResults, ...allHvNodes, ...ups];
   const operational = allItems.filter((i) => i.status === 'up').length;
   const degraded = allItems.filter((i) => i.status === 'degraded').length;
   const down = allItems.filter((i) => i.status === 'down').length;
@@ -126,6 +156,7 @@ router.get('/public/dashboard', async (req, res) => {
     monitors,
     routers, switches, access_points: accessPoints,
     dns_servers: dnsResults,
+    ups,
     domains_configured: domainCount.total || 0,
     network_devices: { total: netscanRow.total || 0, online: netscanRow.online || 0 },
     last_speed_test: lastSpeedTest || null,

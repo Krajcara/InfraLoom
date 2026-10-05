@@ -39,6 +39,8 @@ export default function TvDashboardPage() {
   }
 
   const degradedCount = data ? data.summary.degraded + data.summary.down : 0;
+  // A power failure is the one thing worth seeing from across the room, so it gets its own banner.
+  const upsAlerts = (data?.ups || []).filter((u) => u.state === 'on_battery' || u.state === 'low_battery');
 
   return (
     <div className="tv-shell">
@@ -63,6 +65,18 @@ export default function TvDashboardPage() {
             </div>
           )}
 
+          {upsAlerts.length > 0 && (
+            <div className="tv-alert-banner tv-alert-banner-danger">
+              <span className="tv-alert-dot" />
+              {upsAlerts
+                .map((u) => {
+                  const bits = [u.charge_pct != null && `${u.charge_pct}%`, u.runtime_min != null && `~${u.runtime_min} min left`].filter(Boolean);
+                  return `${u.name}: ${u.state === 'low_battery' ? 'battery LOW' : 'mains power lost, running on battery'}${bits.length ? ` (${bits.join(', ')})` : ''}`;
+                })
+                .join(' · ')}
+            </div>
+          )}
+
           <div className="tv-summary-row">
             <SummaryTile label="Operational" value={data.summary.operational} tone="ok" />
             <SummaryTile label="Degraded" value={data.summary.degraded} tone="warn" />
@@ -77,6 +91,7 @@ export default function TvDashboardPage() {
               {data.switches.length > 0 && <CategoryCard title="Switches" countLabel={`${data.switches.length} switch${data.switches.length === 1 ? 'es' : ''}`} items={data.switches} />}
               {data.access_points.length > 0 && <CategoryCard title="Access points" countLabel={`${data.access_points.length} AP${data.access_points.length === 1 ? '' : 's'}`} items={data.access_points} />}
               {data.dns_servers.length > 0 && <CategoryCard title="DNS servers" countLabel={`${data.dns_servers.length} server${data.dns_servers.length === 1 ? '' : 's'}`} items={data.dns_servers} />}
+              {data.ups?.length > 0 && <UpsCard items={data.ups} />}
             </div>
 
             <div className="tv-status-col">
@@ -159,6 +174,33 @@ export default function TvDashboardPage() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function UpsCard({ items }) {
+  const dot = { up: 'tv-status-up', degraded: 'tv-status-warn', down: 'tv-status-down', unknown: 'tv-status-unknown' };
+  const badge = { up: 'tv-badge-ok', degraded: 'tv-badge-warn', down: 'tv-badge-danger', unknown: 'tv-badge-neutral' };
+  const runtime = (m) => (m >= 120 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m} min`);
+  return (
+    <div className="tv-cat-card">
+      <div className="tv-cat-header">
+        <span>UPS</span>
+        <span className="tv-sub">{items.length} unit{items.length === 1 ? '' : 's'}</span>
+      </div>
+      {items.map((u, i) => {
+        const bits = [u.charge_pct != null && `${u.charge_pct}%`, u.runtime_min != null && runtime(u.runtime_min), u.load_pct != null && `load ${u.load_pct}%`].filter(Boolean);
+        return (
+          <div key={i} className="tv-list-row">
+            <span>
+              <span className={`tv-status-dot ${dot[u.status] || dot.unknown}`} />
+              {u.name}
+              {bits.length > 0 && <span className="tv-sub"> · {bits.join(' · ')}</span>}
+            </span>
+            <span className={badge[u.status] || badge.unknown}>{u.label}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
