@@ -2,6 +2,7 @@
 
 const express = require('express');
 const db = require('../db/database');
+const { expiryState } = require('../lib/licenceExpiry');
 const proxmox = require('../lib/proxmoxClient');
 const hyperv = require('../lib/hypervClient');
 const esxi = require('../lib/esxiClient');
@@ -68,8 +69,13 @@ router.get('/public/dashboard', async (req, res) => {
     .prepare("SELECT label, ssl_days FROM monitors WHERE enabled = 1 AND hidden = 0 AND ssl_days IS NOT NULL AND ssl_days <= 14 ORDER BY ssl_days ASC LIMIT 5")
     .all();
   const licencesExpiring = db
-    .prepare("SELECT vendor, licence_type, expiry_date, julianday(expiry_date) - julianday('now') as days_left FROM licences WHERE hidden = 0 AND expiry_date IS NOT NULL AND julianday(expiry_date) - julianday('now') <= 14 ORDER BY expiry_date ASC LIMIT 5")
-    .all();
+    .prepare("SELECT vendor, licence_type, expiry_date, billing_period FROM licences WHERE hidden = 0 AND expiry_date IS NOT NULL")
+    .all()
+    .map((l) => ({ vendor: l.vendor, licence_type: l.licence_type, expiry_date: l.expiry_date, ...expiryState(l.expiry_date, l.billing_period) }))
+    .filter((l) => l.status === 'expiring' || l.status === 'expired') // per-licence window: monthly 5d, yearly 35d
+    .sort((x, y) => x.days - y.days)
+    .slice(0, 5)
+    .map((l) => ({ vendor: l.vendor, licence_type: l.licence_type, expiry_date: l.expiry_date, days_left: l.days }));
   const netscanRow = db.prepare('SELECT COUNT(*) as total, SUM(CASE WHEN is_online = 1 THEN 1 ELSE 0 END) as online FROM network_devices WHERE is_archived = 0').get();
   const lastSpeedTest = db.prepare("SELECT provider, download, upload, ping, created_at FROM speed_tests WHERE status = 'done' ORDER BY created_at DESC LIMIT 1").get();
   const domainCount = db.prepare('SELECT COUNT(*) as total FROM dns_domains').get();

@@ -4,6 +4,7 @@ const express = require('express');
 const db = require('../db/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
+const { expiryState, normalizePeriod } = require('../lib/licenceExpiry');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -11,15 +12,14 @@ router.use(requireAuth);
 const clean = (s) => (typeof s === 'string' ? s.replace(/\0/g, '').trim() : s);
 
 function mapLicence(l) {
-  const daysUntilExpiry = l.expiry_date
-    ? Math.ceil((new Date(l.expiry_date) - new Date()) / 86400000)
-    : null;
+  const state = expiryState(l.expiry_date, l.billing_period);
   return {
     ...l,
     assigned_to: l.assigned_to ? JSON.parse(l.assigned_to) : [],
     licence_password: l.licence_password ? '***' : null,
-    days_until_expiry: daysUntilExpiry,
-    expiry_status: daysUntilExpiry == null ? null : daysUntilExpiry < 0 ? 'expired' : daysUntilExpiry <= 30 ? 'expiring' : 'ok',
+    days_until_expiry: state.days,
+    warning_days: state.warn_days,
+    expiry_status: state.status,
   };
 }
 
@@ -37,12 +37,13 @@ router.post('/', requireRole('superadmin', 'admin', 'operator'), (req, res) => {
   const {
     vendor, licence_type, licence_count, licence_used,
     purchase_date, expiry_date, assigned_to,
-    url, licence_username, licence_password, licence_mfa, notes,
+    url, licence_username, licence_password, licence_mfa, notes, billing_period,
   } = req.body || {};
 
   const v = clean(vendor);
   const t = clean(licence_type);
   if (!v || !t) return res.status(400).json({ error: 'vendor and licence_type are required' });
+  if (billing_period && !normalizePeriod(billing_period)) return res.status(400).json({ error: 'billing_period must be "monthly" or "yearly"' });
 
   const assigned = Array.isArray(assigned_to) ? assigned_to : [];
   const used = assigned.length > 0 ? assigned.length : parseInt(licence_used, 10) || 0;
@@ -51,15 +52,15 @@ router.post('/', requireRole('superadmin', 'admin', 'operator'), (req, res) => {
     .prepare(
       `INSERT INTO licences
         (vendor, licence_type, licence_count, licence_used, purchase_date, expiry_date,
-         assigned_to, url, licence_username, licence_password, licence_mfa, notes)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+         assigned_to, url, licence_username, licence_password, licence_mfa, notes, billing_period)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
     )
     .run(
       v, t, parseInt(licence_count, 10) || 1, used,
       purchase_date || null, expiry_date || null,
       JSON.stringify(assigned), url || null,
       licence_username || null, licence_password || null,
-      licence_mfa ? 1 : 0, notes || null
+      licence_mfa ? 1 : 0, notes || null, normalizePeriod(billing_period)
     );
 
   writeAuditLog({
@@ -79,8 +80,9 @@ router.put('/:id', requireRole('superadmin', 'admin', 'operator'), (req, res) =>
   const {
     vendor, licence_type, licence_count, licence_used,
     purchase_date, expiry_date, assigned_to,
-    url, licence_username, licence_password, licence_mfa, notes,
+    url, licence_username, licence_password, licence_mfa, notes, billing_period,
   } = req.body || {};
+  if (billing_period && !normalizePeriod(billing_period)) return res.status(400).json({ error: 'billing_period must be "monthly" or "yearly"' });
 
   const v = clean(vendor) || existing.vendor;
   const t = clean(licence_type) || existing.licence_type;
@@ -96,7 +98,7 @@ router.put('/:id', requireRole('superadmin', 'admin', 'operator'), (req, res) =>
     `UPDATE licences SET
       vendor=?, licence_type=?, licence_count=?, licence_used=?,
       purchase_date=?, expiry_date=?, assigned_to=?, url=?,
-      licence_username=?, licence_password=?, licence_mfa=?, notes=?,
+      licence_username=?, licence_password=?, licence_mfa=?, notes=?, billing_period=?,
       updated_at=datetime('now')
      WHERE id=?`
   ).run(
@@ -107,6 +109,7 @@ router.put('/:id', requireRole('superadmin', 'admin', 'operator'), (req, res) =>
     newPass,
     licence_mfa !== undefined ? (licence_mfa ? 1 : 0) : existing.licence_mfa,
     notes !== undefined ? notes || null : existing.notes,
+    billing_period !== undefined ? normalizePeriod(billing_period) : existing.billing_period,
     req.params.id
   );
 

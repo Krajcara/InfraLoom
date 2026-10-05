@@ -3,6 +3,9 @@
 const db = require('../db/database');
 const { notify } = require('./notificationService');
 
+const { expiryState } = require('../lib/licenceExpiry');
+
+// Entra ID app secrets have no renewal-period concept — one fixed window.
 const WARNING_WINDOW_DAYS = 30;
 
 function daysUntil(dateStr) {
@@ -17,10 +20,10 @@ function daysUntil(dateStr) {
 async function checkExpiries() {
   try {
     const licences = db
-      .prepare("SELECT vendor, licence_type, expiry_date FROM licences WHERE hidden = 0 AND expiry_date IS NOT NULL")
+      .prepare("SELECT vendor, licence_type, expiry_date, billing_period FROM licences WHERE hidden = 0 AND expiry_date IS NOT NULL")
       .all()
-      .map((l) => ({ ...l, days: daysUntil(l.expiry_date) }))
-      .filter((l) => l.days <= WARNING_WINDOW_DAYS);
+      .map((l) => ({ ...l, days: expiryState(l.expiry_date, l.billing_period).days, status: expiryState(l.expiry_date, l.billing_period).status }))
+      .filter((l) => l.status === 'expiring' || l.status === 'expired'); // per-licence window: monthly 5d, yearly 35d
 
     const entraApps = db
       .prepare("SELECT app_name, secret_expiry FROM entra_apps WHERE hidden = 0 AND secret_expiry IS NOT NULL")
@@ -31,7 +34,7 @@ async function checkExpiries() {
     if (licences.length > 0) {
       const lines = licences.map((l) => {
         const status = l.days < 0 ? `expired ${-l.days}d ago` : `expires in ${l.days}d`;
-        return `  - ${l.vendor} ${l.licence_type}: ${status}`;
+        return `  - ${l.vendor} ${l.licence_type}${l.billing_period ? ` (${l.billing_period})` : ''}: ${status}`;
       });
       await notify(`InfraLoom — licences expiring soon:\n${lines.join('\n')}`, 'licence_expiring');
     }

@@ -4,9 +4,24 @@ import { useAuth } from '../context/AuthContext';
 
 const emptyForm = {
   vendor: '', licence_type: '', licence_count: 1, licence_used: 0,
-  purchase_date: '', expiry_date: '', url: '', licence_username: '',
+  purchase_date: '', expiry_date: '', billing_period: '', url: '', licence_username: '',
   licence_password: '', licence_mfa: false, notes: '',
 };
+
+// Suggests the next expiry date when renewing: +1 month / +1 year from the
+// current expiry (clamped to the end of shorter months). The admin can still
+// type any date in the prompt.
+function suggestNextExpiry(dateStr, period) {
+  if (!dateStr || !period) return dateStr || '';
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return dateStr;
+  const monthsToAdd = period === 'monthly' ? 1 : 12;
+  const targetIndex = m - 1 + monthsToAdd;
+  const ty = y + Math.floor(targetIndex / 12);
+  const tm = targetIndex % 12;
+  const lastDay = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate();
+  return `${ty}-${String(tm + 1).padStart(2, '0')}-${String(Math.min(d, lastDay)).padStart(2, '0')}`;
+}
 
 export default function LicencesPage() {
   const { user } = useAuth();
@@ -47,7 +62,7 @@ export default function LicencesPage() {
     setForm({
       id: l.id, vendor: l.vendor, licence_type: l.licence_type,
       licence_count: l.licence_count, licence_used: l.licence_used,
-      purchase_date: l.purchase_date || '', expiry_date: l.expiry_date || '',
+      purchase_date: l.purchase_date || '', expiry_date: l.expiry_date || '', billing_period: l.billing_period || '',
       url: l.url || '', licence_username: l.licence_username || '',
       licence_password: '', licence_mfa: !!l.licence_mfa, notes: l.notes || '',
     });
@@ -99,7 +114,7 @@ export default function LicencesPage() {
   }
 
   async function renew(l) {
-    const newDate = prompt(`New expiry date for "${l.vendor} — ${l.licence_type}" (YYYY-MM-DD):`, l.expiry_date || '');
+    const newDate = prompt(`New expiry date for "${l.vendor} — ${l.licence_type}" (YYYY-MM-DD):`, suggestNextExpiry(l.expiry_date, l.billing_period));
     if (!newDate) return;
     try {
       await api.post(`/licences/${l.id}/renew`, { expiry_date: newDate });
@@ -154,6 +169,14 @@ export default function LicencesPage() {
               <label>
                 Expiry date
                 <input type="date" value={form.expiry_date} onChange={(e) => setForm({ ...form, expiry_date: e.target.value })} />
+              </label>
+              <label>
+                Renews
+                <select value={form.billing_period} onChange={(e) => setForm({ ...form, billing_period: e.target.value })}>
+                  <option value="">Not set (warns 30 days before)</option>
+                  <option value="monthly">Monthly (warns 5 days before)</option>
+                  <option value="yearly">Yearly (warns 35 days before)</option>
+                </select>
               </label>
               <label>
                 Portal URL
@@ -219,6 +242,11 @@ export default function LicencesPage() {
                   </span>
                 ) : (
                   '—'
+                )}
+                {l.expiry_date && (
+                  <div className="muted" style={{ fontSize: '0.8em' }}>
+                    {l.billing_period ? `${l.billing_period} · warns ${l.warning_days}d before` : 'renewal period not set'}
+                  </div>
                 )}
               </td>
               <td>

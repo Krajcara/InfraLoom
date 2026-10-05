@@ -518,6 +518,7 @@ db.exec(`
   );
 `);
 ensureColumn('ansible_runs', 'playbook_ids', 'TEXT'); // JSON array of playbook ids run in this batch — supersedes the single playbook_id/playbook_name pair for new runs
+ensureColumn('licences', 'billing_period', 'TEXT'); // 'monthly' | 'yearly' | NULL (not set) — decides how early expiry warnings start
 ensureColumn('ansible_playbooks', 'port', 'TEXT'); // informational only — which port the installed app listens on, shown in the list
 
 // ── Kubernetes (Phase 1 — connect + monitor existing clusters) ───────────
