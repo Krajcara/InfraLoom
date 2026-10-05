@@ -146,8 +146,31 @@ try {
 `.trim(),
 };
 
+// Debian/Ubuntu install. The command runs with no terminal (guest agent / pct exec / SSH),
+// which matters twice:
+//  - If an upgrade asks "keep your config file or the maintainer's?", nobody can answer, dpkg
+//    aborts mid-upgrade and leaves packages half-configured — after that EVERY apt run fails with
+//    "E: dpkg was interrupted, you must manually run 'dpkg --configure -a'". --force-confdef /
+//    --force-confold let dpkg answer by itself (existing config is kept).
+//  - If an earlier run already left dpkg in that state, repair it first — exactly what that error
+//    message tells you to do by hand — instead of failing again. The step is announced in the output.
+// One line of plain POSIX sh with no single quotes: it is wrapped differently by each transport.
+const DEBIAN_UPGRADE = [
+  'export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a',
+  'O="-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"',
+  // apt refuses to run when dpkg left a journal in /var/lib/dpkg/updates (the exact "dpkg was
+  // interrupted" error); half-configured packages (dpkg --audit) are the other flavour of the same problem.
+  'if [ -n "$(dpkg --audit 2>/dev/null)" ] || ls /var/lib/dpkg/updates 2>/dev/null | grep -q "^[0-9][0-9]*$"',
+  'then echo "[InfraLoom] dpkg was left half-configured by an interrupted run - repairing it first (dpkg --configure -a)"',
+  'dpkg --force-confdef --force-confold --configure -a 2>&1 && apt-get -y -f $O install 2>&1 || { echo "___EXIT_$?___"; exit 1; }',
+  'fi',
+  'apt-get update -qq 2>&1',
+  'apt-get -y $O upgrade 2>&1',
+  'echo "___EXIT_$?___"',
+].join('; ');
+
 const APPLY_COMMANDS = {
-  debian: 'export DEBIAN_FRONTEND=noninteractive; apt-get update -qq 2>&1; apt-get -y upgrade 2>&1; echo "___EXIT_$?___"',
+  debian: DEBIAN_UPGRADE,
   rhel: '(command -v dnf >/dev/null && dnf -y upgrade || yum -y upgrade) 2>&1; echo "___EXIT_$?___"',
   alpine: 'apk update -q 2>&1; apk upgrade 2>&1; echo "___EXIT_$?___"',
   windows: `
