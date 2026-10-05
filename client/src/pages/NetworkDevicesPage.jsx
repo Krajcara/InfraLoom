@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
+import { formatDbDate } from '../utils/formatDate';
 
 const emptyForm = {
   name: '', brand: 'other', model: '', ip_address: '', username: '', device_password: '', notes: '', api_token: '',
@@ -48,6 +49,8 @@ export default function NetworkDevicesPage({ apiPath, title }) {
         prev.map((d) => (d.monitor_id === monitorId ? { ...d, last_status: status, last_latency_ms: latency_ms, last_checked_at: checked_at } : d))
       );
     },
+    // Switches/APs discovered from a FortiGate report status from the controller, not a ping
+    'devices:controller-sync': () => load(),
   });
 
   function flash(msg) {
@@ -122,12 +125,15 @@ export default function NetworkDevicesPage({ apiPath, title }) {
   }
 
   const [syncing, setSyncing] = useState(null);
+  const [syncLog, setSyncLog] = useState(null); // router row whose last sync details are shown
   async function sync(d) {
     setSyncing(d.id);
     setError(null);
     try {
       const data = await api.post(`/${apiPath}/${d.id}/sync`);
-      flash(`Synced: ${data.switches} switches, ${data.accessPoints} access points.`);
+      const problems = Object.entries(data.errors || {}).map(([k, v]) => `${k === 'accessPoints' ? 'access points' : k}: ${v}`);
+      if (problems.length) setError(`Partial sync — ${problems.join(' | ')}`);
+      else flash(`Synced: ${data.switches} switches, ${data.accessPoints} access points.`);
       load();
     } catch (err) {
       setError(err.message);
@@ -274,6 +280,17 @@ export default function NetworkDevicesPage({ apiPath, title }) {
         </section>
       )}
 
+      {syncLog && (
+        <section className="card">
+          <h2>FortiGate sync — {syncLog.name}</h2>
+          <p className="muted">
+            Last sync: {formatDbDate(syncLog.last_sync_at)} — {syncLog.last_sync_status}. Switch/AP status is whatever the FortiGate
+            reports (Connected / Disconnected); below is the first raw entry it returned per list, in case a field is being read wrong.
+          </p>
+          <pre className="mono" style={{ whiteSpace: 'pre-wrap', maxHeight: 320, overflow: 'auto' }}>{syncLog.last_sync_debug || '(no details stored yet — run a sync)'}</pre>
+        </section>
+      )}
+
       <table className="table">
         <thead>
           <tr>
@@ -301,8 +318,8 @@ export default function NetworkDevicesPage({ apiPath, title }) {
                 )}
               </td>
               <td className="muted">{d.brand}</td>
-              <td className="mono">{d.ip_address}</td>
-              <td><span className={`status-badge status-${d.last_status}`}>{d.last_status}</span></td>
+              <td className="mono">{d.ip_address === '0.0.0.0' ? '—' : d.ip_address}</td>
+              <td><span className={`status-badge status-${d.last_status}`} title={d.status_source === 'fortigate' ? 'Reported by the FortiGate' : undefined}>{d.last_status}</span></td>
               <td>{d.last_latency_ms != null ? `${d.last_latency_ms}ms` : '—'}</td>
               <td>
                 {d.username || '—'}
@@ -321,6 +338,9 @@ export default function NetworkDevicesPage({ apiPath, title }) {
                   <button className="btn-link" onClick={() => sync(d)} disabled={syncing === d.id} title={d.last_sync_status || 'Never synced'}>
                     {syncing === d.id ? 'Syncing...' : 'Sync switches/APs'}
                   </button>
+                )}
+                {apiPath === 'routers' && d.brand === 'fortigate' && d.last_sync_at && (
+                  <button className="btn-link" onClick={() => setSyncLog(syncLog?.id === d.id ? null : d)}>Sync log</button>
                 )}
                 {canEdit && <button className="btn-link" onClick={() => openEdit(d)}>Edit</button>}
                 {canDelete && <button className="btn-link danger" onClick={() => remove(d)}>Delete</button>}

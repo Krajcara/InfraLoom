@@ -461,7 +461,7 @@ function DeviceTypeWidgetBody({ apiPath, noun }) {
   }, [apiPath]);
 
   useEffect(load, [load]);
-  useSocket({ 'monitor:status': load });
+  useSocket({ 'monitor:status': load, 'devices:controller-sync': load });
 
   if (state.loading) return <p className="muted">Loading...</p>;
   if (state.error) return <p className="error">{state.error}</p>;

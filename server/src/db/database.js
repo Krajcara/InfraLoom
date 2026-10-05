@@ -589,13 +589,34 @@ for (const table of ['routers', 'switches', 'access_points']) {
   db.exec(`UPDATE monitors SET hidden = 1 WHERE id IN (SELECT monitor_id FROM ${table} WHERE monitor_id IS NOT NULL) AND hidden = 0`);
 }
 
+// Switches/APs discovered from a FortiGate get their online/offline status
+// from the controller itself (controller_status), not from an ICMP monitor on
+// this server — managed switches are usually unreachable from here.
+ensureColumn('switches', 'controller_status', 'TEXT');
+ensureColumn('switches', 'controller_checked_at', 'TEXT');
+ensureColumn('access_points', 'controller_status', 'TEXT');
+ensureColumn('access_points', 'controller_checked_at', 'TEXT');
+ensureColumn('routers', 'last_sync_debug', 'TEXT');
+
+// Older versions gave discovered devices an ICMP monitor — remove those, they
+// only produced misleading "down" results and notifications.
+for (const table of ['switches', 'access_points']) {
+  const stale = db.prepare(`SELECT monitor_id FROM ${table} WHERE discovered_from_router_id IS NOT NULL AND monitor_id IS NOT NULL`).all();
+  if (stale.length) {
+    db.prepare(`UPDATE ${table} SET monitor_id = NULL WHERE discovered_from_router_id IS NOT NULL`).run();
+    const del = db.prepare('DELETE FROM monitors WHERE id = ?');
+    for (const r of stale) del.run(r.monitor_id);
+    console.log(`[db] Removed ${stale.length} ICMP monitor(s) of FortiGate-discovered ${table} (status now comes from the FortiGate).`);
+  }
+}
+
 // Backfill: any router/switch/access_point row without a monitor_id (e.g.
 // discovered via FortiGate sync before that created one, or an older row
 // from before this was mandatory) gets one now — the monitor worker
 // loads every enabled monitor at startup, so this alone is enough for
 // them to start actually being pinged again.
 for (const table of ['routers', 'switches', 'access_points']) {
-  const missing = db.prepare(`SELECT id, name, ip_address FROM ${table} WHERE monitor_id IS NULL AND ip_address IS NOT NULL AND ip_address != '' AND ip_address != '0.0.0.0'`).all();
+  const missing = db.prepare(`SELECT id, name, ip_address FROM ${table} WHERE monitor_id IS NULL AND ip_address IS NOT NULL AND ip_address != '' AND ip_address != '0.0.0.0'${table === 'routers' ? '' : ' AND discovered_from_router_id IS NULL'}`).all();
   if (missing.length) {
     const insertMonitor = db.prepare(`INSERT INTO monitors (label, type, target, interval_s, hidden) VALUES (?, 'icmp', ?, 60, 1)`);
     const linkMonitor = db.prepare(`UPDATE ${table} SET monitor_id = ? WHERE id = ?`);

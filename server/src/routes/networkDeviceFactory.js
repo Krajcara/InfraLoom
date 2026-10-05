@@ -25,6 +25,18 @@ function createDeviceRouter(table, moduleLabel) {
 
   function withMonitor(row) {
     if (!row) return row;
+    // FortiGate-discovered devices: status is what the FortiGate reports, not a ping.
+    if (row.discovered_from_router_id) {
+      return {
+        ...row,
+        device_password: row.device_password ? '***' : null,
+        api_token: row.api_token ? '***' : null,
+        last_status: row.discovered_missing_at ? 'down' : row.controller_status || 'unknown',
+        last_latency_ms: null,
+        last_checked_at: row.controller_checked_at || null,
+        status_source: 'fortigate',
+      };
+    }
     const m = row.monitor_id ? db.prepare('SELECT last_status, last_latency_ms, last_checked_at FROM monitors WHERE id = ?').get(row.monitor_id) : null;
     return {
       ...row,

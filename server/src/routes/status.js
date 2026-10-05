@@ -41,15 +41,23 @@ router.get('/public/:id/checks', (req, res) => {
 router.get('/public/dashboard', async (req, res) => {
   if (!tvPageEnabled('tv_dashboard_enabled')) return res.status(404).json({ error: 'This page is disabled' });
 
-  const deviceList = (table) =>
-    db
+  const deviceList = (table) => {
+    // Only switches/access_points have the FortiGate-discovery columns.
+    const extra = table === 'routers'
+      ? 'NULL AS discovered_from_router_id, NULL AS discovered_missing_at, NULL AS controller_status'
+      : 'd.discovered_from_router_id, d.discovered_missing_at, d.controller_status';
+    return db
       .prepare(
-        `SELECT d.name, d.ip_address, m.last_status
+        `SELECT d.name, d.ip_address, m.last_status, ${extra}
          FROM ${table} d LEFT JOIN monitors m ON m.id = d.monitor_id
          ORDER BY d.name`
       )
       .all()
-      .map((d) => ({ name: d.name, detail: d.ip_address, status: d.last_status === 'up' ? 'up' : d.last_status === 'down' ? 'down' : 'unknown' }));
+      .map((d) => {
+        const raw = d.discovered_from_router_id ? (d.discovered_missing_at ? 'down' : d.controller_status) : d.last_status;
+        return { name: d.name, detail: d.ip_address === '0.0.0.0' ? '' : d.ip_address, status: raw === 'up' ? 'up' : raw === 'down' ? 'down' : 'unknown' };
+      });
+  };
 
   const monitors = db
     .prepare("SELECT label, last_status, ssl_days FROM monitors WHERE enabled = 1 AND hidden = 0 ORDER BY label")
