@@ -24,6 +24,7 @@ const NAV_GROUPS = [
       { to: '/routers', label: 'Routers' },
       { to: '/switches', label: 'Switches' },
       { to: '/access-points', label: 'Access Points' },
+      { to: '/ups', label: 'UPS' },
       { to: '/dns', label: 'DNS' },
       { to: '/dns-analytics', label: 'DNS Analytics' },
       { to: '/netspeed', label: 'Net Speed' },

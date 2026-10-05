@@ -590,6 +590,52 @@ for (const table of ['routers', 'switches', 'access_points']) {
   db.exec(`UPDATE monitors SET hidden = 1 WHERE id IN (SELECT monitor_id FROM ${table} WHERE monitor_id IS NOT NULL) AND hidden = 0`);
 }
 
+// ── UPS monitoring (SNMP v1 / v2c / v3) ──────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ups_devices (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                 TEXT NOT NULL,
+    ip_address           TEXT NOT NULL,
+    location             TEXT,
+    notes                TEXT,
+    enabled              INTEGER DEFAULT 1,
+    snmp_version         TEXT DEFAULT '2c',
+    snmp_community       TEXT DEFAULT 'public',
+    snmp_port            INTEGER DEFAULT 161,
+    snmp_username        TEXT,
+    snmp_security_level  TEXT DEFAULT 'authPriv',
+    snmp_auth_protocol   TEXT DEFAULT 'SHA',
+    snmp_auth_password   TEXT,
+    snmp_priv_protocol   TEXT DEFAULT 'AES',
+    snmp_priv_password   TEXT,
+    manufacturer         TEXT,
+    model                TEXT,
+    last_status          TEXT,   -- online | on_battery | low_battery | bypass | off | offline
+    last_reading         TEXT,   -- JSON of the last successful poll
+    last_error           TEXT,
+    last_polled_at       TEXT,
+    last_ok_at           TEXT,
+    consecutive_failures INTEGER DEFAULT 0,
+    created_at           TEXT DEFAULT (datetime('now')),
+    updated_at           TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS ups_readings (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    ups_id         INTEGER NOT NULL,
+    at             TEXT DEFAULT (datetime('now')),
+    status         TEXT,
+    charge_pct     REAL,
+    runtime_min    REAL,
+    load_pct       REAL,
+    input_v        REAL,
+    output_v       REAL,
+    battery_temp_c REAL,
+    FOREIGN KEY (ups_id) REFERENCES ups_devices(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_ups_readings_ups_at ON ups_readings(ups_id, at);
+`);
+
 // Switches/APs discovered from a FortiGate get their online/offline status
 // from the controller itself (controller_status), not from an ICMP monitor on
 // this server — managed switches are usually unreachable from here.

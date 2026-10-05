@@ -100,6 +100,7 @@ app.use('/api/backup', require('./routes/backup'));
 app.use('/api/automation', require('./routes/automation'));
 app.use('/api/ansible', require('./routes/ansible'));
 app.use('/api/kubernetes', require('./routes/kubernetes'));
+app.use('/api/ups', require('./routes/ups'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
@@ -145,6 +146,7 @@ require('./services/hypervisorHealthService').initScheduler();
 require('./services/hypervisorMetricsService').initScheduler();
 require('./services/backupService').initScheduler();
 require('./services/fortigateSyncService').initScheduler();
+require('./services/upsService').initScheduler();
 setTimeout(() => require('./services/sslChecker').checkAllSSL(false), 5000);
 
 process.on('SIGTERM', () => {

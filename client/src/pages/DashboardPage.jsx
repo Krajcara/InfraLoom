@@ -17,6 +17,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
+import { upsStatus } from './UpsPage';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -125,6 +126,7 @@ const WIDGET_LINKS = {
   hypervisors: '/hypervisors',
   netscan: '/network-scanner',
   patches: '/patch-management',
+  ups: '/ups',
 };
 
 function SortableWidget({ widget, onHide }) {
@@ -189,11 +191,47 @@ function SortableWidget({ widget, onHide }) {
           <NetscanWidgetBody />
         ) : widget.id === 'patches' ? (
           <PatchesWidgetBody />
+        ) : widget.id === 'ups' ? (
+          <UpsWidgetBody />
         ) : (
           <p className="muted">Coming in Phase {widget.phase}.</p>
         )}
       </div>
     </div>
+  );
+}
+
+function UpsWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, devices: [] });
+
+  const load = useCallback(() => {
+    api
+      .get('/ups')
+      .then((data) => setState({ loading: false, error: null, devices: data.devices.filter((d) => d.enabled) }))
+      .catch((err) => setState({ loading: false, error: err.message, devices: [] }));
+  }, []);
+
+  useEffect(load, [load]);
+  useSocket({ 'ups:update': load });
+
+  if (state.loading) return <p className="muted">Loading...</p>;
+  if (state.error) return <p className="error">{state.error}</p>;
+  if (state.devices.length === 0) return <p className="muted">No UPS yet.</p>;
+
+  const bad = (d) => d.last_status && d.last_status !== 'online' && d.last_status !== 'unknown';
+  return (
+    <ul className="widget-list" style={{ marginTop: 10 }}>
+      {state.devices.slice(0, 6).map((d) => {
+        const st = upsStatus(d);
+        const r = d.last_reading;
+        return (
+          <li key={d.id} className={bad(d) ? 'error' : ''} style={{ margin: '4px 0' }}>
+            {d.name} — {st.label}
+            {r && d.last_status !== 'offline' && r.charge_pct != null && <span className="muted"> · {r.charge_pct}%</span>}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

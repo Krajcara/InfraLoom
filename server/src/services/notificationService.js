@@ -15,6 +15,11 @@ const EVENT_TYPES = [
   { id: 'network_device_offline', label: 'Known device went offline' },
   { id: 'hypervisor_down', label: 'Hypervisor connection unreachable' },
   { id: 'hypervisor_up', label: 'Hypervisor connection recovered' },
+  { id: 'ups_on_battery', label: 'UPS lost mains power (running on battery)' },
+  { id: 'ups_low_battery', label: 'UPS battery low while on battery' },
+  { id: 'ups_power_restored', label: 'UPS mains power restored' },
+  { id: 'ups_offline', label: 'UPS not responding to SNMP' },
+  { id: 'ups_online', label: 'UPS reachable again' },
 ];
 
 const CHANNEL_NAMES = ['app', 'telegram', 'slack', 'discord', 'ntfy', 'pushover', 'email'];
@@ -202,6 +207,11 @@ const SEVERITY_MAP = {
   monitor_up: 'info',
   hypervisor_down: 'critical',
   hypervisor_up: 'info',
+  ups_on_battery: 'critical',
+  ups_low_battery: 'critical',
+  ups_power_restored: 'info',
+  ups_offline: 'critical',
+  ups_online: 'info',
   network_device_offline: 'warning',
   network_new_device: 'info',
   ssl_expiring: 'warning',

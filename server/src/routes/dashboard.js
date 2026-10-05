@@ -24,6 +24,7 @@ const DEFAULT_WIDGETS = [
   { id: 'myip', title: 'My IP', phase: 10 },
   { id: 'netscan', title: 'Network Devices', phase: 12 },
   { id: 'patches', title: 'Pending Patches', phase: 13 },
+  { id: 'ups', title: 'UPS', phase: 14 },
 ];
 
 function defaultLayout() {

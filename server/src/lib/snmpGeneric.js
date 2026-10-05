@@ -13,14 +13,33 @@ const OID = {
   ifHCOutOctets: '1.3.6.1.2.1.31.1.1.1.10',
 };
 
+// v3 algorithm names as stored in the DB -> net-snmp constants. MD5/SHA and
+// DES/AES are what network devices have always used; the SHA-2 family and
+// AES-256 are there for newer firmware (UPS network cards included).
+const AUTH_PROTOCOLS = {
+  MD5: snmp.AuthProtocols.md5,
+  SHA: snmp.AuthProtocols.sha,
+  SHA224: snmp.AuthProtocols.sha224,
+  SHA256: snmp.AuthProtocols.sha256,
+  SHA384: snmp.AuthProtocols.sha384,
+  SHA512: snmp.AuthProtocols.sha512,
+};
+const PRIV_PROTOCOLS = {
+  DES: snmp.PrivProtocols.des,
+  AES: snmp.PrivProtocols.aes,
+  AES256B: snmp.PrivProtocols.aes256b, // Blumenthal (Net-SNMP default)
+  AES256R: snmp.PrivProtocols.aes256r, // Reeder (Cisco)
+};
+
 function buildSession(ip, cfg) {
   const port = parseInt(cfg.snmp_port, 10) || 161;
   const v = String(cfg.snmp_version || '2c');
+  const timeout = parseInt(cfg.snmp_timeout_ms, 10) || 8000;
 
   if (v === '3') {
     const level = cfg.snmp_security_level || 'authPriv';
-    const authProto = cfg.snmp_auth_protocol === 'MD5' ? snmp.AuthProtocols.md5 : snmp.AuthProtocols.sha;
-    const privProto = cfg.snmp_priv_protocol === 'DES' ? snmp.PrivProtocols.des : snmp.PrivProtocols.aes;
+    const authProto = AUTH_PROTOCOLS[cfg.snmp_auth_protocol] || snmp.AuthProtocols.sha;
+    const privProto = PRIV_PROTOCOLS[cfg.snmp_priv_protocol] || snmp.PrivProtocols.aes;
     const user = {
       name: cfg.snmp_username || 'snmpv3user',
       level:
@@ -38,12 +57,12 @@ function buildSession(ip, cfg) {
       user.privProtocol = privProto;
       user.privKey = cfg.snmp_priv_password || '';
     }
-    return snmp.createV3Session(ip, user, { port, timeout: 8000, retries: 1, version: snmp.Version3 });
+    return snmp.createV3Session(ip, user, { port, timeout, retries: 1, version: snmp.Version3 });
   }
 
   return snmp.createSession(ip, cfg.snmp_community || 'public', {
     port,
-    timeout: 8000,
+    timeout,
     retries: 1,
     version: v === '1' ? snmp.Version1 : snmp.Version2c,
   });
@@ -66,21 +85,28 @@ function snmpGet(session, oids) {
   });
 }
 
-function snmpWalk(session, rootOid) {
-  return new Promise((resolve) => {
+function snmpWalk(session, rootOid, { strict = false } = {}) {
+  return new Promise((resolve, reject) => {
     const results = [];
     session.subtree(
       rootOid,
       50,
       (varbinds) => {
+        let stop = false;
         varbinds.forEach((vb) => {
           if (!snmp.isVarbindError(vb)) {
             const v = vb.value;
             results.push({ oid: vb.oid, value: Buffer.isBuffer(v) ? v.toString('utf8').replace(/\0/g, '') : v });
-          }
+          } else if (strict) {
+            stop = true; // NoSuchObject / EndOfMibView: nothing (more) under this subtree. Some embedded agents answer
+          }                // past the end of their MIB with the same OID instead of endOfMibView, which would loop forever.
         });
+        return stop;
       },
-      () => resolve(results)
+      // strict: a timeout/auth failure rejects, so a dead or misconfigured
+      // device can't look like "answered, but has no data". The default
+      // (lenient) keeps the existing network-device behaviour unchanged.
+      (err) => (strict && err ? reject(err) : resolve(results))
     );
   });
 }
@@ -161,4 +187,4 @@ async function pollSnmp(ip, cfg) {
   }
 }
 
-module.exports = { pollSnmp };
+module.exports = { pollSnmp, buildSession, snmpGet, snmpWalk, AUTH_PROTOCOLS, PRIV_PROTOCOLS };
