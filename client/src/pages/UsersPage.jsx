@@ -127,26 +127,25 @@ export default function UsersPage() {
           <tbody>
             <tr>
               <td><strong>Viewer</strong></td>
-              <td className="muted">View everything — dashboards, inventory, monitors, logs, scan results, etc.</td>
+              <td className="muted">View everything — dashboards, inventory, monitors, UPS, logs, scan results, etc.</td>
               <td className="muted">Create, edit, run, or delete anything. No access to User Management.</td>
             </tr>
             <tr>
               <td><strong>Operator</strong></td>
               <td className="muted">
-                Everything a Viewer can, plus day-to-day actions: add devices/monitors, run Ansible playbooks, start
-                scans and deployments, renew licences, reveal stored passwords.
+                Everything a Viewer can, plus day-to-day actions: add devices, monitors and UPS units, start network
+                scans and patch runs, renew licences, reveal stored passwords.
               </td>
               <td className="muted">
-                Delete anything, manage connections/credentials (hypervisors, Kubernetes, FortiGate, OpenVAS),
-                provision Kubernetes clusters, change Settings. No access to User Management.
+                Delete anything, manage connections and credentials (hypervisors, FortiGate API tokens), change
+                Settings. No access to User Management.
               </td>
             </tr>
             <tr>
               <td><strong>Admin</strong></td>
               <td className="muted">
-                Everything an Operator can, plus deleting things, managing all connections/credentials, provisioning
-                Kubernetes clusters, changing Settings, and managing users — but only Operator/Viewer accounts, not
-                Admin or Superadmin.
+                Everything an Operator can, plus deleting things, managing all connections and credentials, changing
+                Settings, and managing users — but only Operator/Viewer accounts, not Admin or Superadmin.
               </td>
               <td className="muted">Run system updates. Create or manage Admin/Superadmin accounts.</td>
             </tr>

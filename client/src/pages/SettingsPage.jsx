@@ -37,9 +37,9 @@ function ManagementSshKeySection() {
     <section className="card">
       <h2>Management SSH key</h2>
       <p className="muted">
-        InfraLoom's own SSH key, automatically added to every VM/LXC and Kubernetes node it creates — this is how it
-        reaches them afterward (checking SSH, running patches, installing k3s, etc.), regardless of whatever
-        username/password you also set for a node. Only the public half is ever shown or leaves the server.
+        InfraLoom's own SSH key. Patch Management uses it to log in to guests without a stored password — add the public
+        key below to a guest's authorized_keys, or use "Install management key" in Patch Management. Only the public half is
+        ever shown or leaves the server.
       </p>
       <div className="form-row">
         <textarea readOnly value={publicKey} rows={3} className="mono" style={{ flex: 1 }} />

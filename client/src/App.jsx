@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SshSessionsProvider } from './context/SshSessionsContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -10,11 +10,6 @@ import UsersPage from './pages/UsersPage';
 import SettingsPage from './pages/SettingsPage';
 import UpdatePage from './pages/UpdatePage';
 import BackupPage from './pages/BackupPage';
-import NewDeploymentPage from './pages/NewDeploymentPage';
-import DeploymentsPage from './pages/DeploymentsPage';
-import TemplatesPage from './pages/TemplatesPage';
-import PlaybooksPage from './pages/PlaybooksPage';
-import RunPlaybookPage from './pages/RunPlaybookPage';
 import AuditLogPage from './pages/AuditLogPage';
 import LicencesPage from './pages/LicencesPage';
 import EntraAppsPage from './pages/EntraAppsPage';
@@ -31,10 +26,7 @@ import DnsAnalyticsPage from './pages/DnsAnalyticsPage';
 import NetSpeedPage from './pages/NetSpeedPage';
 import MyIpPage from './pages/MyIpPage';
 import HypervisorsPage from './pages/HypervisorsPage';
-import KubernetesPage from './pages/KubernetesPage';
 import UpsPage from './pages/UpsPage';
-import NewK8sClusterPage from './pages/NewK8sClusterPage';
-import KubernetesClusterDetailPage from './pages/KubernetesClusterDetailPage';
 import NetworkScannerPage from './pages/NetworkScannerPage';
 import PatchManagementPage from './pages/PatchManagementPage';
 
@@ -66,10 +58,7 @@ export default function App() {
           <Route path="/netspeed" element={<NetSpeedPage />} />
           <Route path="/myip" element={<MyIpPage />} />
           <Route path="/hypervisors" element={<HypervisorsPage />} />
-          <Route path="/kubernetes" element={<KubernetesPage />} />
           <Route path="/ups" element={<UpsPage />} />
-          <Route path="/kubernetes/new" element={<NewK8sClusterPage />} />
-          <Route path="/kubernetes/clusters/:id" element={<KubernetesClusterDetailPage />} />
           <Route path="/network-scanner" element={<NetworkScannerPage />} />
           <Route path="/patch-management" element={<PatchManagementPage />} />
           <Route
@@ -114,46 +103,6 @@ export default function App() {
             }
           />
           <Route
-            path="/automation/templates"
-            element={
-              <ProtectedRoute roles={['superadmin', 'admin']}>
-                <TemplatesPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/automation/new"
-            element={
-              <ProtectedRoute roles={['superadmin', 'admin', 'operator']}>
-                <NewDeploymentPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/automation/deployments"
-            element={
-              <ProtectedRoute roles={['superadmin', 'admin', 'operator']}>
-                <DeploymentsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/automation/playbooks"
-            element={
-              <ProtectedRoute roles={['superadmin', 'admin']}>
-                <PlaybooksPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/automation/run-playbook"
-            element={
-              <ProtectedRoute roles={['superadmin', 'admin', 'operator']}>
-                <RunPlaybookPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/audit-log"
             element={
               <ProtectedRoute roles={['superadmin', 'admin']}>
@@ -161,6 +110,8 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          {/* Unknown URLs (old bookmarks to removed modules, typos) go to the dashboard instead of a blank page. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
       </SshSessionsProvider>
