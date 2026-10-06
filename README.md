@@ -227,6 +227,14 @@ Add connections from **Hypervisors → New connection**. What each platform need
 
 ### What a patch run does
 
+On a **Proxmox VM** (Linux, Debian/Ubuntu or RHEL family) the update is not run as a child of the QEMU guest agent. The agent only
+returns output once a command has finished, and it takes the update down with it if the agent restarts — which an upgrade can
+cause. Instead InfraLoom starts the update on the machine as its own systemd unit (`infraloom-patch-<run id>`; a detached
+session if systemd is not there), writes it to `/var/tmp/infraloom-patch-<run id>.log`, and follows that file — so the console
+shows the output **live**, a slow or restarting agent does not lose the run, and if InfraLoom loses contact for good the update
+carries on by itself on the machine. The log of a failed run stays there; a successful one is cleaned up. LXC containers and
+Hyper-V guests use the direct path. Whenever a run fails, the reason is shown above the console **and** written into it.
+
 On **Debian/Ubuntu** a run is more than `apt-get upgrade`:
 
 1. **It waits for other package managers.** If unattended-upgrades, PackageKit or a second `apt` holds the apt/dpkg locks,
