@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power, ChevronRight, TerminalSquare, MonitorSmartphone, Bell, BellOff } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
+import MaintenanceBadge, { MaintenanceLink } from '../components/MaintenanceBadge';
 
 const emptyForm = { type: 'proxmox', name: '', url: '', username: 'root@pam', token_id: '', api_token: '', password: '', port: '', patch_ssh_username: '', patch_ssh_password: '', patch_ssh_port: '', patch_ssh_host: '', health_check_enabled: true };
 
@@ -468,8 +469,10 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete, onToggleHealthChec
         <div>
           <h2>
             {conn.name} <span className={`hv-type-connection-badge hv-type-connection-${conn.type}`}>{HYPERVISOR_TYPE_LABELS[conn.type] || conn.type}</span>
+            <MaintenanceBadge w={conn.in_maintenance} />
           </h2>
           <p className="muted mono">{conn.url}</p>
+          {canEdit && <MaintenanceLink type="hypervisor" id={conn.id} />}
         </div>
         <div className="form-row">
           {canEdit && (

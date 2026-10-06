@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
 import { formatDbDate } from '../utils/formatDate';
+import MaintenanceBadge, { MaintenanceLink } from '../components/MaintenanceBadge';
 
 export const UPS_STATUS = {
   online: { label: 'On mains', cls: 'status-up' },
@@ -221,7 +222,7 @@ function UpsCard({ d, canEdit, canAdmin, onPoll, onEdit, onDelete }) {
     <div className={`ups-card${onBattery ? ' ups-card-alert' : ''}${d.enabled ? '' : ' row-dimmed'}`}>
       <div className="ups-card-head">
         <div>
-          <h2>{d.name}</h2>
+          <h2>{d.name}<MaintenanceBadge w={d.in_maintenance} /></h2>
           <div className="muted" style={{ fontSize: 12 }}>
             {[d.location, [d.manufacturer, d.model].filter(Boolean).join(' ')].filter(Boolean).join(' · ') || '—'}
           </div>
@@ -261,6 +262,7 @@ function UpsCard({ d, canEdit, canAdmin, onPoll, onEdit, onDelete }) {
       <div className="form-row" style={{ marginTop: 10 }}>
         {canEdit && <button className="btn-link" onClick={() => onPoll(d)}>Poll now</button>}
         <button className="btn-link" onClick={() => setPanel(panel === 'history' ? null : 'history')}>History</button>
+        {canEdit && <MaintenanceLink type="ups" id={d.id} />}
         {canEdit && <button className="btn-link" onClick={() => onEdit(d)}>Edit</button>}
         {canAdmin && <button className="btn-link" onClick={() => setPanel(panel === 'walk' ? null : 'walk')}>SNMP walk</button>}
         {canAdmin && <button className="btn-link danger" onClick={() => onDelete(d)}>Delete</button>}

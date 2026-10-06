@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
+import { Link } from 'react-router-dom';
+import MaintenanceBadge, { MaintenanceLink } from '../components/MaintenanceBadge';
 
 const TYPES = [
   { value: 'http', label: 'HTTP' },
@@ -295,7 +297,7 @@ export default function MonitorsPage() {
         <tbody>
           {monitors.map((m) => (
             <tr key={m.id} className={!m.enabled ? 'row-dimmed' : ''}>
-              <td>{m.label}</td>
+              <td>{m.label}<MaintenanceBadge w={m.in_maintenance} /></td>
               <td>{TYPES.find((t) => t.value === m.type)?.label || m.type}</td>
               <td>
                 <span className={`status-badge status-${m.last_status}`}>{STATUS_LABEL[m.last_status] || m.last_status}</span>
@@ -315,6 +317,7 @@ export default function MonitorsPage() {
                 {canEdit && (
                   <>
                     <button className="btn-link" onClick={() => openEdit(m)}>Edit</button>
+                    <MaintenanceLink type="monitor" id={m.id} />
                     <button className="btn-link" onClick={() => toggleEnabled(m)}>{m.enabled ? 'Disable' : 'Enable'}</button>
                   </>
                 )}
@@ -432,9 +435,11 @@ function MonitorCard({ monitor: m, canEdit, canDelete, onEdit, onDelete }) {
         <div className="monitor-card-title">
           <strong>{m.label}</strong>
           <span className="monitor-card-target">{m.target}</span>
+          <MaintenanceBadge w={m.in_maintenance} />
         </div>
         <span className={`status-badge status-${m.last_status}`}>{STATUS_LABEL[m.last_status] || m.last_status}</span>
         {canEdit && <button className="icon-btn" onClick={onEdit} title="Edit">✎</button>}
+        {canEdit && <Link className="icon-btn" to={`/maintenance?type=monitor&id=${m.id}`} title="Maintenance — mute alerts while you work on this" style={{ textDecoration: 'none' }}>🔧</Link>}
         {canDelete && <button className="icon-btn" onClick={onDelete} title="Delete">🗑</button>}
       </div>
 

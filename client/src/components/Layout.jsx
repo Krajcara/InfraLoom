@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
 import TvPageLinks from './TvPageLinks';
+import MaintenanceBanner from './MaintenanceBanner';
 
 // Dashboard is always visible, ungrouped. Everything else lives in a
 // collapsible group — new modules from later phases just get added to the
@@ -38,6 +39,7 @@ const NAV_GROUPS = [
       { to: '/hypervisors', label: 'Hypervisors' },
       { to: '/network-scanner', label: 'Network Scanner' },
       { to: '/patch-management', label: 'Patch Management' },
+      { to: '/maintenance', label: 'Maintenance' },
       { to: '/ssh', label: 'SSH', roles: ['superadmin', 'admin'] },
     ],
   },
@@ -140,6 +142,7 @@ export default function Layout() {
           <TvPageLinks />
           <NotificationBell />
         </div>
+        <MaintenanceBanner />
         <Outlet />
       </main>
     </div>

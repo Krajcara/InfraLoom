@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
 import { formatDbDate } from '../utils/formatDate';
+import MaintenanceBadge, { MaintenanceLink } from '../components/MaintenanceBadge';
 
 const emptyForm = {
   name: '', brand: 'other', model: '', ip_address: '', username: '', device_password: '', notes: '', api_token: '',
@@ -308,6 +309,7 @@ export default function NetworkDevicesPage({ apiPath, title }) {
             <tr key={d.id}>
               <td>
                 {d.name}
+                <MaintenanceBadge w={d.in_maintenance} />
                 {d.discovered_from_router_id && (
                   <>
                     {' '}
@@ -342,6 +344,7 @@ export default function NetworkDevicesPage({ apiPath, title }) {
                 {apiPath === 'routers' && d.brand === 'fortigate' && d.last_sync_at && (
                   <button className="btn-link" onClick={() => setSyncLog(syncLog?.id === d.id ? null : d)}>Sync log</button>
                 )}
+                {canEdit && <MaintenanceLink type="device" table={apiPath === 'access-points' ? 'access_points' : apiPath} id={d.id} />}
                 {canEdit && <button className="btn-link" onClick={() => openEdit(d)}>Edit</button>}
                 {canDelete && <button className="btn-link danger" onClick={() => remove(d)}>Delete</button>}
               </td>

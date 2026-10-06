@@ -134,7 +134,7 @@ export default function UsersPage() {
               <td><strong>Operator</strong></td>
               <td className="muted">
                 Everything a Viewer can, plus day-to-day actions: add devices, monitors and UPS units, start network
-                scans and patch runs, renew licences, reveal stored passwords.
+                scans and patch runs, schedule maintenance windows, renew licences, reveal stored passwords.
               </td>
               <td className="muted">
                 Delete anything, manage connections and credentials (hypervisors, FortiGate API tokens), change
