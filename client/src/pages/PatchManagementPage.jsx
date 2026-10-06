@@ -395,7 +395,14 @@ function GuestStatusBadge({ lastRun }) {
     cancelled: ['', 'Cancelled'],
   };
   const [cls, label] = map[lastRun.status] || ['', lastRun.status];
-  return <span className={`status-badge ${cls}`}>{label}</span>;
+  return (
+    <>
+      <span className={`status-badge ${cls}`}>{label}</span>
+      {lastRun.reboot_required === true && lastRun.status !== 'running' && (
+        <span className="status-badge status-degraded" style={{ marginLeft: 6 }} title="The machine has to be restarted to finish applying updates">Restart required</span>
+      )}
+    </>
+  );
 }
 
 function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
@@ -403,6 +410,7 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
   const [output, setOutput] = useState(run.apply_output || '');
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState(null);
+  const [pauseUpdaters, setPauseUpdaters] = useState(true);
   const outputRef = useRef(null);
 
   useEffect(() => {
@@ -421,7 +429,9 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
       }
     },
     'patch:complete': (data) => {
-      if (data.runId === run.id) setRun((r) => ({ ...r, status: data.status }));
+      if (data.runId !== run.id) return;
+      setRun((r) => ({ ...r, status: data.status }));
+      api.get(`/patch-management/runs/${run.id}`).then((d) => setRun(d.run)).catch(() => {});
     },
   });
 
@@ -447,7 +457,7 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
     setApproving(true);
     setError(null);
     try {
-      await api.post(`/patch-management/runs/${run.id}/approve`);
+      await api.post(`/patch-management/runs/${run.id}/approve`, { pauseUpdaters: pauseUpdaters && (run.blockers?.updaters?.length || 0) > 0 });
       setRun((r) => ({ ...r, status: 'running' }));
     } catch (err) {
       setError(err.message);
@@ -469,7 +479,7 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
     <section className="card patch-active-panel">
       <div className="page-header-row">
         <h2>
-          {run.vm_name || `#${run.vmid}`} — <GuestStatusBadge lastRun={{ status: run.status, packages: run.packages_affected?.length || 0 }} />
+          {run.vm_name || `#${run.vmid}`} — <GuestStatusBadge lastRun={{ status: run.status, packages: run.packages_affected?.length || 0, reboot_required: run.reboot_required }} />
         </h2>
         <button className="icon-btn" onClick={onClose}><X size={16} /></button>
       </div>
@@ -494,6 +504,25 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
           ) : (
             <p className="success">No packages need updating — system is up to date.</p>
           )}
+          {run.status === 'awaiting_approval' && run.packages_affected?.length > 0 && (run.blockers?.locks?.length > 0 || run.blockers?.updaters?.length > 0) && (
+            <div className="patch-blockers">
+              {run.blockers.locks.length > 0 && (
+                <p>
+                  <strong>{run.blockers.locks.map((l) => `${l.name} (PID ${l.pid})`).join(', ')}</strong> is using the package manager right now. InfraLoom
+                  waits for it to finish (up to 10 minutes) before updating, and never stops it — killing apt or dpkg mid-write corrupts the package database.
+                </p>
+              )}
+              {run.blockers.updaters.length > 0 && (
+                <label className="checkbox-row">
+                  <input type="checkbox" checked={pauseUpdaters} onChange={(e) => setPauseUpdaters(e.target.checked)} />
+                  <span>
+                    Pause the automatic updaters during this update ({run.blockers.updaters.map((u) => u.replace(/\.(service|timer)$/, '')).join(', ')}) so they cannot
+                    start in the middle of it. They are started again afterwards, even if the update fails.
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
           {canApprove && run.status === 'awaiting_approval' && run.packages_affected?.length > 0 && (
             <div className="form-row">
               <button onClick={approve} disabled={approving}><Check size={14} /> {approving ? 'Starting...' : 'Approve & apply'}</button>
@@ -501,6 +530,23 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
             </div>
           )}
         </>
+      )}
+
+      {run.status === 'failed' && run.failure_reason && (
+        <div className="patch-diagnosis">
+          <strong>{run.failure_reason.title}</strong>
+          {run.failure_reason.detail && <span className="muted"> — {run.failure_reason.detail}</span>}
+          <p>{run.failure_reason.hint}</p>
+        </div>
+      )}
+      {run.status !== 'running' && run.reboot_required === true && (
+        <div className="patch-restart">
+          <strong>This machine needs a restart</strong> to finish applying updates.
+          {run.reboot_packages?.length > 0 && <span className="muted"> {run.reboot_packages.slice(0, 6).join(', ')}</span>}
+        </div>
+      )}
+      {run.paused_units?.length > 0 && run.status !== 'running' && (
+        <p className="muted">Paused during this run and started again afterwards: {run.paused_units.join(', ')}.</p>
       )}
 
       {(run.status === 'running' || run.status === 'completed' || run.status === 'failed') && (
