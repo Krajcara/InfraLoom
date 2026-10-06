@@ -1,6 +1,8 @@
 'use strict';
 
 const db = require('../db/database');
+const inspect = require('../lib/patchInspect');
+const { diagnose } = require('../lib/patchDiagnosis');
 const { execInVM, getOsInfo } = require('../lib/qemuExec');
 const { execInLXC } = require('../lib/pctExec');
 const { execInGuest } = require('../lib/guestSshExec');
@@ -157,7 +159,9 @@ try {
 // One line of plain POSIX sh with no single quotes: it is wrapped differently by each transport.
 const DEBIAN_UPGRADE = [
   'export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a',
-  'O="-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"',
+  // DPkg::Lock::Timeout: apt waits for the dpkg lock (up to 2 min) instead of failing the moment something else holds it —
+  // covers the race between InfraLoom's own check and the start of apt. (apt-get update uses another lock, see waitForPackageManagers.)
+  'O="-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold -o DPkg::Lock::Timeout=120"',
   // apt refuses to run when dpkg left a journal in /var/lib/dpkg/updates (the exact "dpkg was
   // interrupted" error); half-configured packages (dpkg --audit) are the other flavour of the same problem.
   'if [ -n "$(dpkg --audit 2>/dev/null)" ] || ls /var/lib/dpkg/updates 2>/dev/null | grep -q "^[0-9][0-9]*$"',
@@ -270,6 +274,15 @@ async function runDryRun({ connectionId, conn, node, guestType, vmid, vmName, gu
   const packages = (parsers[osFamily] || parseWindowsDryRun)(r.stdout);
   const status = packages.length === 0 ? 'up_to_date' : 'awaiting_approval';
 
+  // Best effort: who is using the package manager right now, which automatic updaters run, does it already need a restart?
+  // Never lets a failed look fail the check itself.
+  let seen = null;
+  if (inspect.INSPECT[osFamily]) {
+    try {
+      seen = inspect.parseInspect((await execFor(conn, guestType, node, vmid, inspect.INSPECT[osFamily], { timeoutMs: 20000, osFamily, guestHost })).stdout);
+    } catch { /* leave it unknown */ }
+  }
+
   const row = db
     .prepare(
       `INSERT INTO patch_runs (connection_id, node, guest_type, vmid, vm_name, guest_host, os_family, status, packages_affected, dry_run_output, triggered_by, completed_at)
@@ -277,13 +290,80 @@ async function runDryRun({ connectionId, conn, node, guestType, vmid, vmName, gu
     )
     .run(connectionId, node, guestType, String(vmid), vmName || null, guestHost || null, osFamily, status, JSON.stringify(packages), r.stdout.slice(-20000), triggeredBy);
 
+  if (seen && seen.complete) {
+    db.prepare('UPDATE patch_runs SET reboot_required = ?, reboot_packages = ?, blockers = ? WHERE id = ?').run(
+      seen.reboot == null ? null : seen.reboot ? 1 : 0,
+      JSON.stringify(seen.rebootPackages),
+      osFamily === 'debian' ? JSON.stringify({ locks: seen.locks, updaters: seen.updaters }) : null,
+      row.lastInsertRowid
+    );
+  }
   return db.prepare('SELECT * FROM patch_runs WHERE id = ?').get(row.lastInsertRowid);
 }
+
+/** The part of an apply that talks to the guest, with the guest reached through `exec(command, opts)` — so the whole
+ * sequence can be exercised against a local shell. In order:
+ *   1. (Debian) wait while another package manager holds the apt/dpkg locks. It is never stopped or killed — killing a
+ *      running dpkg is exactly what leaves the package database "interrupted".
+ *   2. optionally pause the machine's automatic updaters (unattended-upgrades, PackageKit, the apt-daily timers) so they
+ *      cannot start in the middle of our run;
+ *   3. the upgrade itself;
+ *   4. ALWAYS give the paused updaters back — also when the upgrade failed or threw. */
+async function applyOnGuest(run, { pauseUpdaters = false, onPaused = () => {}, lockWaitMs = 600000, lockPollMs = 10000 } = {}, { exec, emit }) {
+  const cmd = APPLY_COMMANDS[run.os_family];
+  if (!cmd) throw new Error(`No apply command for OS family: ${run.os_family}`);
+  const pre = [];
+  const post = [];
+  const say = (list, text) => { list.push(text); emit(text); };
+  let paused = [];
+
+  try {
+    if (run.os_family === 'debian') {
+      await inspect.waitForPackageManagers({ exec, emit: (t) => say(pre, t), timeoutMs: lockWaitMs, intervalMs: lockPollMs });
+      if (pauseUpdaters) {
+        const seen = inspect.parseInspect((await exec(inspect.INSPECT.debian)).stdout);
+        if (seen.updaters.length) {
+          const stopped = await exec(inspect.unitsCommand('stop', seen.updaters));
+          // Remember them whatever the result: if the stop half-worked we still start every one of them again afterwards
+          // (starting something that is already running is harmless).
+          paused = seen.updaters;
+          onPaused(paused);
+          if (stopped.exitCode) say(pre, `[InfraLoom] WARNING: pausing ${paused.join(', ')} reported an error (exit ${stopped.exitCode}) — continuing with the update anyway\n`);
+          else say(pre, `[InfraLoom] paused for this update: ${paused.join(', ')} (they are started again afterwards)\n`);
+        } else {
+          say(pre, '[InfraLoom] no automatic updater is running on this machine — nothing to pause\n');
+        }
+      }
+    }
+    const result = await exec(cmd, { timeoutMs: run.os_family === 'windows' ? 3600000 : 1800000, onOutput: emit });
+    return { result, pre, post, paused };
+  } finally {
+    if (paused.length) {
+      try {
+        const back = await exec(inspect.unitsCommand('start', paused));
+        // SSH and the QEMU agent report a failed command as an exit code, not as an exception.
+        if (back.exitCode) throw new Error(`exit code ${back.exitCode}${(back.stderr || back.stdout || '').trim() ? `: ${(back.stderr || back.stdout).trim().slice(0, 150)}` : ''}`);
+        say(post, `\n[InfraLoom] started again: ${paused.join(', ')}\n`);
+      } catch (err) {
+        say(post, `\n[InfraLoom] WARNING: could not start ${paused.join(', ')} again (${err.message}). Start them on the machine: systemctl start ${paused.join(' ')}\n`);
+      }
+    }
+  }
+}
+
+function notifyPatch(event, message) {
+  try {
+    Promise.resolve(require('./notificationService').notify(message, event)).catch(() => {});
+  } catch { /* a notification problem must never change the outcome of a patch run */ }
+}
+
+const nameOf = (run) => run.vm_name || `#${run.vmid}`;
+const describe = (d) => (d ? `${d.title}${d.detail ? ` (${d.detail})` : ''}` : null);
 
 /** Applies the previously-approved patch run, streaming output over
  * Socket.io ('patch:output', { runId, chunk }) as the guest-agent poll (or
  * SSH stream) yields new data. */
-async function applyPatches(runId, approvedBy) {
+async function applyPatches(runId, approvedBy, options = {}, deps = {}) {
   const run = db.prepare('SELECT * FROM patch_runs WHERE id = ?').get(runId);
   if (!run) throw new Error('Patch run not found');
   if (run.status !== 'awaiting_approval') throw new Error(`Run is not awaiting approval (status: ${run.status})`);
@@ -304,24 +384,50 @@ async function applyPatches(runId, approvedBy) {
     if (io) io.emit('patch:output', { runId, chunk });
     db.prepare('UPDATE patch_runs SET apply_output = ? WHERE id = ?').run(accumulated, runId);
   };
+  // deps.exec lets a test point the whole sequence at a local shell; in production it is always the real transport.
+  const exec = deps.exec || ((command, opts = {}) =>
+    execFor(conn, run.guest_type, run.node, run.vmid, command, { timeoutMs: 30000, osFamily: run.os_family, guestHost: run.guest_host, ...opts }));
 
   try {
-    const cmd = APPLY_COMMANDS[run.os_family];
-    if (!cmd) throw new Error(`No apply command for OS family: ${run.os_family}`);
-    const result = await execFor(conn, run.guest_type, run.node, run.vmid, cmd, { timeoutMs: run.os_family === 'windows' ? 3600000 : 1800000, onOutput, osFamily: run.os_family, guestHost: run.guest_host });
+    const { result, pre, post } = await applyOnGuest(
+      run,
+      { pauseUpdaters: options.pauseUpdaters === true, lockWaitMs: options.lockWaitMs, lockPollMs: options.lockPollMs, onPaused: (units) => db.prepare('UPDATE patch_runs SET paused_units = ? WHERE id = ?').run(JSON.stringify(units), runId) },
+      { exec, emit: onOutput }
+    );
 
     const exitMatch = result.stdout.match(/___EXIT_(\d+)___/);
     const exitCode = exitMatch ? parseInt(exitMatch[1], 10) : result.exitCode;
     const status = exitCode === 0 ? 'completed' : 'failed';
+    const output = (pre.join('') + result.stdout + post.join('')).slice(-200000);
 
-    db.prepare("UPDATE patch_runs SET status=?, completed_at=datetime('now'), apply_output=? WHERE id=?").run(status, result.stdout.slice(-200000), runId);
+    // After a successful run: does the machine now need a restart? (best effort)
+    let reboot = null;
+    if (status === 'completed' && inspect.INSPECT[run.os_family]) {
+      try { reboot = inspect.parseInspect((await exec(inspect.INSPECT[run.os_family], { timeoutMs: 20000 })).stdout); } catch { /* unknown */ }
+    }
+    const why = status === 'failed' ? diagnose(output) : null;
+
+    db.prepare(
+      `UPDATE patch_runs SET status=?, completed_at=datetime('now'), apply_output=?, error=?, failure_reason=?,
+         reboot_required=COALESCE(?, reboot_required), reboot_packages=COALESCE(?, reboot_packages) WHERE id=?`
+    ).run(
+      status, output, why ? why.title : status === 'failed' ? `Update exited with code ${exitCode}` : null, why ? JSON.stringify(why) : null,
+      reboot && reboot.complete && reboot.reboot != null ? (reboot.reboot ? 1 : 0) : null,
+      reboot && reboot.complete && reboot.reboot != null ? JSON.stringify(reboot.rebootPackages) : null,
+      runId
+    );
     if (io) io.emit('patch:complete', { runId, status });
     try { require('./maintenanceService').endForPatchRun(runId); } catch { /* alerts resume when the safety limit passes */ }
+
+    if (status === 'failed') notifyPatch('patch_failed', `Patch run failed on ${nameOf(run)}: ${describe(why) || `the update exited with code ${exitCode}`}.`);
+    else if (reboot?.reboot === true) notifyPatch('patch_reboot_required', `${nameOf(run)} needs a restart to finish applying updates${reboot.rebootPackages.length ? ` (${reboot.rebootPackages.slice(0, 5).join(', ')})` : ''}.`);
     return { status };
   } catch (err) {
-    db.prepare("UPDATE patch_runs SET status='failed', error=?, completed_at=datetime('now') WHERE id=?").run(err.message, runId);
+    const why = err.diagnosis || diagnose(`${accumulated}\n${err.message}`);
+    db.prepare("UPDATE patch_runs SET status='failed', error=?, failure_reason=?, completed_at=datetime('now') WHERE id=?").run(err.message, why ? JSON.stringify(why) : null, runId);
     if (io) io.emit('patch:complete', { runId, status: 'failed', error: err.message });
     try { require('./maintenanceService').endForPatchRun(runId); } catch { /* alerts resume when the safety limit passes */ }
+    notifyPatch('patch_failed', `Patch run failed on ${nameOf(run)}: ${describe(why) || err.message}.`);
     throw err;
   }
 }
@@ -330,4 +436,4 @@ function cancelRun(runId) {
   db.prepare("UPDATE patch_runs SET status='cancelled', completed_at=datetime('now') WHERE id=? AND status='awaiting_approval'").run(runId);
 }
 
-module.exports = { runDryRun, applyPatches, cancelRun, detectOsFamily, resolveSshCreds, resolveGuestSshCreds };
+module.exports = { runDryRun, applyPatches, applyOnGuest, cancelRun, detectOsFamily, resolveSshCreds, resolveGuestSshCreds };

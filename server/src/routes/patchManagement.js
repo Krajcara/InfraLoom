@@ -12,6 +12,21 @@ const esxi = require('../lib/esxiClient');
 const router = express.Router();
 router.use(requireAuth);
 
+const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { return null; } };
+/** A run as the client sees it: JSON columns parsed, restart flag as true/false/null. */
+function shapeRun(r) {
+  return {
+    ...r,
+    packages_affected: JSON.parse(r.packages_affected || '[]'),
+    blockers: parseJson(r.blockers),
+    paused_units: parseJson(r.paused_units) || [],
+    failure_reason: parseJson(r.failure_reason),
+    reboot_packages: parseJson(r.reboot_packages) || [],
+    reboot_required: r.reboot_required == null ? null : !!r.reboot_required,
+  };
+}
+
+
 function getConnection(id) {
   return db.prepare('SELECT * FROM hypervisor_connections WHERE id = ?').get(id);
 }
@@ -74,7 +89,7 @@ router.get('/overview', async (req, res) => {
         const key = `${val.connectionId}:${n.node}:${g.vmid}`;
         const lastRun = latestByGuest.get(key);
         g.lastRun = lastRun
-          ? { id: lastRun.id, status: lastRun.status, os_family: lastRun.os_family, packages: JSON.parse(lastRun.packages_affected || '[]').length, checked_at: lastRun.created_at }
+          ? { id: lastRun.id, status: lastRun.status, os_family: lastRun.os_family, packages: JSON.parse(lastRun.packages_affected || '[]').length, reboot_required: lastRun.reboot_required == null ? null : !!lastRun.reboot_required, checked_at: lastRun.created_at }
           : null;
       });
     });
@@ -143,7 +158,7 @@ router.post('/bulk-dry-run', requireRole('superadmin', 'admin', 'operator'), asy
           guestHost: g.ip, hintOs: g.os, triggeredBy: req.user.username,
         });
         completed++;
-        if (io) io.emit('patch:bulk-progress', { batchId, completed, total: guests.length, guest: g, run: { ...run, packages_affected: JSON.parse(run.packages_affected || '[]') } });
+        if (io) io.emit('patch:bulk-progress', { batchId, completed, total: guests.length, guest: g, run: shapeRun(run) });
       } catch (err) {
         completed++;
         if (io) io.emit('patch:bulk-progress', { batchId, completed, total: guests.length, guest: g, error: err.message });
@@ -174,7 +189,7 @@ router.post('/connections/:id/:node/:type/:vmid/dry-run', requireRole('superadmi
       user_id: req.user.id, username: req.user.username, action: 'patch.dry_run',
       module: 'patch_management', entity_id: run.id, details: { node, type, vmid, os_family: run.os_family }, ip_address: req.ip,
     });
-    res.json({ run: { ...run, packages_affected: JSON.parse(run.packages_affected || '[]') } });
+    res.json({ run: shapeRun(run) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -189,11 +204,11 @@ router.post('/runs/:id/approve', requireRole('superadmin', 'admin'), async (req,
   res.json({ ok: true, message: 'Patch run approved and started' });
   writeAuditLog({
     user_id: req.user.id, username: req.user.username, action: 'patch.approve',
-    module: 'patch_management', entity_id: run.id, details: { vmid: run.vmid, os_family: run.os_family }, ip_address: req.ip,
+    module: 'patch_management', entity_id: run.id, details: { vmid: run.vmid, os_family: run.os_family, pause_updaters: req.body?.pauseUpdaters === true }, ip_address: req.ip,
   });
 
   try {
-    await patchService.applyPatches(run.id, req.user.username);
+    await patchService.applyPatches(run.id, req.user.username, { pauseUpdaters: req.body?.pauseUpdaters === true });
   } catch (err) {
     console.error('[PatchManagement] Apply failed:', err.message);
   }
@@ -209,7 +224,7 @@ router.post('/runs/:id/cancel', requireRole('superadmin', 'admin', 'operator'), 
 router.get('/runs/:id', (req, res) => {
   const run = db.prepare('SELECT * FROM patch_runs WHERE id = ?').get(req.params.id);
   if (!run) return res.status(404).json({ error: 'Not found' });
-  res.json({ run: { ...run, packages_affected: JSON.parse(run.packages_affected || '[]') } });
+  res.json({ run: shapeRun(run) });
 });
 
 // GET /api/patch-management/runs?connection_id=&status=&limit=
@@ -229,7 +244,7 @@ router.get('/runs', (req, res) => {
   params.push(Math.min(parseInt(limit, 10) || 50, 200));
 
   const runs = db.prepare(sql).all(...params);
-  res.json({ runs: runs.map((r) => ({ ...r, packages_affected: JSON.parse(r.packages_affected || '[]') })) });
+  res.json({ runs: runs.map(shapeRun) });
 });
 
 module.exports = router;

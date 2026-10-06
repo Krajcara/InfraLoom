@@ -28,7 +28,7 @@ hypervisor guests, applying OS updates (Patch Management), Wake-on-LAN, and an i
 | **MyIP** | Public IP lookup from several sources, IP query, DNS resolver check (UDP and DoH) |
 | **Hypervisors** | Proxmox VE, Hyper-V and VMware ESXi (7.0+) in one view: node and guest drill-down, usage history, connection health alerts, power actions, SSH web terminal |
 | **Network Scanner** | `arp-scan` device inventory, on-demand `nmap` deep scan, Wake-on-LAN, new/offline device alerts |
-| **Patch Management** | See pending OS updates per guest (dry run), approve, apply with live output. Debian/Ubuntu (apt), RHEL/Fedora (dnf/yum), Alpine (apk) and Windows Update, across Proxmox VMs and LXC and Hyper-V VMs |
+| **Patch Management** | See pending OS updates per guest (dry run), approve, apply with live output. Debian/Ubuntu (apt), RHEL/Fedora (dnf/yum), Alpine (apk) and Windows Update, across Proxmox VMs and LXC and Hyper-V VMs. Waits for other package managers, explains why a run failed, and tells you when a machine needs a restart — see [What a patch run does](#what-a-patch-run-does) |
 
 ### Maintenance windows
 
@@ -57,7 +57,7 @@ back, and an amber banner on every page reminds you that alerts are muted.
 
 In-app bell with live toasts, plus Telegram, Slack, Discord, ntfy, Pushover and e-mail. Every event type
 (monitor down/up, SSL/licence/Entra expiry, new or offline network device, hypervisor unreachable, UPS on battery,
-low battery, power restored, UPS offline/online) can be switched per channel, with quiet hours, and muted per target by a
+low battery, power restored, UPS offline/online, patch run failed, machine needs a restart after patching) can be switched per channel, with quiet hours, and muted per target by a
 [maintenance window](#maintenance-windows).
 
 ### Status pages
@@ -224,6 +224,27 @@ Add connections from **Hypervisors → New connection**. What each platform need
 - Standard root/administrative credentials; no extra host setup.
 - Host-level CPU/RAM utilisation is not exposed by this API, so those fields show "—".
 - Patch management for ESXi guests is not implemented.
+
+### What a patch run does
+
+On **Debian/Ubuntu** a run is more than `apt-get upgrade`:
+
+1. **It waits for other package managers.** If unattended-upgrades, PackageKit or a second `apt` holds the apt/dpkg locks,
+   InfraLoom waits for it to finish (up to 10 minutes) and says so in the console. It never stops or kills it — killing a
+   running `dpkg` is what leaves the package database "interrupted". When the check finds such a process, the approval panel shows it.
+2. **It can pause the automatic updaters** (optional, ticked by default when any is running): `unattended-upgrades`,
+   PackageKit and the `apt-daily` timers are stopped for the duration of the run so they cannot start in the middle of it, and
+   **started again afterwards — also when the update fails.** Those four are the only things InfraLoom will ever stop. If
+   starting them again fails, the console prints the exact `systemctl start` command to run. (If InfraLoom itself is restarted
+   during a run, for example by an update, it cannot start them again; they come back at the machine's next boot, or start them by hand.)
+3. **It repairs an interrupted `dpkg`** (`dpkg --configure -a`) before upgrading, keeps existing configuration files, and lets apt wait up to two minutes for the dpkg lock.
+4. **When a run fails, it says why** — above the console: another package manager was running, `dpkg` interrupted, a package's
+   install script failed, a service would not restart, disk full, repository/clock problem, mirror unreachable, broken packages —
+   with a hint, and a **Patch run failed** notification. The raw output is still there.
+5. **After a successful run it checks whether the machine needs a restart** — Ubuntu's `reboot-required` flag, or a newer kernel of
+   the running flavour on plain Debian; on RHEL/Fedora `needs-restarting -r` if installed. A **Restart required** badge appears
+   in the guest list and you get a **Machine needs a restart** notification. InfraLoom does not restart the machine for you.
+   Alpine and Windows guests are not checked.
 
 ### Patch Management and the management SSH key
 

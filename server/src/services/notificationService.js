@@ -20,6 +20,8 @@ const EVENT_TYPES = [
   { id: 'ups_power_restored', label: 'UPS mains power restored' },
   { id: 'ups_offline', label: 'UPS not responding to SNMP' },
   { id: 'ups_online', label: 'UPS reachable again' },
+  { id: 'patch_failed', label: 'Patch run failed' },
+  { id: 'patch_reboot_required', label: 'Machine needs a restart after patching' },
 ];
 
 const CHANNEL_NAMES = ['app', 'telegram', 'slack', 'discord', 'ntfy', 'pushover', 'email'];
@@ -212,6 +214,8 @@ const SEVERITY_MAP = {
   ups_power_restored: 'info',
   ups_offline: 'critical',
   ups_online: 'info',
+  patch_failed: 'warning',
+  patch_reboot_required: 'warning',
   network_device_offline: 'warning',
   network_new_device: 'info',
   ssl_expiring: 'warning',

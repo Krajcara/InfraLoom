@@ -512,6 +512,14 @@ for (const table of ['routers', 'switches', 'access_points']) {
   db.exec(`UPDATE monitors SET hidden = 1 WHERE id IN (SELECT monitor_id FROM ${table} WHERE monitor_id IS NOT NULL) AND hidden = 0`);
 }
 
+// What InfraLoom learned about a guest around a patch run: who held the package manager, whether it needs a restart,
+// which automatic updaters it paused (and must give back), and why a failed run failed.
+ensureColumn('patch_runs', 'reboot_required', 'INTEGER');   // 1 = restart needed, 0 = not, NULL = unknown / not checked
+ensureColumn('patch_runs', 'reboot_packages', 'TEXT');      // JSON array of what asked for the restart
+ensureColumn('patch_runs', 'blockers', 'TEXT');             // JSON { locks: [{pid,name}], updaters: [unit] } seen at check time
+ensureColumn('patch_runs', 'paused_units', 'TEXT');         // JSON array of updater units stopped for this run (started again afterwards)
+ensureColumn('patch_runs', 'failure_reason', 'TEXT');       // JSON { code, title, detail, hint }
+
 // ── Maintenance windows: mute state-change alerts of a target for a period ──
 db.exec(`
   CREATE TABLE IF NOT EXISTS maintenance_windows (
