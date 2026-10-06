@@ -532,6 +532,7 @@ function ActiveRunPanel({ run: initialRun, canApprove, onClose }) {
         </>
       )}
 
+      {run.status === 'failed' && run.error && !run.failure_reason && <p className="error">{run.error}</p>}
       {run.status === 'failed' && run.failure_reason && (
         <div className="patch-diagnosis">
           <strong>{run.failure_reason.title}</strong>
