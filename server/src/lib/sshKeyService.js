@@ -12,9 +12,10 @@ const PUB_KEY_PATH = `${KEY_PATH}.pub`;
 fs.mkdirSync(SSH_DIR, { recursive: true, mode: 0o700 });
 
 /** Generates InfraLoom's management SSH keypair on first use (ed25519 —
- * small, fast, the modern default) and reuses it after that. This one
- * keypair is injected into every new VM/LXC's authorized_keys so
- * InfraLoom can reach guests it creates without a manual credential step. */
+ * small, fast, the modern default) and reuses it after that. It lets Patch
+ * Management log in to guests with a key instead of a stored password
+ * ("Install management key" in Patch Management puts the public half into a
+ * guest's authorized_keys). */
 function ensureManagementKey() {
   if (!fs.existsSync(KEY_PATH)) {
     execFileSync('ssh-keygen', ['-t', 'ed25519', '-f', KEY_PATH, '-N', '', '-C', 'infraloom-managed-key'], { stdio: 'pipe' });
@@ -23,19 +24,10 @@ function ensureManagementKey() {
   return { privateKeyPath: KEY_PATH, publicKey: fs.readFileSync(PUB_KEY_PATH, 'utf8').trim() };
 }
 
-/** SHA-512 crypt hash of a plaintext password, for cloud-init's chpasswd
- * module — avoids putting the plaintext password into the cloud-init
- * snippet file (which gets uploaded to and stored on the Proxmox host). */
-function hashPassword(plaintext) {
-  return execFileSync('openssl', ['passwd', '-6', plaintext]).toString('utf8').trim();
-}
-
 /** Installs InfraLoom's management public key onto an already-reachable
  * guest (one with an existing saved password) by connecting once with
- * that password and appending to ~/.ssh/authorized_keys — the same
- * result cloud-init gives a freshly-created VM, but for a guest InfraLoom
- * didn't create. Requires the ssh2 client, passed in by the caller to
- * avoid a hard dependency here. */
+ * that password and appending to ~/.ssh/authorized_keys. Requires the ssh2
+ * client, passed in by the caller to avoid a hard dependency here. */
 async function pushKeyToGuest(SSHClient, creds) {
   if (!creds.host || !creds.username || !creds.password) {
     throw new Error('Need an existing host, username, and password saved for this guest first');
@@ -79,4 +71,4 @@ async function pushKeyToGuest(SSHClient, creds) {
   });
 }
 
-module.exports = { ensureManagementKey, hashPassword, pushKeyToGuest, KEY_PATH };
+module.exports = { ensureManagementKey, pushKeyToGuest, KEY_PATH };

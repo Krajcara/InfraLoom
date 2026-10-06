@@ -311,20 +311,6 @@ async function fetchNodeDetail(conn, nodeName) {
   };
 }
 
-/** @deprecated kept for the aggregated dashboard-summary endpoint, which
- * only needs counts — prefer fetchNodesSummary + fetchNodeDetail for the UI. */
-async function fetchNodes(conn) {
-  const summary = await fetchNodesSummary(conn);
-  const withDetail = await Promise.all(
-    summary.map(async (node) => {
-      if (node.status !== 'online') return { ...node, vms: [], lxc: [], storages: [] };
-      const detail = await fetchNodeDetail(conn, node.node);
-      return { ...node, ...detail };
-    })
-  );
-  return withDetail;
-}
-
 async function powerAction(conn, node, type, vmid, action) {
   const baseUrl = conn.url;
   const token = buildToken(conn);
@@ -335,93 +321,6 @@ async function powerAction(conn, node, type, vmid, action) {
   );
 }
 
-/** VMs already marked as a Proxmox template (the "golden image" a new VM
- * gets cloned from) — used to populate the template picker when creating
- * a new VM. */
-async function listVmTemplates(conn, node) {
-  const baseUrl = conn.url;
-  const token = buildToken(conn);
-  const vms = await pveGet(baseUrl, `/nodes/${node}/qemu`, token);
-  return vms.filter((v) => v.template === 1).map((v) => ({ vmid: v.vmid, name: v.name }));
-}
-
-/** Storages on a node that can hold VM/container disks (content type
- * "images" for VM disks, "rootdir" for LXC). */
-async function listStorages(conn, node) {
-  const baseUrl = conn.url;
-  const token = buildToken(conn);
-  const storages = await pveGet(baseUrl, `/nodes/${node}/storage`, token);
-  return storages
-    .filter((s) => (s.content || '').includes('images') || (s.content || '').includes('rootdir'))
-    .map((s) => ({
-      storage: s.storage, type: s.type, content: s.content,
-      total_gb: s.total ? (s.total / 1073741824).toFixed(1) : null,
-      used_gb: s.used ? (s.used / 1073741824).toFixed(1) : null,
-      avail_gb: s.avail ? (s.avail / 1073741824).toFixed(1) : null,
-      usage_pct: s.total && s.used ? Math.round((s.used / s.total) * 100) : null,
-    }));
-}
-
-/** LXC container templates already downloaded to a storage (ready to use
- * immediately — no download wait). */
-async function listDownloadedLxcTemplates(conn, node, storage) {
-  const baseUrl = conn.url;
-  const token = buildToken(conn);
-  const content = await pveGet(baseUrl, `/nodes/${node}/storage/${storage}/content?content=vztmpl`, token);
-  return content.map((c) => ({ volid: c.volid, size: c.size }));
-}
-
-/** The full official catalog of LXC templates Proxmox can download
- * on-demand (`pveam` list, exposed via the node's aplinfo endpoint) —
- * this is what a "browse available templates" picker shows, distinct
- * from the (usually much shorter) already-downloaded list above. */
-async function listAvailableLxcTemplates(conn, node) {
-  const baseUrl = conn.url;
-  const token = buildToken(conn);
-  const list = await pveGet(baseUrl, `/nodes/${node}/aplinfo`, token);
-  return list.map((t) => ({ template: t.template, section: t.section, description: t.headline || t.description, os: t.os }));
-}
-
-/** The next unused VMID, starting the search from Proxmox's own configured
- * default (usually 100) — used so template creation doesn't need to guess
- * or hardcode an ID that might collide with something already in use. */
-async function nextFreeVmid(conn) {
-  const baseUrl = conn.url;
-  const token = buildToken(conn);
-  const result = await pveGet(baseUrl, '/cluster/nextid', token);
-  return parseInt(result, 10);
-}
-
-/** Deletes a VM (or a template, which is just a VM flagged template=1) —
- * this is a Proxmox background task, so the delete call returns quickly
- * but actual removal happens shortly after. */
-async function deleteVm(conn, node, vmid) {
-  const baseUrl = conn.url;
-  const token = buildToken(conn);
-  return axios({
-    method: 'delete',
-    url: `${baseUrl}/api2/json/nodes/${node}/qemu/${vmid}`,
-    headers: { Authorization: `PVEAPIToken=${token}` },
-    httpsAgent,
-    timeout: 15000,
-  });
-}
-
-/** Every VMID already in use on a node (VMs and containers both — the ID
- * space is shared between them in Proxmox), for validating a manually
- * entered VMID before attempting to use it. */
-async function listUsedVmids(conn, node) {
-  const baseUrl = conn.url;
-  const token = buildToken(conn);
-  const [vms, lxc] = await Promise.all([
-    pveGet(baseUrl, `/nodes/${node}/qemu`, token).catch(() => []),
-    pveGet(baseUrl, `/nodes/${node}/lxc`, token).catch(() => []),
-  ]);
-  return [...vms, ...lxc].map((g) => g.vmid);
-}
-
 module.exports = {
-  fetchNodes, fetchNodesSummary, fetchNodeDetail, listGuestsBasic, powerAction, buildToken,
-  listVmTemplates, listStorages, listDownloadedLxcTemplates, listAvailableLxcTemplates, nextFreeVmid, deleteVm,
-  listUsedVmids,
+  fetchNodesSummary, fetchNodeDetail, listGuestsBasic, powerAction, buildToken,
 };

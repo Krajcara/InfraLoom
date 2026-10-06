@@ -489,101 +489,23 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_hv_node_metrics_conn_node ON hypervisor_node_metrics(connection_id, node);
 `);
 
-// ── Automation: Ansible playbooks ─────────────────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS ansible_playbooks (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    name         TEXT NOT NULL,
-    description  TEXT,
-    content      TEXT NOT NULL,
-    is_builtin   INTEGER DEFAULT 0,
-    created_by   TEXT,
-    created_at   TEXT DEFAULT (datetime('now')),
-    updated_at   TEXT DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS ansible_runs (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    playbook_id   INTEGER,
-    playbook_name TEXT NOT NULL,
-    target_guests TEXT NOT NULL,  -- JSON: [{connectionId, node, vmid, name, ip}]
-    status        TEXT NOT NULL DEFAULT 'checking', -- checking | awaiting_approval | applying | completed | failed
-    check_output  TEXT,
-    apply_output  TEXT,
-    error         TEXT,
-    triggered_by  TEXT,
-    created_at    TEXT DEFAULT (datetime('now')),
-    completed_at  TEXT,
-    FOREIGN KEY (playbook_id) REFERENCES ansible_playbooks(id) ON DELETE SET NULL
-  );
-`);
-ensureColumn('ansible_runs', 'playbook_ids', 'TEXT'); // JSON array of playbook ids run in this batch — supersedes the single playbook_id/playbook_name pair for new runs
 ensureColumn('licences', 'billing_period', 'TEXT'); // 'monthly' | 'yearly' | NULL (not set) — decides how early expiry warnings start
-ensureColumn('ansible_playbooks', 'port', 'TEXT'); // informational only — which port the installed app listens on, shown in the list
 
-// ── Kubernetes (Phase 1 — connect + monitor existing clusters) ───────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS k8s_clusters (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    name                TEXT NOT NULL,
-    connection_id       INTEGER NOT NULL,  -- hypervisor connection used to provision the VMs
-    node_config         TEXT NOT NULL,     -- JSON: {node, storage, templateVmid, cores, memoryMb, diskGb, network, controlPlaneCount, workerCount}
-    status              TEXT NOT NULL DEFAULT 'provisioning', -- provisioning | ready | failed
-    k8s_connection_id   INTEGER,           -- FK to k8s_connections once the cluster is registered for monitoring
-    progress_log        TEXT,              -- JSON array of {step, status, message, at}
-    error               TEXT,
-    triggered_by        TEXT,
-    created_at          TEXT DEFAULT (datetime('now')),
-    completed_at        TEXT,
-    FOREIGN KEY (k8s_connection_id) REFERENCES k8s_connections(id) ON DELETE SET NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS k8s_cluster_nodes (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    cluster_id  INTEGER NOT NULL,
-    role        TEXT NOT NULL,  -- control-plane | worker
-    vmid        INTEGER,
-    name        TEXT,
-    ip_address  TEXT,
-    status      TEXT DEFAULT 'pending', -- pending | provisioning | installed | ready | failed
-    error       TEXT,
-    FOREIGN KEY (cluster_id) REFERENCES k8s_clusters(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS k8s_workloads (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    connection_id INTEGER NOT NULL,
-    namespace     TEXT NOT NULL DEFAULT 'default',
-    name          TEXT NOT NULL,
-    kind          TEXT NOT NULL,  -- Deployment | Service | ConfigMap | Secret | Namespace | Pod | ...
-    manifest      TEXT,           -- the raw YAML/JSON last applied, for reference
-    triggered_by  TEXT,
-    created_at    TEXT DEFAULT (datetime('now')),
-    updated_at    TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (connection_id) REFERENCES k8s_connections(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS k8s_connections (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    name          TEXT NOT NULL,
-    api_server    TEXT NOT NULL,   -- e.g. https://10.1.0.208:6443
-    token         TEXT NOT NULL,   -- read-only service account bearer token, used for monitoring
-    deployer_token TEXT,           -- separate, write-capable service account token — null until the user sets up deploy access
-    enabled       INTEGER DEFAULT 1,
-    last_status   TEXT,
-    last_checked_at TEXT,
-    created_at    TEXT DEFAULT (datetime('now')),
-    updated_at    TEXT DEFAULT (datetime('now'))
-  );
-`);
-
-// Vulnerability Scanning (OpenVAS/Greenbone) was removed — drop any tables
-// an earlier version of this app may have already created on this
-// install, so nothing orphaned is left behind.
-db.exec('DROP TABLE IF EXISTS vuln_findings');
-db.exec('DROP TABLE IF EXISTS vuln_scans');
-db.exec('DROP TABLE IF EXISTS vuln_connections');
-db.exec('DROP TABLE IF EXISTS vuln_registration_tokens');
+// InfraLoom is a monitoring tool: the Vulnerability Scanning, Kubernetes and Automation
+// (OpenTofu provisioning, VM templates, Ansible playbooks) modules were removed. Drop whatever an
+// earlier version created on this install so nothing orphaned is left behind — including stored
+// cluster tokens and the credentials kept in deployment snapshots. Children before parents.
+{
+  const REMOVED_TABLES = [
+    'vuln_findings', 'vuln_scans', 'vuln_connections', 'vuln_registration_tokens',
+    'k8s_cluster_nodes', 'k8s_workloads', 'k8s_clusters', 'k8s_connections',
+    'ansible_runs', 'ansible_playbooks', 'template_jobs', 'iac_deployments',
+  ];
+  const present = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name));
+  const dropped = REMOVED_TABLES.filter((t) => present.has(t));
+  for (const t of dropped) db.exec(`DROP TABLE IF EXISTS ${t}`);
+  if (dropped.length) console.log(`[db] Removed tables of discontinued modules: ${dropped.join(', ')}`);
+}
 
 ensureColumn('monitors', 'hidden', 'INTEGER DEFAULT 0'); // 1 = still checked normally, just not shown in the general Monitors list (used for routers/switches/APs, which show their own status on their own card)
 for (const table of ['routers', 'switches', 'access_points']) {
@@ -676,48 +598,6 @@ for (const table of ['routers', 'switches', 'access_points']) {
 }
 
 
-// ── Automation: OpenTofu-provisioned infrastructure ──────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS template_jobs (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    connection_id INTEGER NOT NULL,
-    node          TEXT NOT NULL,
-    name          TEXT NOT NULL,
-    vmid          TEXT,
-    status        TEXT NOT NULL DEFAULT 'running', -- running | completed | failed
-    output        TEXT,
-    error         TEXT,
-    triggered_by  TEXT,
-    created_at    TEXT DEFAULT (datetime('now')),
-    completed_at  TEXT,
-    FOREIGN KEY (connection_id) REFERENCES hypervisor_connections(id) ON DELETE CASCADE
-  );
-`);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS iac_deployments (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    name          TEXT NOT NULL,
-    guest_type    TEXT NOT NULL,          -- vm | lxc
-    connection_id INTEGER NOT NULL,
-    node          TEXT NOT NULL,
-    status        TEXT NOT NULL DEFAULT 'planning', -- planning | awaiting_approval | applying | completed | failed | destroyed
-    tf_vars       TEXT,                   -- JSON snapshot of the form inputs used to generate the config
-    tf_config     TEXT,                   -- the generated main.tf, for audit/reference
-    state_dir     TEXT NOT NULL,          -- this deployment's isolated working directory (holds .tfstate)
-    plan_output   TEXT,
-    apply_output  TEXT,
-    result_vmid   TEXT,                   -- populated once the real vmid is known post-apply
-    error         TEXT,
-    triggered_by  TEXT,
-    created_at    TEXT DEFAULT (datetime('now')),
-    applied_at    TEXT,
-    FOREIGN KEY (connection_id) REFERENCES hypervisor_connections(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_iac_deployments_connection ON iac_deployments(connection_id);
-  CREATE INDEX IF NOT EXISTS idx_iac_deployments_status ON iac_deployments(status);
-`);
-
 // ── Per-node SSH override for LXC patch management — a Proxmox cluster can
 // have multiple nodes with different root passwords, so one connection-level
 // credential isn't always enough. A node without a row here falls back to
@@ -784,105 +664,6 @@ const insertSetting = db.prepare(
 );
 for (const [key, value] of Object.entries(defaultSettings)) {
   insertSetting.run(key, value);
-}
-
-const builtinPlaybooks = [
-  {
-    name: 'Install Docker',
-    description: 'Installs Docker Engine + Compose plugin on a Debian/Ubuntu host via the official apt repository.',
-    content: `---
-- name: Install Docker
-  hosts: all
-  become: true
-  tasks:
-    - name: Install prerequisite packages
-      apt:
-        name: ["ca-certificates", "curl", "gnupg"]
-        state: present
-        update_cache: true
-
-    - name: Create keyrings directory
-      file:
-        path: /etc/apt/keyrings
-        state: directory
-        mode: "0755"
-
-    - name: Add Docker GPG key
-      get_url:
-        url: https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg
-        dest: /etc/apt/keyrings/docker.asc
-        mode: "0644"
-
-    - name: Add Docker apt repository
-      apt_repository:
-        repo: "deb [arch={{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable"
-        state: present
-
-    - name: Install Docker packages
-      apt:
-        name: ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"]
-        state: present
-        update_cache: true
-
-    - name: Ensure Docker is running and enabled
-      systemd:
-        name: docker
-        state: started
-        enabled: true
-`,
-  },
-  {
-    name: 'Install Node Exporter',
-    description: 'Installs the Prometheus Node Exporter monitoring agent as a systemd service (listens on :9100).',
-    content: `---
-- name: Install Node Exporter
-  hosts: all
-  become: true
-  vars:
-    node_exporter_version: "1.8.2"
-  tasks:
-    - name: Download node_exporter
-      unarchive:
-        src: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
-        dest: /tmp
-        remote_src: true
-
-    - name: Install binary
-      copy:
-        src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
-        dest: /usr/local/bin/node_exporter
-        mode: "0755"
-        remote_src: true
-
-    - name: Create systemd service
-      copy:
-        dest: /etc/systemd/system/node_exporter.service
-        content: |
-          [Unit]
-          Description=Prometheus Node Exporter
-          After=network.target
-
-          [Service]
-          User=nobody
-          ExecStart=/usr/local/bin/node_exporter
-
-          [Install]
-          WantedBy=multi-user.target
-
-    - name: Start and enable node_exporter
-      systemd:
-        name: node_exporter
-        state: started
-        enabled: true
-        daemon_reload: true
-`,
-  },
-];
-const insertBuiltinPlaybook = db.prepare(
-  'INSERT INTO ansible_playbooks (name, description, content, is_builtin) SELECT ?, ?, ?, 1 WHERE NOT EXISTS (SELECT 1 FROM ansible_playbooks WHERE name = ? AND is_builtin = 1)'
-);
-for (const pb of builtinPlaybooks) {
-  insertBuiltinPlaybook.run(pb.name, pb.description, pb.content, pb.name);
 }
 
 module.exports = db;

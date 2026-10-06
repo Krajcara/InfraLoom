@@ -97,9 +97,6 @@ app.use('/api/network-scanner', require('./routes/networkScanner'));
 app.use('/api/patch-management', require('./routes/patchManagement'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/backup', require('./routes/backup'));
-app.use('/api/automation', require('./routes/automation'));
-app.use('/api/ansible', require('./routes/ansible'));
-app.use('/api/kubernetes', require('./routes/kubernetes'));
 app.use('/api/ups', require('./routes/ups'));
 
 // ── Serve built frontend in production ──────────────────────────────────

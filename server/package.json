@@ -1,6 +1,6 @@
 {
   "name": "infraloom-server",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "main": "src/index.js",
   "scripts": {
@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "axios": "^1.7.9",
-    "js-yaml": "^4.1.0",
     "archiver": "^7.0.1",
     "better-sqlite3-multiple-ciphers": "^13.0.3",
     "decompress": "^4.2.1",

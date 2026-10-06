@@ -223,8 +223,8 @@ router.put('/connections/:id/vms/:vmid/ssh-credentials', requireRole('superadmin
 
 // POST /api/hypervisors/connections/:id/vms/:vmid/ssh-credentials/push-key
 // Installs InfraLoom's management SSH key onto a guest using its already
-// saved password, then switches that guest to key auth — for guests
-// InfraLoom didn't create itself (so cloud-init never set the key up).
+// saved password, then switches that guest to key auth, so Patch Management
+// can log in with a key instead of a stored password.
 router.post('/connections/:id/vms/:vmid/ssh-credentials/push-key', requireRole('superadmin', 'admin'), async (req, res) => {
   const creds = db.prepare('SELECT * FROM ssh_credentials WHERE connection_id = ? AND vmid = ?').get(req.params.id, req.params.vmid);
   if (!creds) return res.status(400).json({ error: 'Save a host, username, and password for this guest first' });
