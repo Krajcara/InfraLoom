@@ -1,84 +1,77 @@
 # InfraLoom
 
-Self-hosted IT infrastructure management application. Runs on Ubuntu Linux.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Node.js 22](https://img.shields.io/badge/node-22-339933.svg)
 
-> **Status: Phase 13 complete — Infrastructure section done.** Auth, admin
-> tooling, inventory, the full Network domain, and the full Infrastructure
-> domain (Hypervisors, Network Scanner, Patch Management) are implemented
-> and tested. Next up: public status/NOC pages, Backup, final Dashboard
-> polish, and public-repo security hardening. See `PLAN.md` in the
-> project's internal planning docs for the full roadmap.
+**Self-hosted monitoring for IT infrastructure.** One dashboard for uptime, network devices, UPS units, DNS,
+hypervisors, patch status and licence expiry — with alerts to your phone or chat, and public status pages you can
+put on a NOC screen.
 
-## Features so far
+InfraLoom runs on a single Linux server, stores everything in an encrypted SQLite database, and needs no
+cloud account.
 
-**Foundation**
-- **Encrypted database** — SQLCipher, key never leaves `.env`
-- **Authentication** — JWT sessions (httpOnly cookie), account lockout after
-  repeated failed attempts, revocable active sessions
-- **Two-factor authentication (TOTP)** — optional, enabled per-user from
-  Profile (QR code enrollment); not required to log in
-- **Role-based users** — `superadmin` / `admin` / `operator` / `viewer`
-- **Profile** — change password, manage TOTP, active sessions, API keys
-- **Customizable Dashboard** — drag-and-reorder widget cards, hide/show,
-  per user
-- **In-app notifications** — bell icon with unread count, live toast popups,
-  covers every alert type below (monitors, SSL, licences, network devices,
-  hypervisor connectivity) whether or not external channels are configured
+## What it does
 
-**Admin**
-- **Settings** — app name, SMTP, notification channels (Telegram, Slack,
-  Discord, ntfy, Pushover, Email via Microsoft Graph) with per-event-type
-  rules and quiet hours
-- **System Update** — checks GitHub, updates and restarts from the UI, with
-  a live progress bar and step status
-- **Backup** — scheduled or on-demand ZIP backups (SQLCipher database +
-  an AES-256-GCM encrypted copy of `.env`), with configurable retention.
-  See **Backup and restore** below.
-- **Audit Log** — filterable, CSV export
+InfraLoom **monitors** your infrastructure. It does not provision VMs, run configuration management, or manage
+container clusters. The few things it can *change* are deliberately limited and role-restricted: power actions on
+hypervisor guests, applying OS updates (Patch Management), Wake-on-LAN, and an in-app SSH terminal.
 
-**Automation** *(new — Proxmox only for now)*
-- **New VM / LXC** — provisions via OpenTofu against the Proxmox API
-  (`bpg/proxmox` provider): plan → review → approve → apply, with live
-  streamed output, matching Patch Management's dry-run/approve pattern.
-  VM creation clones from an existing Proxmox template; LXC creation uses
-  an already-downloaded container template (download new ones from
-  Proxmox itself for now — Templates management is a near-term follow-up).
-  Currently Debian/Ubuntu only; Windows and Ansible-driven post-provision
-  configuration are planned next.
-- **Deployments** — history of every plan/apply, with status and the
-  resulting vmid once created.
+### Monitoring and alerting
 
-**Inventory**
-- **Licences** — tracking, expiry alerts, credential reveal (audited)
-- **Entra ID Apps** — app registrations, secret expiry tracking, CSV export
+| Module | What you get |
+|---|---|
+| **Uptime Monitor** | HTTP(S), TCP, ICMP ping, DNS, keyword, JSON query, Docker and push-heartbeat monitors; SSL certificate expiry tracking |
+| **Routers / Switches / Access Points** | Ping-backed status; optional SNMP (v1, v2c, v3) for interface statistics. **FortiGate** integration discovers FortiSwitches and FortiAPs through the REST API and shows the online/offline state the FortiGate itself reports |
+| **UPS** | SNMP (v1, v2c, v3) via the standard UPS-MIB, with an APC PowerNet fallback: battery charge and runtime, load, input/output voltage, history charts, and alerts for power loss, low battery, power restored and unreachable UPS |
+| **DNS / DNS Analytics** | Health of local DNS servers (Technitium, Pi-hole, AdGuard Home), SPF/DKIM/DMARC/MX domain checks, Cloudflare zone integration, Technitium query statistics |
+| **Net Speed** | Scheduled internet speed tests (Cloudflare, Ookla CLI, LibreSpeed CLI) with history and retention |
+| **MyIP** | Public IP lookup from several sources, IP query, DNS resolver check (UDP and DoH) |
+| **Hypervisors** | Proxmox VE, Hyper-V and VMware ESXi (7.0+) in one view: node and guest drill-down, usage history, connection health alerts, power actions, SSH web terminal |
+| **Network Scanner** | `arp-scan` device inventory, on-demand `nmap` deep scan, Wake-on-LAN, new/offline device alerts |
+| **Patch Management** | See pending OS updates per guest (dry run), approve, apply with live output. Debian/Ubuntu (apt), RHEL/Fedora (dnf/yum), Alpine (apk) and Windows Update, across Proxmox VMs and LXC and Hyper-V VMs |
 
-**Network**
-- **Uptime Monitor** — HTTP(S), TCP, ICMP, DNS, Keyword, JSON Query, Docker,
-  Push heartbeat; SSL certificate expiry tracking; public `/status` page
-- **Routers / Switches / Access Points** — ping-backed status, optional SNMP
-  (v1/v2c/v3) for interface stats
-- **DNS** — local DNS server monitoring (Technitium/Pi-hole/AdGuard/etc.),
-  SPF/DKIM/DMARC/MX domain checks, Cloudflare zone integration
-- **DNS Analytics** — Technitium query statistics and top-lists
-- **Net Speed** — Cloudflare, Ookla, and LibreSpeed providers; configurable
-  schedule and retention
-- **MyIP** — multi-source public IP lookup, IP query, DNS resolver
-  (18 public resolvers, UDP + DoH)
+### Inventory
 
-**Infrastructure**
-- **Hypervisors** — Proxmox VE, Hyper-V, and VMware ESXi (7.0+) in one view;
-  node/guest drill-down, usage bars, power actions, in-app SSH web terminal
-  with persistent sessions across navigation. Background health check
-  (configurable interval) alerts if a connection goes down, with a
-  per-connection snooze for machines you've intentionally powered off.
-- **Network Scanner** — `arp-scan`-based device inventory, on-demand `nmap`
-  deep scan, Wake-on-LAN, new/offline device notifications
-- **Patch Management** — dry-run → approve → apply, with live streaming
-  output, grouped by hypervisor → node → OS. Supports Debian/Ubuntu (apt),
-  RHEL/Fedora (dnf/yum), Alpine (apk), and Windows (Windows Update, no
-  external module needed) — across Proxmox VMs/LXC and Hyper-V VMs. See
-  **Hypervisor setup for Patch Management** below for what each platform
-  needs configured before patching will work.
+- **Licences** — vendor, type, seats, expiry, stored credentials (revealing a password is audited). Each licence has a
+  renewal period that decides how early it warns: **monthly → 5 days** before expiry, **yearly → 35 days**
+  (30 days if no period is set).
+- **Entra ID Apps** — app registration secret expiry tracking, CSV export.
+
+### Notifications
+
+In-app bell with live toasts, plus Telegram, Slack, Discord, ntfy, Pushover and e-mail. Every event type
+(monitor down/up, SSL/licence/Entra expiry, new or offline network device, hypervisor unreachable, UPS on battery,
+low battery, power restored, UPS offline/online) can be switched per channel, with quiet hours.
+
+### Status pages
+
+Public, no login required:
+
+- `/status` — status page listing all enabled uptime monitors (label, type, state, latency, SSL expiry; not the monitored address)
+- `/status/dashboard` — NOC dashboard for a wall display: summary counters, uptime monitors, network devices, DNS, UPS (a red banner appears when a UPS runs on battery); refreshes every 30 seconds
+- `/status/hypervisors` — hypervisor overview
+
+These pages are unauthenticated. The dashboard lists device names and states, including the IP address of routers,
+switches and access points; the UPS section shows name, state, battery and load only (no address, no SNMP details).
+The two `/status/...` pages can be switched off under **Settings → Public TV / status pages**; `/status` has no
+switch, so restrict it in your reverse proxy if it should not be public.
+
+### Platform
+
+- **Encrypted database** (SQLCipher); the key lives only in `.env`
+- **Authentication** — httpOnly session cookie, account lockout after repeated failures, revocable sessions,
+  optional two-factor authentication (TOTP), API keys
+- **Roles** — `superadmin`, `admin`, `operator`, `viewer` (see [Roles](#roles))
+- **Dashboard** — drag-and-reorder widgets, per user
+- **Audit log** — filterable, CSV export
+- **Backup** — scheduled or on-demand ZIP (database + encrypted copy of `.env`), with retention
+- **In-app updates** — check GitHub, update and restart from the UI
+
+## Requirements
+
+- A Debian/Ubuntu-based Linux server (the installer uses `apt`), run as root
+- Internet access for the installer (Node.js 22 via nvm, `nmap`, `arp-scan`, build tools)
+- Network reachability from the server to whatever you want to monitor
 
 ## Installation
 
@@ -88,15 +81,38 @@ cd InfraLoom
 sudo bash install.sh
 ```
 
-The installer will:
-1. Install Node.js 22 LTS (via nvm), `nmap`, `arp-scan`, and required system packages
-2. Install all dependencies and build the frontend
-3. Generate the encrypted database and a **superadmin account**
-4. Install and start the `infraloom` systemd service (auto-starts on boot)
-5. Print the **login URL, server IP, port, and generated superadmin credentials**
+The installer:
 
-On first login, two-factor authentication is optional — enable it later from
-**Profile** if you want it.
+1. installs system packages (`curl`, `git`, build tools, `nmap`, `arp-scan`, `sqlite3`, ...) and Node.js 22 LTS;
+2. clones the repository to `/opt/infraloom` and installs dependencies;
+3. generates `.env` with fresh secrets, builds the frontend and creates the encrypted database;
+4. creates a **superadmin** account;
+5. installs and starts the `infraloom` systemd service (starts on boot);
+6. prints the login URL and the generated superadmin credentials — **save them**.
+
+Two-factor authentication is optional; enable it later under **Profile**.
+
+### HTTPS
+
+InfraLoom speaks plain HTTP on port 3000 (`APP_PORT`). Put it behind a reverse proxy that terminates TLS
+(Nginx, Nginx Proxy Manager, Caddy, ...) and then set `COOKIE_SECURE=true` in `.env` so the session cookie is only
+sent over HTTPS. The SSH web terminal uses WebSockets (`/socket.io`) — enable WebSocket support in the proxy.
+
+## Configuration
+
+All settings are environment variables in `/opt/infraloom/.env` (see [`.env.example`](.env.example)):
+
+| Variable | Purpose |
+|---|---|
+| `APP_PORT` | Port the app listens on (default `3000`) |
+| `APP_SECRET` | Signing secret for session tokens (`openssl rand -hex 64`) |
+| `DB_PATH` | Location of the SQLCipher database (default `./data/infraloom.db`) |
+| `DB_ENCRYPTION_KEY` | Database encryption key. **Losing it means losing the data — back it up** |
+| `BACKUP_ENCRYPTION_PASSWORD` | Encrypts the `.env` copy inside backups (see [Backup and restore](#backup-and-restore)) |
+| `COOKIE_SECURE` | `true` once served over HTTPS |
+| `GITHUB_TOKEN` | Optional; only needed if the repository is private |
+
+Notification channels, SMTP, quiet hours, TV pages and schedules are configured in the UI under **Settings**.
 
 ## Updating
 
@@ -104,7 +120,12 @@ On first login, two-factor authentication is optional — enable it later from
 sudo bash /opt/infraloom/update.sh
 ```
 
-Or from the app itself: **Admin → Update** (shows a live progress bar).
+or **Admin → Update** in the app (live progress). The updater compares the installed version with the latest
+GitHub **release** (or, if the repository has no releases, with the latest commit on `main`), pulls, runs database
+migrations, rebuilds the frontend and restarts the service. Your `.env` and `data/` directory are never touched.
+
+> If you publish releases, bump `version` in `server/package.json` to match the release tag — that is the version the
+> updater reads.
 
 ## Service management
 
@@ -114,142 +135,172 @@ sudo systemctl restart infraloom
 sudo journalctl -u infraloom -f
 ```
 
-## Hypervisor setup
+## Setting things up
 
-Add connections from **Hypervisors → New connection**. What's needed differs
-by platform:
+### Roles
 
-### Proxmox VE
-- An **API token** (Datacenter → Permissions → API Tokens) is all that's
-  needed for monitoring, node/guest listing, and power actions.
-- **VM patch management** needs the **QEMU Guest Agent** installed and
-  running inside the guest (`qemu-guest-agent` package; comes with
-  `virtio-win` on Windows guests). No extra credentials — it goes through
-  the same API token.
-- **LXC patch management** needs a separate **SSH login to the Proxmox
-  host itself** (not a container), since Proxmox has no REST API for
-  running commands inside containers — only `pct exec`, which is a
-  node-local command. Set this under the connection's **"Patch Management
-  (LXC)"** section. This is broader access than the API token (effectively
-  root on the host), so leave it blank if you don't need LXC patching.
-- **Multi-node clusters with different root passwords per node**: the
-  connection-level SSH credentials above are the *default* for any node
-  without its own override. Expand a node on the Hypervisors page to set
-  a **per-node SSH override** if that node's password differs.
-- **If the Proxmox API is reached through a reverse proxy** (Nginx Proxy
-  Manager, Cloudflare Tunnel, etc.), SSH won't follow it — that traffic
-  isn't proxied the same way HTTPS is. Set an explicit **"Host SSH
-  address"** in the connection form so `pct exec` reaches the real host,
-  not the proxy.
+| Role | Can do | Cannot do |
+|---|---|---|
+| **Viewer** | View everything | Create, edit, run or delete anything; user management |
+| **Operator** | Viewer + add devices, monitors and UPS units, start network scans and patch runs, renew licences, reveal stored passwords | Delete things, manage connections and credentials, change Settings, user management |
+| **Admin** | Operator + delete, manage all connections and credentials, change Settings, manage Operator/Viewer accounts | Run system updates, manage Admin/Superadmin accounts |
+| **Superadmin** | Everything | — |
 
-### Hyper-V
+### FortiGate (switches and access points)
+
+On the FortiGate create a **REST API administrator** (System → Administrators) with a read-only profile and, if you
+use Trusted Hosts, allow the InfraLoom server's address. Add the FortiGate under **Routers** with brand `fortigate` and
+paste the API token. **Sync switches/APs** discovers FortiSwitches and FortiAPs
+(`/api/v2/monitor/switch-controller/managed-switch/status`, `/api/v2/monitor/wifi/managed_ap`) and then refreshes
+every minute. Their online/offline state is whatever the FortiGate reports — managed switches are usually not
+reachable from the InfraLoom server, so they are not pinged. **Sync log** shows the raw reply if a field looks wrong.
+
+### UPS
+
+Enable SNMP on the UPS network card and allow queries from the InfraLoom server. Use a read-only community for
+v1/v2c, or create a read-only user for v3 (MD5/SHA/SHA-2 authentication; DES/AES-128/AES-256 privacy). Add it under
+**UPS** and press **Test connection**. InfraLoom polls every minute, and alerts when mains power is lost, the battery
+runs low, power returns, or the UPS stops answering (after three failed polls). SNMP traps are not used.
+
+The standard UPS-MIB (RFC 1628) and APC PowerNet are understood. If a card is not recognised it shows "No data";
+an admin can use **SNMP walk** on the card to see what the device exposes.
+
+### Hypervisors
+
+Add connections from **Hypervisors → New connection**. What each platform needs:
+
+#### Proxmox VE
+
+- An **API token** (Datacenter → Permissions → API Tokens) is all that monitoring, listing and power actions need.
+- **VM patch management** needs the **QEMU Guest Agent** running inside the guest (`qemu-guest-agent`; ships with
+  `virtio-win` on Windows). No extra credentials — it goes through the API token.
+- **LXC patch management** needs a separate **SSH login to the Proxmox host** (Proxmox has no REST API for running
+  commands inside containers, only the node-local `pct exec`). Set it under the connection's *Patch Management (LXC)*
+  section. This is broad access (effectively root on the host) — leave it blank if you do not patch containers.
+- **Clusters with different root passwords per node:** the connection-level SSH credentials are the default; expand a
+  node to set a per-node override.
+- **API behind a reverse proxy:** SSH does not follow the proxy. Set an explicit **Host SSH address** so `pct exec`
+  reaches the real host.
+
+#### Hyper-V
+
 - **Host-level WinRM** is required for monitoring and power actions:
   ```powershell
   winrm quickconfig -Force
   winrm set winrm/config/service/auth '@{Basic="true"}'
   winrm set winrm/config/service '@{AllowUnencrypted="true"}'
   ```
-- **Guest patch management** needs a *separate* connection directly into
-  each guest OS (the host-level WinRM connection above only manages the
-  VM itself — start/stop/etc. — it can't run commands inside it). From
-  Patch Management, click **"Credentials"** next to a guest to set:
-  - **Windows guests**: WinRM host/username/password (a different WinRM
-    connection than the host-level one)
-  - **Linux guests**: SSH host/username/password (works out of the box;
-    Linux guests need no extra packages for patch management itself)
-- **Automatic guest IP detection** requires Hyper-V Integration Services
-  reporting it. If a guest shows no IP:
-  1. On the host: `Enable-VMIntegrationService -VMName "X" -Name "Guest Service Interface"`
-     and `-Name "Key-Value Pair Exchange"`
-  2. **Do a full `Stop-VM` then `Start-VM`** (not `Restart-VM` — VMBus
-     channels are negotiated at cold boot, a soft restart often isn't enough)
-  3. **Linux guests** additionally need the KVP daemon running inside the
-     guest: `sudo apt install linux-tools-generic linux-cloud-tools-generic`
-     then `sudo systemctl enable --now hv-kvp-daemon`. On a non-standard
-     kernel (not the distro's default `-generic` build), the matching
-     `linux-tools-<exact-kernel-version>` package may not exist in the
-     archive at all — the daemon will fail with "not found for kernel X";
-     switching to the distro's standard kernel resolves it.
-  4. If automatic detection still isn't available, you can always type
-     the guest's IP directly into the Patch Management credentials form
-     as a manual fallback — no Integration Services dependency.
+- **Guest patch management** needs a separate connection into each guest OS. In Patch Management click
+  **Credentials** next to a guest: WinRM for Windows guests, SSH for Linux guests.
+- **Automatic guest IP detection** needs Hyper-V Integration Services. If a guest shows no IP:
+  1. On the host: `Enable-VMIntegrationService -VMName "X" -Name "Guest Service Interface"` and
+     `-Name "Key-Value Pair Exchange"`.
+  2. Do a full `Stop-VM` then `Start-VM` (not `Restart-VM` — VMBus channels are negotiated at cold boot).
+  3. Linux guests also need the KVP daemon: `sudo apt install linux-tools-generic linux-cloud-tools-generic`, then
+     `sudo systemctl enable --now hv-kvp-daemon`. On a non-standard kernel the matching `linux-tools-<kernel>` package
+     may not exist; switching to the distro's standard kernel resolves it.
+  4. Otherwise type the guest's IP into the Patch Management credentials form.
 
-### VMware ESXi
-- **Requires ESXi 7.0 or newer.** The REST API this integration uses
-  (`/api/session`, `/api/vm`, ...) doesn't exist on ESXi 6.x — connecting
-  to an older host fails immediately (HTTP 400 with no useful message,
-  since the request never reaches a real endpoint). ESXi 6.x is also out
-  of VMware's security-patch support, so upgrading is worth doing anyway.
-- Standard root/administrative credentials — no extra host-side setup.
-- Host-level CPU/RAM utilization isn't exposed by this API the way
-  Proxmox's is, so those fields show "—"; VM inventory and power actions
-  work normally.
-- **Patch management for ESXi guests is not implemented yet** — they
-  appear in Patch Management's grouped view with a "not yet supported"
-  note rather than a guest list.
+#### VMware ESXi
+
+- **Requires ESXi 7.0 or newer** (the REST API used does not exist on 6.x).
+- Standard root/administrative credentials; no extra host setup.
+- Host-level CPU/RAM utilisation is not exposed by this API, so those fields show "—".
+- Patch management for ESXi guests is not implemented.
+
+### Patch Management and the management SSH key
+
+InfraLoom has one SSH key pair of its own (the public half is shown in **Settings → Management SSH key**). In
+Patch Management, **Install management key** uses a guest's saved password once to put that key into its
+`authorized_keys`, after which InfraLoom logs in with the key. On Debian/Ubuntu, if an earlier run left `dpkg`
+half-configured, the next patch run repairs it (`dpkg --configure -a`) before upgrading, and existing
+configuration files are kept during upgrades.
 
 ## Backup and restore
 
 **Admin → Backup** creates a ZIP containing:
-- `infraloom.db` — a consistent snapshot of the live database (safe to take
-  while the app is running; it checkpoints the WAL before copying)
-- `env.enc` — your `.env` file, AES-256-GCM encrypted with a separate
-  `BACKUP_ENCRYPTION_PASSWORD` (auto-generated into `.env` on first backup
-  if not already present)
 
-This two-key design is deliberate: the database is already encrypted with
-`DB_ENCRYPTION_KEY`, but that key itself lives in `.env`. Bundling a
-plaintext `.env` into the backup would mean anyone who got the ZIP could
-decrypt the database — so `.env` is encrypted too, with a **different**
-password that never travels inside the backup file itself.
+- `infraloom.db` — a consistent snapshot of the live database (safe while the app is running)
+- `env.enc` — your `.env`, AES-256-GCM encrypted with `BACKUP_ENCRYPTION_PASSWORD`
 
-**Store `BACKUP_ENCRYPTION_PASSWORD` somewhere separate from your backups**
-(a password manager, not the same server) — a backup ZIP without it cannot
-be decrypted, by design, and losing it makes existing backups unrecoverable.
+The database is already encrypted with `DB_ENCRYPTION_KEY`, but that key lives in `.env`; a plaintext `.env` in the
+backup would let anyone with the ZIP open the database. So `.env` is encrypted too, with a **different** password that
+never travels inside the backup.
 
-Backups run on a configurable daily schedule with configurable retention
-(both set from the Backup page), or on demand.
+**Store `BACKUP_ENCRYPTION_PASSWORD` somewhere separate from the backups** (a password manager, not this server).
+Without it a backup cannot be decrypted, by design.
+
+Backups run on a configurable daily schedule with configurable retention, or on demand.
 
 **To restore:**
-1. Decrypt `env.enc` using `BACKUP_ENCRYPTION_PASSWORD` (AES-256-GCM; the
-   file layout is `salt(16) | iv(16) | authTag(16) | ciphertext`) to
-   recover the original `.env`
-2. Place the recovered `.env` and `infraloom.db` (renamed to match your
-   `DB_PATH`) into a fresh or existing InfraLoom install
-3. Restart the service
 
-## Security
+1. Decrypt `env.enc` with `BACKUP_ENCRYPTION_PASSWORD` (AES-256-GCM; file layout
+   `salt(16) | iv(16) | authTag(16) | ciphertext`) to recover the original `.env`.
+2. Place the recovered `.env` and `infraloom.db` (renamed to match your `DB_PATH`) into a fresh or existing install.
+3. Restart the service.
 
-- The database is encrypted at rest (SQLCipher, `DB_ENCRYPTION_KEY` in `.env`).
-- `.env` is never committed — see `.env.example` for required variables.
-- Pre-commit secret scanning (gitleaks) is enabled via `.githooks/pre-commit`.
-  Run `npm install` once after cloning to activate the git hook.
-- LXC patch management's host-level SSH credential and Hyper-V's per-guest
-  credentials are broader access than the platforms' own API tokens —
-  only configure them on connections where you actually need patching.
-- CORS is disabled outright — the frontend and API are always served from
-  the same origin, so no cross-origin request (credentialed or not) should
-  ever succeed. An earlier `origin: true, credentials: true` configuration
-  reflected any requesting origin as allowed and sent cookies with it — a
-  real CSRF exposure with no legitimate use case here.
-- CSV exports (Audit Log) neutralize formula-injection payloads (a value
-  starting with `=`, `+`, `-`, or `@` is prefixed with a quote) so opening
-  an export in Excel/Sheets can't trigger an embedded formula.
-- The Net Speed CLI auto-downloader verifies extracted files resolve
-  inside the expected output directory before use, as explicit
-  defense-in-depth against `decompress`'s disclosed Zip Slip CVE (no
-  upstream fix exists for that package); the existing anchored filename
-  filter already blocked path-traversal entries in practice.
-- `npm audit` is clean for `nodemailer` (upgraded to v10, which fixed a
-  critical SSRF/arbitrary-file-read advisory and a high-severity TLS
-  validation issue) as of this phase. Two moderate-severity findings
-  remain, deliberately deferred: `react-router-dom` (open redirect and an
-  SSR-hydration issue that doesn't apply here, since this is a client-only
-  SPA) and `uuid` via `node-cron` (a buffer-bounds check we never trigger,
-  since we don't call it with user-supplied buffers). Both fixes are
-  major-version bumps with real regression risk for the size of change
-  involved — worth doing, but as a deliberate, separately-tested upgrade
-  rather than folded into this pass.
+## Security notes
+
+- The database is encrypted at rest; `.env` is never committed (see `.env.example`).
+- Pre-commit secret scanning (gitleaks) is wired through `.githooks/pre-commit`; run `npm install` once after
+  cloning to activate it.
+- Security headers (helmet), request rate limiting, and no CORS: the frontend and API are always served from the same
+  origin.
+- CSV exports neutralise formula-injection payloads (values starting with `=`, `+`, `-` or `@`).
+- Credentials with broad reach — the Proxmox host SSH login used for LXC patching, Hyper-V per-guest credentials, and
+  the FortiGate API token — should only be configured where you actually need them. Prefer read-only profiles.
+- Serve InfraLoom over HTTPS and set `COOKIE_SECURE=true` (see [HTTPS](#https)).
+
+## Upgrading from versions with Automation / Kubernetes
+
+Version 1.0.0 removed the Automation module (OpenTofu VM provisioning, templates, Ansible playbooks), the Kubernetes
+module and the Vulnerability Scan module — InfraLoom is a monitoring tool now. `update.sh` is enough:
+
+- the old files disappear with the update (`git reset --hard`);
+- on first start the database migration **drops the tables of the removed modules** (deployments, templates,
+  playbooks, Kubernetes connections and tokens). Take a backup first if you want to keep that history;
+- everything else — users, monitors, licences, hypervisor connections, saved guest credentials — is kept.
+
+Optional clean-up of things the old versions installed on the server:
+
+```bash
+sudo rm -f /usr/local/bin/tofu                                   # OpenTofu
+sudo pip uninstall -y ansible-core --break-system-packages       # Ansible
+sudo rm -rf /opt/infraloom/data/tofu /opt/infraloom/data/ansible # leftover working data
+```
+
+Do **not** remove `/opt/infraloom/data/ssh`: it holds the management key that Patch Management may use.
+
+## Development
+
+```bash
+git clone https://github.com/krajcara/InfraLoom.git && cd InfraLoom
+cp .env.example .env     # set APP_SECRET, DB_ENCRYPTION_KEY and BACKUP_ENCRYPTION_PASSWORD (openssl rand -hex 32)
+npm install
+npm run migrate          # create the encrypted database
+npm run seed             # create the superadmin account (credentials are printed)
+npm run dev              # API on :3000 (nodemon) + Vite dev server with proxy
+```
+
+| Script | |
+|---|---|
+| `npm run dev` | API and frontend with live reload |
+| `npm run build` | Production frontend build into `client/dist` |
+| `npm start` | Start the API (serves `client/dist`) |
+| `npm run migrate` / `npm run seed` | Create/upgrade the schema; create the first superadmin |
+
+```
+client/            React 18 + Vite single-page app
+server/src/
+  routes/          REST API (one file per module)
+  services/        Schedulers and background workers (monitors, polling, notifications, backup, patching)
+  lib/             Protocol clients (SNMP, SSH, WinRM, Proxmox/Hyper-V/ESXi, FortiGate, nmap, ...)
+  db/              SQLCipher schema, migrations, seed
+install.sh         Installer          update.sh   Updater          infraloom.service   systemd unit
+```
+
+Stack: Node.js 22, Express, React 18, Vite, SQLCipher (`better-sqlite3-multiple-ciphers`), Socket.io, node-cron,
+net-snmp, ssh2.
 
 ## License
 
