@@ -8,15 +8,26 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 async function pveCall(conn, method, path, data) {
   const token = buildToken(conn);
-  const res = await axios({
-    method,
-    url: `${conn.url}/api2/json${path}`,
-    data,
-    headers: { Authorization: `PVEAPIToken=${token}` },
-    httpsAgent,
-    timeout: 15000,
-  });
-  return res.data.data;
+  try {
+    const res = await axios({
+      method,
+      url: `${conn.url}/api2/json${path}`,
+      data,
+      headers: { Authorization: `PVEAPIToken=${token}` },
+      httpsAgent,
+      timeout: 15000,
+    });
+    return res.data.data;
+  } catch (err) {
+    // Proxmox puts the real reason ("QEMU guest agent is not running", "got timeout"...) in the HTTP reason phrase.
+    if (err.response) {
+      const why = err.response.statusText || (typeof err.response.data === 'string' ? err.response.data : err.response.data?.message) || '';
+      err.message = `Proxmox API ${err.response.status}${why ? ` ${String(why).trim().slice(0, 160)}` : ''} (${method.toUpperCase()} ${path.split('?')[0]})`;
+    } else if (err.code === 'ECONNABORTED') {
+      err.message = `Proxmox API did not answer within 15 s (${method.toUpperCase()} ${path.split('?')[0]})`;
+    }
+    throw err;
+  }
 }
 
 /** Dedicated QEMU guest-agent command that returns OS metadata directly —
@@ -51,9 +62,18 @@ async function execInVM(conn, node, vmid, command, { timeoutMs = 300000, onOutpu
   let lastOutLen = 0;
   let lastErrLen = 0;
 
+  let failedPolls = 0;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 1500));
-    const status = await pveCall(conn, 'get', `/nodes/${node}/qemu/${vmid}/agent/exec-status?pid=${pid}`);
+    // A busy guest (initramfs, heavy I/O) can make a single status call time out — that is not the command failing.
+    let status;
+    try {
+      status = await pveCall(conn, 'get', `/nodes/${node}/qemu/${vmid}/agent/exec-status?pid=${pid}`);
+      failedPolls = 0;
+    } catch (err) {
+      if (++failedPolls > 5) throw err;
+      continue;
+    }
 
     if (onOutput) {
       const out = status['out-data'] || '';

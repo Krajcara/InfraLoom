@@ -2,6 +2,7 @@
 
 const db = require('../db/database');
 const inspect = require('../lib/patchInspect');
+const { runDetached } = require('../lib/detachedRun');
 const { diagnose } = require('../lib/patchDiagnosis');
 const { execInVM, getOsInfo } = require('../lib/qemuExec');
 const { execInLXC } = require('../lib/pctExec');
@@ -309,7 +310,7 @@ async function runDryRun({ connectionId, conn, node, guestType, vmid, vmName, gu
  *      cannot start in the middle of our run;
  *   3. the upgrade itself;
  *   4. ALWAYS give the paused updaters back — also when the upgrade failed or threw. */
-async function applyOnGuest(run, { pauseUpdaters = false, onPaused = () => {}, lockWaitMs = 600000, lockPollMs = 10000 } = {}, { exec, emit }) {
+async function applyOnGuest(run, { pauseUpdaters = false, onPaused = () => {}, lockWaitMs = 600000, lockPollMs = 10000, detach = true, detachPollMs = 3000 } = {}, { exec, emit }) {
   const cmd = APPLY_COMMANDS[run.os_family];
   if (!cmd) throw new Error(`No apply command for OS family: ${run.os_family}`);
   const pre = [];
@@ -335,7 +336,13 @@ async function applyOnGuest(run, { pauseUpdaters = false, onPaused = () => {}, l
         }
       }
     }
-    const result = await exec(cmd, { timeoutMs: run.os_family === 'windows' ? 3600000 : 1800000, onOutput: emit });
+    // On a Proxmox VM the command would be a child of the QEMU guest agent, which only returns output when the command is
+    // over and takes the update down with it if the agent restarts. So the update runs detached on the machine and
+    // InfraLoom follows its log (live output, and a hiccup in the connection no longer loses the run).
+    const detached = detach && run.guest_type === 'qemu' && ['debian', 'rhel'].includes(run.os_family);
+    const result = detached
+      ? await runDetached({ exec, command: cmd, runId: run.id, emit, pollMs: detachPollMs })
+      : await exec(cmd, { timeoutMs: run.os_family === 'windows' ? 3600000 : 1800000, onOutput: emit });
     return { result, pre, post, paused };
   } finally {
     if (paused.length) {
@@ -391,14 +398,16 @@ async function applyPatches(runId, approvedBy, options = {}, deps = {}) {
   try {
     const { result, pre, post } = await applyOnGuest(
       run,
-      { pauseUpdaters: options.pauseUpdaters === true, lockWaitMs: options.lockWaitMs, lockPollMs: options.lockPollMs, onPaused: (units) => db.prepare('UPDATE patch_runs SET paused_units = ? WHERE id = ?').run(JSON.stringify(units), runId) },
+      { pauseUpdaters: options.pauseUpdaters === true, lockWaitMs: options.lockWaitMs, lockPollMs: options.lockPollMs, detachPollMs: options.detachPollMs, onPaused: (units) => db.prepare('UPDATE patch_runs SET paused_units = ? WHERE id = ?').run(JSON.stringify(units), runId) },
       { exec, emit: onOutput }
     );
 
     const exitMatch = result.stdout.match(/___EXIT_(\d+)___/);
     const exitCode = exitMatch ? parseInt(exitMatch[1], 10) : result.exitCode;
     const status = exitCode === 0 ? 'completed' : 'failed';
-    const output = (pre.join('') + result.stdout + post.join('')).slice(-200000);
+    // stderr is returned separately by the SSH and agent transports; keep it unless it is already inside stdout.
+    const errText = result.stderr && result.stderr.trim() && !result.stdout.includes(result.stderr.trim()) ? `\n${result.stderr}` : '';
+    const output = (pre.join('') + result.stdout + errText + post.join('')).slice(-200000);
 
     // After a successful run: does the machine now need a restart? (best effort)
     let reboot = null;
@@ -424,6 +433,7 @@ async function applyPatches(runId, approvedBy, options = {}, deps = {}) {
     return { status };
   } catch (err) {
     const why = err.diagnosis || diagnose(`${accumulated}\n${err.message}`);
+    onOutput(`\n[InfraLoom] ERROR: ${err.message}\n`); // the reason must be on screen, not only in the database
     db.prepare("UPDATE patch_runs SET status='failed', error=?, failure_reason=?, completed_at=datetime('now') WHERE id=?").run(err.message, why ? JSON.stringify(why) : null, runId);
     if (io) io.emit('patch:complete', { runId, status: 'failed', error: err.message });
     try { require('./maintenanceService').endForPatchRun(runId); } catch { /* alerts resume when the safety limit passes */ }

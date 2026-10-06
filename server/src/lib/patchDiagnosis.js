@@ -47,6 +47,13 @@ function diagnose(output) {
     };
   }
 
+  if (/guest agent is not running|guest-ping|qmp command .* failed|Guest agent did not return a PID|Proxmox API (?:5\d\d|did not answer)/i.test(text)) {
+    return { code: 'agent', title: 'The QEMU guest agent did not respond', detail: (/Proxmox API [^\n]{0,140}/.exec(text) || [])[0] || null, hint: 'Check that qemu-guest-agent is installed and running in the VM ("systemctl status qemu-guest-agent") and that the VM is not frozen or overloaded. If it restarted during the update, the update itself may still be running on the machine — wait, then run Check again.' };
+  }
+  if (/Command timed out inside the guest|Command timed out/.test(text)) {
+    return { code: 'timeout', title: 'The command timed out', detail: null, hint: 'The machine took longer than the limit. It may still be working — check it before starting another run.' };
+  }
+
   if (/No space left on device/.test(text)) {
     return { code: 'disk_full', title: 'The machine ran out of disk space', detail: null, hint: 'Free space (apt-get clean, remove old kernels, grow the disk) and run the update again.' };
   }
