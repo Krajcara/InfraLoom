@@ -230,7 +230,14 @@ function recordInAppNotification(message, eventType) {
   return notification;
 }
 
-async function notify(message, eventType = null) {
+async function notify(message, eventType = null, context = null) {
+  // A maintenance window on the thing this alert is about (context = { type, id }) — or a global one — holds back
+  // state-change alerts. See maintenanceService for which events count.
+  if (eventType) {
+    const window = require('./maintenanceService').suppress(eventType, context);
+    if (window) return { skipped: 'maintenance', window: window.id };
+  }
+
   // In-app notifications are a passive record (you check the bell when
   // you're ready), unlike a phone push — so they're recorded even during
   // quiet hours, but still respect the per-event 'app' channel toggle.

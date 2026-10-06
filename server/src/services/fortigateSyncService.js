@@ -46,8 +46,9 @@ function upsertDiscovered(table, routerId, devices) {
        controller_status=COALESCE(?, controller_status), controller_checked_at=? WHERE id=?`
   );
 
-  const noteTransition = (name, prev, next) => {
-    if (prev && next && prev !== next) transitions.push({ name, status: next });
+  const targetType = table === 'switches' ? 'switch' : 'access_point';
+  const noteTransition = (name, prev, next, id) => {
+    if (prev && next && prev !== next) transitions.push({ name, status: next, id, type: targetType });
   };
 
   for (const dev of devices) {
@@ -56,7 +57,7 @@ function upsertDiscovered(table, routerId, devices) {
     const existingRow = existingBySerial.get(dev.serial);
     if (existingRow) {
       update.run(dev.name, dev.model, dev.ip_address, now, dev.status, now, existingRow.id);
-      noteTransition(dev.name, existingRow.controller_status, dev.status);
+      noteTransition(dev.name, existingRow.controller_status, dev.status, existingRow.id);
     } else {
       insert.run(dev.name, 'fortigate', dev.model, dev.ip_address || '0.0.0.0', routerId, dev.serial, now, dev.status, now);
     }
@@ -66,7 +67,7 @@ function upsertDiscovered(table, routerId, devices) {
   for (const row of existing) {
     if (row.discovered_serial && !seenSerials.has(row.discovered_serial)) {
       markMissing.run(now, now, row.id);
-      noteTransition(row.name, row.controller_status, 'down');
+      noteTransition(row.name, row.controller_status, 'down', row.id);
     }
   }
 
@@ -91,7 +92,7 @@ function notifyTransitions(kindLabel, transitions) {
   }
   for (const t of transitions) {
     const down = t.status === 'down';
-    Promise.resolve(notify(`${kindLabel} "${t.name}" ${down ? 'went offline' : 'is back online'} (reported by FortiGate)`, down ? 'monitor_down' : 'monitor_up')).catch(() => {});
+    Promise.resolve(notify(`${kindLabel} "${t.name}" ${down ? 'went offline' : 'is back online'} (reported by FortiGate)`, down ? 'monitor_down' : 'monitor_up', { type: t.type, id: t.id })).catch(() => {});
   }
 }
 

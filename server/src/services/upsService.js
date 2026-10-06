@@ -55,7 +55,7 @@ async function applyResult(u, reading, error, unsupported = false) {
       'INSERT INTO ups_readings (ups_id, status, charge_pct, runtime_min, load_pct, input_v, output_v, battery_temp_c) VALUES (?,?,?,?,?,?,?,?)'
     ).run(u.id, reading.status, reading.charge_pct, reading.runtime_min, reading.output_load_pct, reading.input_voltage_v, reading.output_voltage_v, reading.battery_temp_c);
 
-    for (const [type, msg] of eventsFor(prev, reading.status, u.name, reading)) await notify(msg, type).catch(() => {});
+    for (const [type, msg] of eventsFor(prev, reading.status, u.name, reading)) await notify(msg, type, { type: 'ups', id: u.id }).catch(() => {});
     return;
   }
 
@@ -69,7 +69,7 @@ async function applyResult(u, reading, error, unsupported = false) {
   const failures = (u.consecutive_failures || 0) + 1;
   const next = failures >= FAIL_THRESHOLD ? 'offline' : prev || 'unknown';
   db.prepare('UPDATE ups_devices SET last_status=?, last_error=?, last_polled_at=datetime(\'now\'), consecutive_failures=? WHERE id=?').run(next, error, failures, u.id);
-  for (const [type, msg] of eventsFor(prev, next, u.name, null)) await notify(msg, type).catch(() => {});
+  for (const [type, msg] of eventsFor(prev, next, u.name, null)) await notify(msg, type, { type: 'ups', id: u.id }).catch(() => {});
 }
 
 /** Polls one UPS now. Returns the refreshed row (or null if it's gone). */

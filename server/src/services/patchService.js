@@ -294,6 +294,8 @@ async function applyPatches(runId, approvedBy) {
   db.prepare("UPDATE patch_runs SET status='running', approved_by=?, started_at=datetime('now') WHERE id=?").run(approvedBy, runId);
   const io = global.io;
   if (io) io.emit('patch:started', { runId });
+  // The guest is about to reboot services: mute alerts of monitors that point at it. Must never break patching.
+  try { require('./maintenanceService').startForPatchRun(run); } catch (err) { console.error('[patch] maintenance window not created:', err.message); }
 
   let accumulated = '';
   const onOutput = (chunk) => {
@@ -314,10 +316,12 @@ async function applyPatches(runId, approvedBy) {
 
     db.prepare("UPDATE patch_runs SET status=?, completed_at=datetime('now'), apply_output=? WHERE id=?").run(status, result.stdout.slice(-200000), runId);
     if (io) io.emit('patch:complete', { runId, status });
+    try { require('./maintenanceService').endForPatchRun(runId); } catch { /* alerts resume when the safety limit passes */ }
     return { status };
   } catch (err) {
     db.prepare("UPDATE patch_runs SET status='failed', error=?, completed_at=datetime('now') WHERE id=?").run(err.message, runId);
     if (io) io.emit('patch:complete', { runId, status: 'failed', error: err.message });
+    try { require('./maintenanceService').endForPatchRun(runId); } catch { /* alerts resume when the safety limit passes */ }
     throw err;
   }
 }

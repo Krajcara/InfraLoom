@@ -40,9 +40,9 @@ async function checkOne(conn) {
   db.prepare('UPDATE hypervisor_connections SET last_health_status = ? WHERE id = ?').run(reachable ? 'up' : 'down', conn.id);
 
   if (!reachable && wasReachable) {
-    await notify(`Hypervisor connection "${conn.name}" is unreachable.`, 'hypervisor_down');
+    await notify(`Hypervisor connection "${conn.name}" is unreachable.`, 'hypervisor_down', { type: 'hypervisor', id: conn.id });
   } else if (reachable && !wasReachable) {
-    await notify(`Hypervisor connection "${conn.name}" is reachable again.`, 'hypervisor_up');
+    await notify(`Hypervisor connection "${conn.name}" is reachable again.`, 'hypervisor_up', { type: 'hypervisor', id: conn.id });
   }
 }
 

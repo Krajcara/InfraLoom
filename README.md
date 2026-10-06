@@ -30,6 +30,22 @@ hypervisor guests, applying OS updates (Patch Management), Wake-on-LAN, and an i
 | **Network Scanner** | `arp-scan` device inventory, on-demand `nmap` deep scan, Wake-on-LAN, new/offline device alerts |
 | **Patch Management** | See pending OS updates per guest (dry run), approve, apply with live output. Debian/Ubuntu (apt), RHEL/Fedora (dnf/yum), Alpine (apk) and Windows Update, across Proxmox VMs and LXC and Hyper-V VMs |
 
+### Maintenance windows
+
+Planned work should not page you. **Infrastructure → Maintenance** mutes the *state-change* alerts — down, recovered,
+offline, power loss — of one thing (a monitor, a router/switch/access point, a hypervisor connection, a UPS) or of
+everything, now or at a scheduled time. Checks keep running and statuses stay accurate; only the notifications are held
+back, and an amber banner on every page reminds you that alerts are muted.
+
+- **Nothing stays silently broken.** When a window ends (or you press *End now*), whatever is still down is reported
+  once — a single summary message for "everything" windows.
+- **Patch runs mute the patched machine automatically.** Starting a patch run opens a window for the monitors that point
+  at that machine (same IP, or its name / FQDN as the host; names shorter than 3 characters are never matched). It ends
+  10 minutes after the run finishes so a reboot can complete, and never lasts longer than 3 hours.
+- Licence, SSL and Entra expiry reminders and "new device on the network" are never muted.
+- Muted alerts are counted per window, and creating or ending a window is written to the audit log.
+- The public status pages show the real state even during a window; they do not hide it.
+
 ### Inventory
 
 - **Licences** — vendor, type, seats, expiry, stored credentials (revealing a password is audited). Each licence has a
@@ -41,7 +57,8 @@ hypervisor guests, applying OS updates (Patch Management), Wake-on-LAN, and an i
 
 In-app bell with live toasts, plus Telegram, Slack, Discord, ntfy, Pushover and e-mail. Every event type
 (monitor down/up, SSL/licence/Entra expiry, new or offline network device, hypervisor unreachable, UPS on battery,
-low battery, power restored, UPS offline/online) can be switched per channel, with quiet hours.
+low battery, power restored, UPS offline/online) can be switched per channel, with quiet hours, and muted per target by a
+[maintenance window](#maintenance-windows).
 
 ### Status pages
 
@@ -142,7 +159,7 @@ sudo journalctl -u infraloom -f
 | Role | Can do | Cannot do |
 |---|---|---|
 | **Viewer** | View everything | Create, edit, run or delete anything; user management |
-| **Operator** | Viewer + add devices, monitors and UPS units, start network scans and patch runs, renew licences, reveal stored passwords | Delete things, manage connections and credentials, change Settings, user management |
+| **Operator** | Viewer + add devices, monitors and UPS units, start network scans and patch runs, schedule maintenance windows, renew licences, reveal stored passwords | Delete things, manage connections and credentials, change Settings, user management |
 | **Admin** | Operator + delete, manage all connections and credentials, change Settings, manage Operator/Viewer accounts | Run system updates, manage Admin/Superadmin accounts |
 | **Superadmin** | Everything | — |
 

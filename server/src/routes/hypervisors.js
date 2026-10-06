@@ -31,7 +31,8 @@ function clientFor(type) {
 // GET /api/hypervisors/connections
 router.get('/connections', (req, res) => {
   const rows = db.prepare('SELECT * FROM hypervisor_connections ORDER BY name').all();
-  res.json({ connections: rows.map(maskConnection) });
+  const inMaintenance = require('../services/maintenanceService').lookup();
+  res.json({ connections: rows.map((r) => ({ ...maskConnection(r), in_maintenance: inMaintenance('hypervisor', r.id) })) });
 });
 
 // POST /api/hypervisors/connections

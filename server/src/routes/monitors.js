@@ -26,7 +26,8 @@ router.use(requireAuth);
 
 // GET /api/monitors
 router.get('/', (req, res) => {
-  res.json({ monitors: db.prepare('SELECT * FROM monitors WHERE hidden = 0 ORDER BY label').all() });
+  const inMaintenance = require('../services/maintenanceService').lookup();
+  res.json({ monitors: db.prepare('SELECT * FROM monitors WHERE hidden = 0 ORDER BY label').all().map((m) => ({ ...m, in_maintenance: inMaintenance('monitor', m.id) })) });
 });
 
 // GET /api/monitors/:id/checks?hours=3

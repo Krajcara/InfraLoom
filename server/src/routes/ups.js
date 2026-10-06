@@ -80,7 +80,8 @@ const COLS = [
 
 // GET /api/ups
 router.get('/', (req, res) => {
-  res.json({ devices: db.prepare('SELECT * FROM ups_devices ORDER BY name').all().map(view) });
+  const inMaintenance = require('../services/maintenanceService').lookup();
+  res.json({ devices: db.prepare('SELECT * FROM ups_devices ORDER BY name').all().map((u) => ({ ...view(u), in_maintenance: inMaintenance('ups', u.id) })) });
 });
 
 // POST /api/ups

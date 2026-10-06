@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const maintenance = require('../services/maintenanceService');
 const db = require('../db/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
@@ -35,6 +36,7 @@ function createDeviceRouter(table, moduleLabel) {
         last_latency_ms: null,
         last_checked_at: row.controller_checked_at || null,
         status_source: 'fortigate',
+        in_maintenance: maintenance.brief(maintenance.activeFor(table === 'switches' ? 'switch' : 'access_point', row.id)),
       };
     }
     const m = row.monitor_id ? db.prepare('SELECT last_status, last_latency_ms, last_checked_at FROM monitors WHERE id = ?').get(row.monitor_id) : null;
@@ -45,6 +47,7 @@ function createDeviceRouter(table, moduleLabel) {
       last_status: m?.last_status || 'unknown',
       last_latency_ms: m?.last_latency_ms ?? null,
       last_checked_at: m?.last_checked_at || null,
+      in_maintenance: row.monitor_id ? maintenance.brief(maintenance.activeFor('monitor', row.monitor_id)) : maintenance.brief(maintenance.activeFor(null, null)),
     };
   }
 

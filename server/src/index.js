@@ -98,6 +98,7 @@ app.use('/api/patch-management', require('./routes/patchManagement'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/backup', require('./routes/backup'));
 app.use('/api/ups', require('./routes/ups'));
+app.use('/api/maintenance', require('./routes/maintenance'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
@@ -144,6 +145,7 @@ require('./services/hypervisorMetricsService').initScheduler();
 require('./services/backupService').initScheduler();
 require('./services/fortigateSyncService').initScheduler();
 require('./services/upsService').initScheduler();
+require('./services/maintenanceService').initScheduler();
 setTimeout(() => require('./services/sslChecker').checkAllSSL(false), 5000);
 
 process.on('SIGTERM', () => {

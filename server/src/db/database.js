@@ -512,6 +512,26 @@ for (const table of ['routers', 'switches', 'access_points']) {
   db.exec(`UPDATE monitors SET hidden = 1 WHERE id IN (SELECT monitor_id FROM ${table} WHERE monitor_id IS NOT NULL) AND hidden = 0`);
 }
 
+// ── Maintenance windows: mute state-change alerts of a target for a period ──
+db.exec(`
+  CREATE TABLE IF NOT EXISTS maintenance_windows (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_type      TEXT NOT NULL,     -- all | monitor | hypervisor | ups | switch | access_point (the last two: FortiGate-discovered)
+    target_id        INTEGER,           -- NULL for 'all'
+    target_label     TEXT,              -- name at creation time, so history stays readable after the target is deleted
+    starts_at        TEXT NOT NULL,     -- ISO 8601, UTC
+    ends_at          TEXT NOT NULL,
+    ended_at         TEXT,              -- set once the window is over; the post-window re-check runs exactly once
+    reason           TEXT,
+    source           TEXT DEFAULT 'manual',  -- manual | patch
+    source_ref       TEXT,              -- patch run id for source = 'patch'
+    created_by       TEXT,
+    created_at       TEXT DEFAULT (datetime('now')),
+    suppressed_count INTEGER DEFAULT 0  -- alerts held back during the window
+  );
+  CREATE INDEX IF NOT EXISTS idx_maintenance_open ON maintenance_windows(ended_at, ends_at);
+`);
+
 // ── UPS monitoring (SNMP v1 / v2c / v3) ──────────────────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS ups_devices (
