@@ -41,7 +41,7 @@ couple of minutes and alerts with the same discipline as the hypervisor threshol
   reported as down; some phase-2 selectors down is a warning), **HA** (a cluster that has fewer members than it had), **licences and
   support** (any entitlement with an expiry date: warning 30 days before, critical 7 days before or expired), and **SD-WAN** health-check members that are down.
 - **Any SNMP device** — built for **MikroTik** RouterOS, but it uses the standard HOST-RESOURCES and IF-MIB objects, so Cisco, HP and Linux
-  work too: CPU, memory, disk, **temperature** (MikroTik health sensors, where the model has them), voltage (shown), **restarts**
+  work too: CPU, memory, disk (RouterOS's small system flash is shown but never alerted — it is normally nearly full and does not grow), **temperature** (MikroTik health sensors, where the model has them), voltage (shown), **restarts**
   (uptime went backwards), and the **interface links you tick** as must-stay-up (uplinks). Links you do not tick are never alerted — unplugged
   desk ports are not incidents.
 - **Health data cannot be read** (the FortiGate API or SNMP stops answering) is itself an alert, so a silent device is not mistaken for a healthy one.

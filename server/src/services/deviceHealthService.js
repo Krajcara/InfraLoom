@@ -159,7 +159,10 @@ function evaluate(table, device, reading, cfg, { watch = [], baselines = {} } = 
   } else if (reading.method === 'snmp') {
     numeric('cpu', 'cpu', reading.cpu, `CPU is at ${reading.cpu}%`);
     if (reading.memory) numeric('memory', 'memory', reading.memory.pct, `memory is at ${reading.memory.pct}%`);
-    for (const dk of reading.disks || []) numeric('disk', dk.name, dk.pct, `disk "${dk.name}" is ${dk.pct}% full`);
+    // RouterOS keeps only its packages on a small flash (16 MB on a CRS326) that is normally nearly full and does not grow like
+    // a data disk — alerting on it would be a permanent false alarm. It is still shown in the panel.
+    const routerOs = /^RouterOS\b/i.test(reading.sys?.description || '');
+    if (!routerOs) for (const dk of reading.disks || []) numeric('disk', dk.name, dk.pct, `disk "${dk.name}" is ${dk.pct}% full`);
     numeric('temperature', 'temperature', reading.temperature, `temperature is ${reading.temperature} °C`);
     for (const w of watch) {
       const itf = (reading.interfaces || []).find((i) => i.name.toLowerCase() === w.toLowerCase());
