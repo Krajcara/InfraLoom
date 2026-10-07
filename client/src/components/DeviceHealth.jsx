@@ -25,6 +25,11 @@ export function alertLabel(a) {
     case 'sdwan': return `SD-WAN ${tail(a.subject)}`;
     case 'link': return `${a.subject} down`;
     case 'poll': return 'no health data';
+    case 'rating': return a.level === 'crit' ? 'health: poor' : 'health: fair';
+    case 'fan': return 'fan';
+    case 'psu': return `PSU ${a.subject}`;
+    case 'poe': return `PoE ${v}%`;
+    case 'uplink': return `uplink ${v} Mbps`;
     default: return a.kind;
   }
 }
@@ -98,6 +103,54 @@ function FortiGateReading({ last, canAdmin, onResetHa }) {
   );
 }
 
+const ratingBadge = (r) => <span className={`status-badge ${!r || /^good$/i.test(r) ? 'status-up' : /fair|moderate|warn/i.test(r) ? 'status-degraded' : 'status-down'}`}>{r || '—'}</span>;
+
+function ManagedSwitchReading({ last }) {
+  const r = last.reading;
+  return (
+    <>
+      <Section title="Reported by the FortiGate">
+        <p>
+          Health {ratingBadge(r.overall)}{r.not_good.length > 0 && <span className="muted"> ({r.not_good.join(', ')})</span>} · up {uptime(r.uptime_s)}
+        </p>
+        <p>
+          CPU {r.cpu ?? '—'}% · memory {r.memory ?? '—'}%{r.temperature != null && <> · {r.temperature} °C</>}
+          {r.fans.map((f) => <span key={f.name}> · {f.name} {f.status}{f.speed != null && ` ${Math.round(f.speed)}%`}</span>)}
+          {r.psu.map((p) => <span key={p.name}> · {p.name} {p.status}</span>)}
+        </p>
+        {r.poe && <p>PoE: {Math.round(r.poe.used_w * 10) / 10} of {r.poe.max_w} W in use ({r.poe.pct}%)</p>}
+      </Section>
+    </>
+  );
+}
+
+function ManagedApReading({ last }) {
+  const r = last.reading;
+  return (
+    <>
+      <Section title="Reported by the FortiGate">
+        <p>
+          {r.state} · health {ratingBadge(r.overall)} · {r.clients ?? 0} client{r.clients === 1 ? '' : 's'} · CPU {r.cpu ?? '—'}% · memory {r.memory ?? '—'}%
+        </p>
+        <p>
+          {r.uplink && <>Uplink {r.uplink.mbps ?? '—'} Mbps {ratingBadge(r.uplink.severity)} · </>}
+          {r.connected_to && <>on {r.connected_to.switch} {r.connected_to.port} · </>}
+          firmware {r.os_version || '—'}
+          {last.reboot_epoch && <> · last reboot {new Date(last.reboot_epoch * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>}
+        </p>
+        {r.last_failure && <p className="muted">Last failure: {r.last_failure}</p>}
+      </Section>
+      {r.radios.length > 0 && (
+        <Section title="Radios">
+          <table className="table"><tbody>
+            {r.radios.map((x) => <tr key={x.id}><td>{x.type}</td><td className="muted">channel {x.channel ?? '—'}</td><td>{x.clients ?? 0} clients</td><td className="muted">{x.utilization ?? '—'}% busy</td><td>{ratingBadge(x.health)}</td></tr>)}
+          </tbody></table>
+        </Section>
+      )}
+    </>
+  );
+}
+
 function SnmpReading({ last, watch, setWatch }) {
   const r = last.reading;
   const watched = new Set(watch.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean));
@@ -156,13 +209,15 @@ export function DeviceHealthPanel({ apiPath, device, canAdmin, canOperate, onClo
   const readNow = () => run(() => api.post(`${base}/poll`));
   const saveWatch = () => run(() => api.put(base, { watch_ifaces: watch.split(',').map((x) => x.trim()).filter(Boolean) }));
   const resetHa = () => run(() => api.put(base, { reset_ha_baseline: true }));
+  const setManaged = (managed) => run(async () => { await api.put(base, { managed }); if (managed) await api.post(`${base}/poll`); });
   async function toggleRaw() {
     if (!showRaw) { try { setRaw(await api.get(`${base}/raw`)); } catch (e) { setError(e.message); } }
     setShowRaw(!showRaw);
   }
 
   if (!data) return <section className="card"><p className="muted">{error || 'Loading...'}</p></section>;
-  const via = data.method === 'fortigate' ? 'the FortiGate REST API' : data.method === 'snmp' ? 'SNMP' : null;
+  const isManaged = !!device.discovered_from_router_id;
+  const via = data.method === 'fortigate' ? 'the FortiGate REST API' : data.method === 'snmp' ? 'SNMP' : data.method === 'fortigate-managed' ? `the FortiGate that manages it${data.managed_by ? ` (${data.managed_by})` : ''}` : null;
   const last = data.last && (data.last.sections || data.last.reading) ? data.last : null;
 
   return (
@@ -173,7 +228,12 @@ export function DeviceHealthPanel({ apiPath, device, canAdmin, canOperate, onClo
       </div>
       {error && <p className="error">{error}</p>}
 
-      {!data.enabled ? (
+      {!data.enabled && isManaged ? (
+        <p className="muted">
+          Health data of this device is read through the FortiGate that manages it{data.managed_by ? ` (${data.managed_by})` : ''}. It is not collected yet: open that FortiGate's Health panel and turn on
+          "Also read the switches and access points it manages".
+        </p>
+      ) : !data.enabled ? (
         <>
           <p className="muted">
             Health data is not collected for this device. {via ? `InfraLoom would read it through ${via}` : 'It needs the FortiGate API token (brand fortigate) or SNMP settings'} every couple of minutes
@@ -190,20 +250,28 @@ export function DeviceHealthPanel({ apiPath, device, canAdmin, canOperate, onClo
               {data.alerts.map((a) => <p key={`${a.kind}|${a.subject}`}><span className={`status-badge ${levelClass(a.level)}`}>{a.level === 'crit' ? 'critical' : 'warning'}</span> {a.detail}</p>)}
             </div>
           )}
+          {data.method === 'fortigate' && canAdmin && (
+            <label className="checkbox-row">
+              <input type="checkbox" checked={!!data.managed} onChange={(e) => setManaged(e.target.checked)} disabled={busy} />
+              <span>Also read the health of the switches and access points this FortiGate manages (FortiLink) — CPU, memory, temperature, PoE, fans, FortiGate's own rating, and every restart</span>
+            </label>
+          )}
           {last?.sections && <FortiGateReading last={last} canAdmin={canAdmin} onResetHa={resetHa} />}
-          {last?.reading && <SnmpReading last={last} watch={watch} setWatch={setWatch} />}
+          {last?.method === 'snmp' && last.reading && <SnmpReading last={last} watch={watch} setWatch={setWatch} />}
+          {last?.method === 'managed-switch' && <ManagedSwitchReading last={last} />}
+          {last?.method === 'managed-ap' && <ManagedApReading last={last} />}
           {!last && !data.error && <p className="muted">No reading yet — press "Read now".</p>}
 
-          {last?.reading && canAdmin && (
+          {last?.method === 'snmp' && canAdmin && (
             <label>Watched interfaces (names, comma-separated)
               <input value={watch} onChange={(e) => setWatch(e.target.value)} placeholder="ether1, sfp-sfpplus1" />
             </label>
           )}
           <div className="form-row">
             {canOperate && <button onClick={readNow} disabled={busy}>{busy ? 'Reading...' : 'Read now'}</button>}
-            {last?.reading && canAdmin && <button onClick={saveWatch} disabled={busy}>Save watched interfaces</button>}
+            {last?.method === 'snmp' && canAdmin && <button onClick={saveWatch} disabled={busy}>Save watched interfaces</button>}
             <button className="btn-link" onClick={toggleRaw}>{showRaw ? 'Hide raw reply' : 'Raw reply'}</button>
-            {canAdmin && <button className="btn-link danger" onClick={() => setEnabled(false)} disabled={busy}>Stop collecting</button>}
+            {canAdmin && !isManaged && <button className="btn-link danger" onClick={() => setEnabled(false)} disabled={busy}>Stop collecting</button>}
           </div>
           {showRaw && (
             <div>
@@ -261,8 +329,12 @@ export function DeviceHealthThresholds({ onClose }) {
           {row('memory', 'Memory', '%')}
           {row('disk', 'Disk', '%')}
           {row('temperature', 'Temperature', '°C')}
+          {row('poe', 'PoE budget used (switches)', '%')}
           {row('licence_days', 'Licence / support: days left', 'days')}
         </div>
+        {toggle('rating', "Managed switches and APs: FortiGate's own verdict is not \"good\"")}
+        {toggle('fan', 'Managed switches: fan or power supply failed')}
+        {toggle('uplink', 'Managed APs: uplink rated worse than good')}
         {toggle('ipsec', 'FortiGate: IPsec tunnel down')}
         {toggle('ha', 'FortiGate: HA cluster lost a member')}
         {toggle('sdwan', 'FortiGate: SD-WAN member down')}

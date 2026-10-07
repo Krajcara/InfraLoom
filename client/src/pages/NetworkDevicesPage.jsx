@@ -350,7 +350,7 @@ export default function NetworkDevicesPage({ apiPath, title }) {
                 {apiPath === 'routers' && d.brand === 'fortigate' && d.last_sync_at && (
                   <button className="btn-link" onClick={() => setSyncLog(syncLog?.id === d.id ? null : d)}>Sync log</button>
                 )}
-                {!d.discovered_from_router_id && <button className="btn-link" onClick={() => setHealthFor(healthFor === d.id ? null : d.id)}>Health</button>}
+                <button className="btn-link" onClick={() => setHealthFor(healthFor === d.id ? null : d.id)}>Health</button>
                 {canEdit && <MaintenanceLink type="device" table={apiPath === 'access-points' ? 'access_points' : apiPath} id={d.id} />}
                 {canEdit && <button className="btn-link" onClick={() => openEdit(d)}>Edit</button>}
                 {canDelete && <button className="btn-link danger" onClick={() => remove(d)}>Delete</button>}
