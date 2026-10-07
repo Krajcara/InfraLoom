@@ -44,12 +44,20 @@ couple of minutes and alerts with the same discipline as the hypervisor threshol
   work too: CPU, memory, disk (RouterOS's small system flash is shown but never alerted — it is normally nearly full and does not grow), **temperature** (MikroTik health sensors, where the model has them), voltage (shown), **restarts**
   (uptime went backwards), and the **interface links you tick** as must-stay-up (uplinks). Links you do not tick are never alerted — unplugged
   desk ports are not incidents.
+- **FortiLink-managed switches and access points** — read through the FortiGate that manages them, with the same API token: no route to the FortiLink
+  network and no SNMP needed. Turn on **Also read the health of the switches and access points this FortiGate manages** in the FortiGate's Health panel; every
+  managed device then gets its own Health button. Switches: CPU, memory, temperature, **PoE budget** (watts used of the maximum), fans and power supplies, uptime,
+  and **FortiGate's own rating** (good / fair / poor). Access points: CPU, memory, clients, uplink, which switch and port they hang on (LLDP), radios, firmware, and the same rating.
+  Alerts: CPU / memory / temperature / PoE budget over a level, a failed fan or power supply, FortiGate rating the device worse than good, an AP uplink rated worse than good, and
+  **every restart** — a switch whose uptime went backwards, an AP whose last-reboot time moved forward. A single restart is reported by name; several found in the same
+  reading are combined into one message that names every device, so a power cut does not send twelve messages. An AP that is not connected is not judged (its
+  numbers are stale); a device missing from the reply is left as it was.
 - **Health data cannot be read** (the FortiGate API or SNMP stops answering) is itself an alert, so a silent device is not mistaken for a healthy one.
 - Each FortiGate section is read on its own: one that this FortiOS version does not offer, or that the API token may not read, shows its
   reason (`HTTP 403`, `404`) and the others carry on. **Raw reply** shows exactly what the device answered, so a value that looks wrong
   can be checked against the field names it was read from.
 - Default levels (**Health thresholds** on the page, administrators): CPU 90 / 98 %, memory 82 / 90 % (FortiOS enters conserve mode at 88 %),
-  disk 85 / 95 %, temperature 70 / 85 °C, licences 30 / 7 days.
+  disk 85 / 95 %, temperature 70 / 85 °C, PoE budget 80 / 90 %, licences 30 / 7 days.
 
 Setting up the devices:
 

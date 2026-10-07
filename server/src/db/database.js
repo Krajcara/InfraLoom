@@ -529,6 +529,7 @@ for (const t of ['routers', 'switches', 'access_points']) {
   ensureColumn(t, 'health_checked_at', 'TEXT');
   ensureColumn(t, 'health_error', 'TEXT');
 }
+ensureColumn('routers', 'health_managed', 'INTEGER DEFAULT 0'); // FortiGate: also read the health of the FortiLink switches/APs it manages
 db.exec(`
   CREATE TABLE IF NOT EXISTS device_health_state (
     device_table   TEXT NOT NULL,       -- routers | switches | access_points

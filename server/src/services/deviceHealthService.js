@@ -6,7 +6,8 @@
 // clears only when it is a few points below its level, and "back to normal" is announced.
 
 const db = require('../db/database');
-const { levelFor, HYST, CONFIRM } = require('./hypervisorThresholdService');
+const { levelFor, CONFIRM } = require('./hypervisorThresholdService');
+const { ratingLevel } = require('../lib/fortigateHealth');
 
 const TABLES = ['routers', 'switches', 'access_points'];
 const SETTING_KEY = 'device_health_thresholds';
@@ -22,8 +23,13 @@ const DEFAULTS = {
   licence_days: { enabled: true, warn: 30, crit: 7 },
   ipsec: { enabled: true }, ha: { enabled: true }, sdwan: { enabled: true },
   links: { enabled: true }, poll: { enabled: true }, restart: { enabled: true },
+  // FortiLink-managed switches and APs, read through the FortiGate
+  poe: { enabled: true, warn: 80, crit: 90 },      // share of a switch's PoE budget in use
+  rating: { enabled: true },                       // FortiGate's own verdict (good / fair / poor)
+  fan: { enabled: true },                          // fans and power supplies
+  uplink: { enabled: true },                       // an AP's uplink rated worse than good
 };
-const KIND_CFG = { cpu: 'cpu', memory: 'memory', disk: 'disk', temperature: 'temperature', licence: 'licence_days', ipsec: 'ipsec', ha: 'ha', sdwan: 'sdwan', link: 'links', poll: 'poll' };
+const KIND_CFG = { cpu: 'cpu', memory: 'memory', disk: 'disk', temperature: 'temperature', licence: 'licence_days', ipsec: 'ipsec', ha: 'ha', sdwan: 'sdwan', link: 'links', poll: 'poll', rating: 'rating', fan: 'fan', psu: 'fan', poe: 'poe', uplink: 'uplink' };
 const SECTION_KINDS = { resources: ['cpu', 'memory', 'disk'], ha: ['ha'], ipsec: ['ipsec'], licenses: ['licence'], sdwan: ['sdwan'] };
 
 // ── configuration ──────────────────────────────────────────────────────────
@@ -33,7 +39,7 @@ function sanitize(input, strict = false) {
   const out = JSON.parse(JSON.stringify(DEFAULTS));
   const bad = (m) => { if (strict) throw new Error(m); };
   if (typeof src.enabled === 'boolean') out.enabled = src.enabled;
-  for (const k of ['cpu', 'memory', 'disk']) {
+  for (const k of ['cpu', 'memory', 'disk', 'poe']) {
     const s = src[k]; if (s === undefined) continue;
     if (typeof s.enabled === 'boolean') out[k].enabled = s.enabled;
     const w = s.warn === undefined ? out[k].warn : Number(s.warn), c = s.crit === undefined ? out[k].crit : Number(s.crit);
@@ -57,7 +63,7 @@ function sanitize(input, strict = false) {
     else if (w <= c) bad('licence_days: the warning period must be longer than the critical period');
     else { out.licence_days.warn = w; out.licence_days.crit = c; }
   }
-  for (const k of ['ipsec', 'ha', 'sdwan', 'links', 'poll', 'restart']) if (src[k] && typeof src[k].enabled === 'boolean') out[k].enabled = src[k].enabled;
+  for (const k of ['ipsec', 'ha', 'sdwan', 'links', 'poll', 'restart', 'rating', 'fan', 'uplink']) if (src[k] && typeof src[k].enabled === 'boolean') out[k].enabled = src[k].enabled;
   return out;
 }
 
@@ -100,9 +106,10 @@ const prevLevel = (table, id, kind, subject) => db.prepare(`SELECT level FROM de
 
 // ── wording ────────────────────────────────────────────────────────────────
 
-const UNIT = { cpu: '%', memory: '%', disk: '%', temperature: ' °C' };
+const UNIT = { cpu: '%', memory: '%', disk: '%', poe: '%', temperature: ' °C' };
+const addr = (d) => (d.ip_address && d.ip_address !== '0.0.0.0' ? ` (${d.ip_address})` : '');
 function messageFor(device, kind, level, detail, cfg) {
-  const head = `Device "${device.name}"${device.ip_address ? ` (${device.ip_address})` : ''}: ${detail}`;
+  const head = `Device "${device.name}"${addr(device)}: ${detail}`;
   if (level === 'ok') return `${head} — back to normal.`;
   const th = cfg[KIND_CFG[kind]];
   if (UNIT[kind]) return level === 'crit' ? `${head} — CRITICAL (level ${th.crit}${UNIT[kind]}).` : `${head} — above the warning level of ${th.warn}${UNIT[kind]}.`;
@@ -169,6 +176,28 @@ function evaluate(table, device, reading, cfg, { watch = [], baselines = {} } = 
       if (!itf) continue; // not on the device (any more): nothing to judge
       run('link', itf.name, itf.admin === 'down' || itf.oper === 'up' ? 'ok' : 'crit', itf.oper === 'up' ? 1 : 0, `interface "${itf.name}" is ${itf.admin === 'down' ? 'disabled' : itf.oper}`);
     }
+  } else if (reading.method === 'managed-switch') {
+    const s = reading.item;
+    numeric('cpu', 'cpu', s.cpu, `CPU is at ${s.cpu}%`);
+    numeric('memory', 'memory', s.memory, `memory is at ${s.memory}%`);
+    numeric('temperature', 'temperature', s.temperature, `temperature is ${s.temperature} °C`);
+    if (s.poe) numeric('poe', 'budget', s.poe.pct, `PoE budget is ${s.poe.pct}% used (${Math.round(s.poe.used_w * 10) / 10} of ${s.poe.max_w} W)`);
+    const good = (st) => /^(ok|good|normal|online|active)$/i.test(st);
+    for (const f of s.fans) run('fan', f.name, good(f.status) ? 'ok' : 'crit', good(f.status) ? 1 : 0, `fan "${f.name}" status is ${f.status || 'unknown'}`);
+    for (const p of s.psu) run('psu', p.name, good(p.status) ? 'ok' : 'crit', good(p.status) ? 1 : 0, `power supply "${p.name}" status is ${p.status || 'unknown'}`);
+    if (s.overall != null) run('rating', 'overall', ratingLevel(s.overall), ratingLevel(s.overall) === 'ok' ? 1 : 0, `FortiGate rates the health "${s.overall}"${s.not_good.length ? ` (${s.not_good.join(', ')})` : ''}`);
+  } else if (reading.method === 'managed-ap') {
+    const a = reading.item;
+    // note: /connected/ would also match "Disconnected" — only exactly "connected" has current readings
+    if (a.state && !/^connected$/i.test(String(a.state).trim())) {
+      // not connected: its numbers are stale, so judge nothing and keep what we knew
+      ['cpu', 'memory', 'rating', 'uplink'].forEach((k) => retainKinds.add(k));
+    } else {
+      numeric('cpu', 'cpu', a.cpu, `CPU is at ${a.cpu}%`);
+      numeric('memory', 'memory', a.memory, `memory is at ${a.memory}%`);
+      if (a.overall != null) run('rating', 'overall', ratingLevel(a.overall), ratingLevel(a.overall) === 'ok' ? 1 : 0, `FortiGate rates the health "${a.overall}"`);
+      if (a.uplink && a.uplink.severity != null) run('uplink', 'uplink', ratingLevel(a.uplink.severity), a.uplink.mbps ?? 0, `uplink runs at ${a.uplink.mbps ?? '?'} Mbps, rated "${a.uplink.severity}"`);
+    }
   }
   return { transitions: out, seen, retainKinds, baselines: newBaselines };
 }
@@ -188,6 +217,7 @@ const jparse = (v) => { try { return v ? JSON.parse(v) : null; } catch { return 
 const watchList = (device) => String(device.health_watch_ifaces || '').split(',').map((s) => s.trim()).filter(Boolean);
 
 function methodFor(table, d) {
+  if (d.discovered_from_router_id) return 'fortigate-managed';
   if (table === 'routers' && String(d.brand).toLowerCase() === 'fortigate' && d.api_token) return 'fortigate';
   const hasSnmp = d.snmp_version === '3' ? !!d.snmp_username : !!(d.snmp_community || d.snmp_version);
   if (d.ip_address && hasSnmp) return 'snmp';
@@ -204,6 +234,12 @@ async function pollDevice(table, id) {
   try {
     const device = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
     if (!device) return { skipped: 'not found' };
+    if (device.discovered_from_router_id) {
+      // a FortiLink-managed switch/AP is read together with the FortiGate that manages it
+      const parent = db.prepare('SELECT * FROM routers WHERE id = ?').get(device.discovered_from_router_id);
+      if (!parent?.health_enabled || !parent.health_managed) return { skipped: 'health of managed devices is off on the FortiGate' };
+      return pollDevice('routers', parent.id);
+    }
     const cfg = getConfig();
     const now = new Date().toISOString();
     const prev = jparse(device.health_last) || {};
@@ -268,12 +304,85 @@ async function pollDevice(table, id) {
       if (t.from === 'crit' && t.to === 'warn') continue; // easing off, still above the warning level: silent
       await notify(messageFor(device, t.kind, t.to, t.detail, cfg), EVENT_FOR[t.to], ctx);
     }
-    if (restarted) await notify(`Device "${device.name}"${device.ip_address ? ` (${device.ip_address})` : ''} restarted (uptime was ${fmtUp(restarted.from)}, now ${fmtUp(restarted.to)}).`, 'device_restarted', ctx);
+    if (restarted) await notify(`Device "${device.name}"${addr(device)} restarted (uptime was ${fmtUp(restarted.from)}, now ${fmtUp(restarted.to)}).`, 'device_restarted', ctx);
     if (transitions.length || restarted) if (global.io) global.io.emit('device-health:update', { table, id });
-    return { ok: !error, error, transitions: transitions.length, restarted: !!restarted };
+    let managed = null;
+    if (table === 'routers' && device.health_managed && cfg.enabled && method === 'fortigate') managed = await pollManagedDevices(device, cfg);
+    return { ok: !error, error, transitions: transitions.length, restarted: !!restarted, managed };
   } finally {
     inFlight.delete(key);
   }
+}
+
+// ── FortiLink-managed switches and APs, read through their FortiGate ─────────
+
+const jp = (v) => { try { return v ? JSON.parse(v) : null; } catch { return null; } };
+const findItem = (table, row, data) => (table === 'switches'
+  ? data.find((x) => String(x.key).toLowerCase() === String(row.name).toLowerCase() || x.key === row.discovered_serial)
+  : data.find((x) => x.serial === row.discovered_serial) || data.find((x) => x.name === row.name));
+const ctxOfManaged = (table, row) => ({ type: table === 'switches' ? 'switch' : 'access_point', id: row.id });
+const utc = (epoch) => `${new Date(epoch * 1000).toISOString().replace('T', ' ').slice(0, 16)} UTC`;
+
+/** A switch restarted when its uptime went backwards; an AP when its last-reboot time moved forwards (no clock needed). */
+function restartOf(table, prev, item) {
+  if (table === 'switches') return prev.uptime_s != null && item.uptime_s != null && item.uptime_s < prev.uptime_s - 30 ? { was: prev.uptime_s, now: item.uptime_s } : null;
+  return prev.reboot_epoch != null && item.reboot_epoch != null && item.reboot_epoch > prev.reboot_epoch + 5 ? { at: item.reboot_epoch } : null;
+}
+
+/** One message per kind of device: a single restart is named in full, several in the same reading are listed in one message. */
+async function notifyRestarts(groups) {
+  const maintenance = require('./maintenanceService');
+  const { notify } = require('./notificationService');
+  for (const [table, plural, list] of [['switches', 'switches', groups.switches], ['access_points', 'access points', groups.aps]]) {
+    // a device inside a maintenance window is left out (and counted there), exactly like any other muted alert
+    const live = list.filter((x) => !maintenance.suppress('device_restarted', ctxOfManaged(table, x.row)));
+    if (!live.length) continue;
+    const text = (x) => (table === 'switches' ? `uptime was ${fmtUp(x.info.was)}, now ${fmtUp(x.info.now)}` : `last reboot ${utc(x.info.at)}`);
+    const message = live.length === 1
+      ? `Device "${live[0].row.name}"${addr(live[0].row)} restarted (${text(live[0])}).`
+      : `${live.length} ${plural} restarted: ${live.map((x) => `${x.row.name} (${text(x)})`).join('; ')}.`;
+    await notify(message, 'device_restarted', null);
+  }
+}
+
+async function pollManagedDevices(router, cfg) {
+  const { fetchManagedHealth } = require('../lib/fortigateHealth');
+  const { notify } = require('./notificationService');
+  let rep;
+  try { rep = await fetchManagedHealth(router); } catch (err) { rep = { switches: { ok: false, error: err.message }, aps: { ok: false, error: err.message } }; }
+  const now = new Date().toISOString();
+  const alerts = [];
+  const restarts = { switches: [], aps: [] };
+  let devices = 0;
+
+  for (const [table, sec] of [['switches', rep.switches], ['access_points', rep.aps]]) {
+    for (const row of db.prepare(`SELECT * FROM ${table} WHERE discovered_from_router_id = ?`).all(router.id)) {
+      if (!sec.ok) { db.prepare(`UPDATE ${table} SET health_error = ?, health_checked_at = ? WHERE id = ?`).run(sec.error, now, row.id); continue; }
+      const item = findItem(table, row, sec.data);
+      if (!item) continue; // not in the reply (not authorised yet, or gone): leave it as it was
+      devices += 1;
+      const prev = jp(row.health_last) || {};
+      const method = table === 'switches' ? 'managed-switch' : 'managed-ap';
+      const { raw, ...reading } = item;
+      if (cfg.enabled) {
+        const ev = evaluate(table, row, { method, item }, cfg, {});
+        cleanup(table, row.id, cfg, ev.seen, ev.retainKinds);
+        for (const t of ev.transitions) alerts.push({ table, row, t });
+        const info = cfg.restart.enabled ? restartOf(table, prev, item) : null;
+        if (info) restarts[table === 'switches' ? 'switches' : 'aps'].push({ row, info });
+      }
+      db.prepare(`UPDATE ${table} SET health_last = ?, health_raw = ?, health_checked_at = ?, health_error = NULL WHERE id = ?`)
+        .run(JSON.stringify({ at: now, method, uptime_s: item.uptime_s ?? null, reboot_epoch: item.reboot_epoch ?? null, reading }), raw || null, now, row.id);
+    }
+  }
+
+  for (const { table, row, t } of alerts) {
+    if (t.from === 'crit' && t.to === 'warn') continue; // easing off, still above the warning level: silent
+    await notify(messageFor(row, t.kind, t.to, t.detail, cfg), EVENT_FOR[t.to], ctxOfManaged(table, row));
+  }
+  await notifyRestarts(restarts);
+  if ((alerts.length || restarts.switches.length || restarts.aps.length) && global.io) global.io.emit('device-health:update', { table: 'managed', id: router.id });
+  return { devices, alerts: alerts.length, restarts: restarts.switches.length + restarts.aps.length };
 }
 
 async function pollAll() {
@@ -306,12 +415,33 @@ function activeBreaches({ table = null, id = null, monitorId = null } = {}) {
 }
 
 function summaryFor(table, row) {
-  return { enabled: !!row.health_enabled, checked_at: row.health_checked_at || null, error: row.health_error || null, alerts: activeBreaches({ table, id: row.id }).map((b) => ({ kind: b.kind, subject: b.subject, level: b.level, value: b.value, detail: b.detail })) };
+  let enabled = !!row.health_enabled;
+  if (row.discovered_from_router_id) {
+    // a managed switch/AP is read together with its FortiGate: its switch is that router's setting
+    const p = db.prepare('SELECT health_enabled, health_managed FROM routers WHERE id = ?').get(row.discovered_from_router_id);
+    enabled = !!(p?.health_enabled && p.health_managed);
+  }
+  return { enabled, checked_at: row.health_checked_at || null, error: row.health_error || null, alerts: activeBreaches({ table, id: row.id }).map((b) => ({ kind: b.kind, subject: b.subject, level: b.level, value: b.value, detail: b.detail })) };
+}
+
+function clearManagedStates(routerId) {
+  for (const t of ['switches', 'access_points']) {
+    db.prepare(`DELETE FROM device_health_state WHERE device_table = ? AND device_id IN (SELECT id FROM ${t} WHERE discovered_from_router_id = ?)`).run(t, routerId);
+  }
 }
 
 function setEnabled(table, id, enabled) {
   db.prepare(`UPDATE ${table} SET health_enabled = ? WHERE id = ?`).run(enabled ? 1 : 0, id);
-  if (!enabled) db.prepare('DELETE FROM device_health_state WHERE device_table = ? AND device_id = ?').run(table, id);
+  if (!enabled) {
+    db.prepare('DELETE FROM device_health_state WHERE device_table = ? AND device_id = ?').run(table, id);
+    if (table === 'routers') clearManagedStates(id);
+  }
+}
+
+/** FortiGate only: also read the health of the switches and APs it manages. */
+function setManaged(routerId, enabled) {
+  db.prepare('UPDATE routers SET health_managed = ? WHERE id = ?').run(enabled ? 1 : 0, routerId);
+  if (!enabled) clearManagedStates(routerId);
 }
 
 let task = null;
@@ -323,4 +453,4 @@ function initScheduler() {
   setTimeout(() => pollAll().catch(() => {}), 20000);
 }
 
-module.exports = { TABLES, DEFAULTS, EVENT_FOR, getConfig, saveConfig, sanitize, levelForDays, evaluate, pollDevice, pollAll, activeBreaches, summaryFor, setEnabled, watchList, initScheduler, methodFor, messageFor };
+module.exports = { TABLES, DEFAULTS, EVENT_FOR, getConfig, saveConfig, sanitize, levelForDays, evaluate, pollDevice, pollAll, pollManagedDevices, activeBreaches, summaryFor, setEnabled, setManaged, watchList, initScheduler, methodFor, messageFor };

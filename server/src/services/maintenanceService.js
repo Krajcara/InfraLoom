@@ -181,6 +181,12 @@ function collectProblems(w) {
   }
   for (const [t, table, label] of [['switch', 'switches', 'Switch'], ['access_point', 'access_points', 'Access point']]) {
     if (!want(t)) continue;
+    if (!all) {
+      const dh = require('./deviceHealthService');
+      for (const b of dh.activeBreaches({ table, id: Number(w.target_id) })) {
+        problems.push({ event: dh.EVENT_FOR[b.level], ctx: { type: t, id: b.device_id }, short: `${b.device_name}: ${b.detail}`, msg: `Device "${b.device_name}": ${b.detail} — still the case after maintenance.` });
+      }
+    }
     for (const d of db.prepare(`SELECT id, name FROM ${table} WHERE discovered_from_router_id IS NOT NULL AND (controller_status = 'down' OR discovered_missing_at IS NOT NULL)${idClause('id')}`).all()) {
       problems.push({ event: 'monitor_down', ctx: { type: t, id: d.id }, short: `${label.toLowerCase()} "${d.name}" is still offline`, msg: `${label} "${d.name}" is still offline after maintenance (reported by FortiGate).` });
     }

@@ -222,6 +222,8 @@ function createDeviceRouter(table, moduleLabel) {
   const healthView = (row) => ({
     ...deviceHealth.summaryFor(table, row),
     method: deviceHealth.methodFor(table, row),
+    managed: table === 'routers' ? !!row.health_managed : undefined,       // FortiGate: also reads its FortiLink switches/APs
+    managed_by: row.discovered_from_router_id ? (db.prepare('SELECT name FROM routers WHERE id = ?').get(row.discovered_from_router_id)?.name || null) : undefined,
     watch_ifaces: deviceHealth.watchList(row),
     last: parse(row.health_last),
   });
@@ -244,8 +246,9 @@ function createDeviceRouter(table, moduleLabel) {
   router.put('/:id/health', requireRole('superadmin', 'admin'), (req, res) => {
     const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
-    if (row.discovered_from_router_id) return res.status(400).json({ error: 'FortiGate-discovered devices are not reachable from here; their state comes from the FortiGate' });
-    const { enabled, watch_ifaces: watch, reset_ha_baseline: resetHa } = req.body || {};
+    if (row.discovered_from_router_id) return res.status(400).json({ error: 'This device is read through the FortiGate that manages it — switch "Also read the switches and access points it manages" on in that FortiGate\'s Health panel' });
+    const { enabled, watch_ifaces: watch, reset_ha_baseline: resetHa, managed } = req.body || {};
+    if (managed !== undefined && (typeof managed !== 'boolean' || table !== 'routers')) return res.status(400).json({ error: 'managed is a true/false setting of a FortiGate router' });
     if (watch !== undefined) {
       if (!Array.isArray(watch) || watch.length > 64 || watch.some((n) => typeof n !== 'string' || n.length > 64 || n.includes(','))) return res.status(400).json({ error: 'watch_ifaces must be a list of up to 64 interface names' });
       db.prepare(`UPDATE ${table} SET health_watch_ifaces = ? WHERE id = ?`).run(watch.map((n) => n.trim()).filter(Boolean).join(','), row.id);
@@ -255,7 +258,8 @@ function createDeviceRouter(table, moduleLabel) {
       if (last?.baselines) { delete last.baselines.ha; db.prepare(`UPDATE ${table} SET health_last = ? WHERE id = ?`).run(JSON.stringify(last), row.id); }
     }
     if (typeof enabled === 'boolean') deviceHealth.setEnabled(table, row.id, enabled);
-    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: `${moduleLabel}.health.update`, entity_type: moduleLabel, entity_id: row.id, module: moduleLabel, details: { name: row.name, enabled, watch_ifaces: watch }, ip_address: req.ip });
+    if (typeof managed === 'boolean') deviceHealth.setManaged(row.id, managed);
+    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: `${moduleLabel}.health.update`, entity_type: moduleLabel, entity_id: row.id, module: moduleLabel, details: { name: row.name, enabled, managed, watch_ifaces: watch }, ip_address: req.ip });
     res.json(healthView(db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(row.id)));
   });
 
