@@ -26,9 +26,35 @@ hypervisor guests, applying OS updates (Patch Management), Wake-on-LAN, and an i
 | **DNS / DNS Analytics** | Health of local DNS servers (Technitium, Pi-hole, AdGuard Home), SPF/DKIM/DMARC/MX domain checks, Cloudflare zone integration, Technitium query statistics |
 | **Net Speed** | Scheduled internet speed tests (Cloudflare, Ookla CLI, LibreSpeed CLI) with history and retention |
 | **MyIP** | Public IP lookup from several sources, IP query, DNS resolver check (UDP and DoH) |
-| **Hypervisors** | Proxmox VE, Hyper-V and VMware ESXi (7.0+) in one view: node and guest drill-down, usage history, connection health alerts, power actions, SSH web terminal |
+| **Hypervisors** | Proxmox VE, Hyper-V and VMware ESXi (7.0+) in one view: node and guest drill-down, usage history, connection health alerts, [usage thresholds](#hypervisor-usage-thresholds) (storage, RAM, CPU, disk, offline nodes), power actions, SSH web terminal |
 | **Network Scanner** | `arp-scan` device inventory, on-demand `nmap` deep scan, Wake-on-LAN, new/offline device alerts |
 | **Patch Management** | See pending OS updates per guest (dry run), approve, apply with live output. Debian/Ubuntu (apt), RHEL/Fedora (dnf/yum), Alpine (apk) and Windows Update, across Proxmox VMs and LXC and Hyper-V VMs. Waits for other package managers, explains why a run failed, and tells you when a machine needs a restart — see [What a patch run does](#what-a-patch-run-does) |
+
+### Hypervisor usage thresholds
+
+**Infrastructure → Hypervisors → Usage thresholds** alerts when something gets too full or too busy — before it becomes an outage:
+
+- node **CPU** (averaged over a window, 10 minutes by default), **memory** and **system disk**, for every hypervisor type that reports them
+  (ESXi hosts do not report CPU/RAM, so nothing is checked there);
+- **storage fill** on Proxmox, plus **storage not active** (for example an NFS share that went away) and a **node offline** in a cluster
+  (the connection itself stays reachable through the other nodes, so the ordinary health check never notices).
+
+Defaults: storage 85 % / 95 %, memory 90 % / 97 %, system disk 85 % / 95 %, CPU 90 % / 98 %. Every metric can be switched off.
+
+How it behaves, so it does not cry wolf:
+
+- a level has to hold for **two readings in a row** (about four minutes) before it alerts — one spike does nothing, and a value hovering
+  around the line does nothing;
+- an alert is **not repeated**; a warning clears only when the value is 3 points below it; critical easing back to warning is silent;
+  you get a **back to normal** message when it is over;
+- a **shared** storage (NFS, Ceph) is reported once, not once per node; storages that only hold ISO images/templates, and any storages
+  you list by name, are ignored;
+- connections with the health-check bell turned off are skipped, and a [maintenance window](#maintenance-windows) on the hypervisor mutes
+  these alerts — anything still over a level when the window ends is reported once;
+- the connection card shows what is over a level right now as badges.
+
+Limits: thresholds are global (not per connection), storage checks are Proxmox-only, and there are no repeat reminders. ZFS counts its
+cache as used memory, so a ZFS host can sit above 90 % RAM normally — raise that level for it.
 
 ### Maintenance windows
 
@@ -57,7 +83,7 @@ back, and an amber banner on every page reminds you that alerts are muted.
 
 In-app bell with live toasts, plus Telegram, Slack, Discord, ntfy, Pushover and e-mail. Every event type
 (monitor down/up, SSL/licence/Entra expiry, new or offline network device, hypervisor unreachable, UPS on battery,
-low battery, power restored, UPS offline/online, patch run failed, machine needs a restart after patching) can be switched per channel, with quiet hours, and muted per target by a
+low battery, power restored, UPS offline/online, hypervisor usage above warning/critical level and back to normal, patch run failed, machine needs a restart after patching) can be switched per channel, with quiet hours, and muted per target by a
 [maintenance window](#maintenance-windows).
 
 ### Status pages
