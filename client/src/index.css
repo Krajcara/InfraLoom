@@ -2756,3 +2756,10 @@ textarea {
 .threshold-min input[type=number] { width: 70px; }
 label.checkbox-row { display: flex; flex-direction: row; gap: 10px; align-items: flex-start; }
 label.checkbox-row input[type=checkbox] { width: auto; flex: none; margin-top: 3px; }
+
+/* ── Network device health ─────────────────────────────────────────────── */
+.health-section { margin: 12px 0; }
+.health-section h3 { margin: 0 0 6px; font-size: 14px; opacity: 0.8; }
+.health-alerts { margin: 10px 0; padding: 10px 14px; border: 1px solid #f87171; border-radius: 8px; background: rgba(248, 113, 113, 0.08); }
+.health-alerts p { margin: 4px 0; }
+.health-raw { max-height: 360px; overflow: auto; white-space: pre-wrap; font-size: 12px; }

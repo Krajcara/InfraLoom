@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
 import { formatDbDate } from '../utils/formatDate';
 import MaintenanceBadge, { MaintenanceLink } from '../components/MaintenanceBadge';
+import { DeviceHealthPanel, DeviceHealthThresholds, HealthBadges } from '../components/DeviceHealth';
 
 const emptyForm = {
   name: '', brand: 'other', model: '', ip_address: '', username: '', device_password: '', notes: '', api_token: '',
@@ -26,6 +27,8 @@ export default function NetworkDevicesPage({ apiPath, title }) {
   const [revealed, setRevealed] = useState({});
   const [snmpResult, setSnmpResult] = useState(null);
   const [snmpLoading, setSnmpLoading] = useState(null);
+  const [healthFor, setHealthFor] = useState(null);
+  const [showHealthTh, setShowHealthTh] = useState(false);
 
   async function load() {
     try {
@@ -52,6 +55,7 @@ export default function NetworkDevicesPage({ apiPath, title }) {
     },
     // Switches/APs discovered from a FortiGate report status from the controller, not a ping
     'devices:controller-sync': () => load(),
+    'device-health:update': () => load(),
   });
 
   function flash(msg) {
@@ -153,6 +157,7 @@ export default function NetworkDevicesPage({ apiPath, title }) {
       {!form && canEdit && (
         <div className="filters">
           <button onClick={openCreate}>+ New {title.slice(0, -1)}</button>
+          {canDelete && <button onClick={() => setShowHealthTh(!showHealthTh)}>Health thresholds</button>}
         </div>
       )}
 
@@ -310,6 +315,7 @@ export default function NetworkDevicesPage({ apiPath, title }) {
               <td>
                 {d.name}
                 <MaintenanceBadge w={d.in_maintenance} />
+                <HealthBadges device={d} />
                 {d.discovered_from_router_id && (
                   <>
                     {' '}
@@ -344,6 +350,7 @@ export default function NetworkDevicesPage({ apiPath, title }) {
                 {apiPath === 'routers' && d.brand === 'fortigate' && d.last_sync_at && (
                   <button className="btn-link" onClick={() => setSyncLog(syncLog?.id === d.id ? null : d)}>Sync log</button>
                 )}
+                {!d.discovered_from_router_id && <button className="btn-link" onClick={() => setHealthFor(healthFor === d.id ? null : d.id)}>Health</button>}
                 {canEdit && <MaintenanceLink type="device" table={apiPath === 'access-points' ? 'access_points' : apiPath} id={d.id} />}
                 {canEdit && <button className="btn-link" onClick={() => openEdit(d)}>Edit</button>}
                 {canDelete && <button className="btn-link danger" onClick={() => remove(d)}>Delete</button>}
@@ -352,6 +359,11 @@ export default function NetworkDevicesPage({ apiPath, title }) {
           ))}
         </tbody>
       </table>
+
+      {showHealthTh && canDelete && <DeviceHealthThresholds onClose={() => setShowHealthTh(false)} />}
+      {healthFor && devices.find((d) => d.id === healthFor) && (
+        <DeviceHealthPanel apiPath={apiPath} device={devices.find((d) => d.id === healthFor)} canAdmin={canDelete} canOperate={canEdit} onClose={() => setHealthFor(null)} onChanged={load} />
+      )}
 
       {snmpResult && (
         <section className="card">
