@@ -2745,3 +2745,14 @@ textarea {
 .patch-restart { border: 1px solid #facc15; background: rgba(250, 204, 21, 0.1); color: #facc15; }
 .patch-blockers label.checkbox-row { display: flex; flex-direction: row; gap: 10px; align-items: flex-start; }
 .patch-blockers label.checkbox-row input { width: auto; margin-top: 3px; flex: none; }
+
+/* ── Hypervisor usage thresholds ───────────────────────────────────────── */
+.hv-alerts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+.threshold-grid { display: grid; grid-template-columns: minmax(150px, 1fr) 96px 96px 120px; gap: 10px 14px; align-items: center; margin: 14px 0; }
+.threshold-row { display: contents; }
+.threshold-head { font-size: 12px; opacity: 0.7; }
+.threshold-grid input[type=number] { width: 100%; }
+.threshold-min { display: flex; align-items: center; gap: 8px; font-size: 13px; opacity: 0.85; }
+.threshold-min input[type=number] { width: 70px; }
+label.checkbox-row { display: flex; flex-direction: row; gap: 10px; align-items: flex-start; }
+label.checkbox-row input[type=checkbox] { width: auto; flex: none; margin-top: 3px; }

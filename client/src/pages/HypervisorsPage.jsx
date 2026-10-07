@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Server, Plus, RefreshCw, Play, Square, RotateCw, Power, ChevronRight, TerminalSquare, MonitorSmartphone, Bell, BellOff } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../hooks/useSocket';
 import MaintenanceBadge, { MaintenanceLink } from '../components/MaintenanceBadge';
 
 const emptyForm = { type: 'proxmox', name: '', url: '', username: 'root@pam', token_id: '', api_token: '', password: '', port: '', patch_ssh_username: '', patch_ssh_password: '', patch_ssh_port: '', patch_ssh_host: '', health_check_enabled: true };
@@ -18,6 +19,7 @@ export default function HypervisorsPage() {
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
   const [showHealthConfig, setShowHealthConfig] = useState(false);
+  const [showThresholds, setShowThresholds] = useState(false);
 
   async function load() {
     try {
@@ -30,7 +32,10 @@ export default function HypervisorsPage() {
 
   useEffect(() => {
     load();
+    const t = setInterval(load, 60000); // alert badges follow the collector, which runs every couple of minutes
+    return () => clearInterval(t);
   }, []);
+  useSocket({ 'hypervisor:health-checked': load });
 
   function flash(msg) {
     setMessage(msg);
@@ -84,10 +89,12 @@ export default function HypervisorsPage() {
         <div className="filters">
           <button onClick={openCreate}><Plus size={14} /> New connection</button>
           <button onClick={() => setShowHealthConfig(!showHealthConfig)}>Health check settings</button>
+          <button onClick={() => setShowThresholds(!showThresholds)}>Usage thresholds</button>
         </div>
       )}
 
       {showHealthConfig && canEdit && <HealthCheckConfigSection onSaved={() => setShowHealthConfig(false)} />}
+      {showThresholds && canEdit && <ThresholdConfigSection onSaved={() => { setShowThresholds(false); flash('Usage thresholds saved.'); load(); }} />}
 
       {form && (
         <section className="card">
@@ -354,6 +361,121 @@ function downloadRdp(host, username) {
   URL.revokeObjectURL(url);
 }
 
+/** Short text for a badge; the full sentence is in the tooltip. */
+function alertLabel(a) {
+  const [node, storage] = a.subject.includes('/') ? a.subject.split('/') : [a.subject, null];
+  const v = Math.round(a.value);
+  if (a.kind === 'storage') return `${storage || a.subject} ${v}%`;
+  if (a.kind === 'storage_inactive') return `${storage} not active`;
+  if (a.kind === 'node_offline') return `${node} offline`;
+  if (a.kind === 'cpu') return `${node} CPU ${v}%`;
+  if (a.kind === 'memory') return `${node} RAM ${v}%`;
+  if (a.kind === 'node_disk') return `${node} disk ${v}%`;
+  return a.kind;
+}
+
+function ThresholdConfigSection({ onSaved }) {
+  const [cfg, setCfg] = useState(null);
+  const [ignore, setIgnore] = useState('');
+  const [active, setActive] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api.get('/hypervisors/thresholds').then((d) => {
+      setCfg(d.config);
+      setIgnore(d.config.ignore_storages.join(', '));
+      setActive(d.active);
+    }).catch((e) => setError(e.message));
+  }, []);
+
+  if (!cfg) return <section className="card"><p className="muted">{error || 'Loading...'}</p></section>;
+
+  const setMetric = (kind, field, value) => setCfg({ ...cfg, [kind]: { ...cfg[kind], [field]: value } });
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await api.put('/hypervisors/thresholds', { ...cfg, ignore_storages: ignore.split(',').map((s) => s.trim()).filter(Boolean) });
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function checkNow() {
+    setChecking(true);
+    try {
+      const d = await api.post('/hypervisors/thresholds/evaluate');
+      setActive(d.active);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  // One grid row per metric: [on/off + name] [warning] [critical] [extra]. Plain function, not a component, so inputs keep focus.
+  const row = (kind, label, extra = null) => (
+    <div key={kind} className="threshold-row">
+      <label className="checkbox-row threshold-label">
+        <input type="checkbox" checked={cfg[kind].enabled} onChange={(e) => setMetric(kind, 'enabled', e.target.checked)} />
+        <span>{label}</span>
+      </label>
+      <input type="number" min="1" max="100" aria-label={`${label}: warning level`} value={cfg[kind].warn} onChange={(e) => setMetric(kind, 'warn', Number(e.target.value))} disabled={!cfg[kind].enabled} />
+      <input type="number" min="1" max="100" aria-label={`${label}: critical level`} value={cfg[kind].crit} onChange={(e) => setMetric(kind, 'crit', Number(e.target.value))} disabled={!cfg[kind].enabled} />
+      {extra || <span />}
+    </div>
+  );
+
+  return (
+    <section className="card">
+      <h2>Usage thresholds</h2>
+      <p className="muted">
+        Alerts when a node or storage gets too full or too busy. A level has to hold for two readings in a row (about four minutes) before it
+        alerts, a warning only clears once the value is 3 points below it, and an alert is not repeated. Node CPU, RAM and system disk are checked
+        for every hypervisor type that reports them; storages are checked on Proxmox. Connections with the health-check bell turned off are skipped.
+        Note: ZFS counts its cache as used memory, so a ZFS host can sit above 90% RAM normally — raise that level for it.
+      </p>
+      {error && <p className="error">{error}</p>}
+      <form onSubmit={save} autoComplete="off">
+        <label className="checkbox-row"><input type="checkbox" checked={cfg.enabled} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })} /><span><strong>Alert on usage thresholds</strong></span></label>
+        <div className="threshold-grid">
+          <span />
+          <span className="threshold-head">Warning at (%)</span>
+          <span className="threshold-head">Critical at (%)</span>
+          <span />
+          {row('storage', 'Storage full')}
+          {row('memory', 'Node memory')}
+          {row('node_disk', 'Node system disk')}
+          {row('cpu', 'Node CPU, sustained', (
+            <span className="threshold-min">
+              <input type="number" min="2" max="60" aria-label="CPU averaging window in minutes" value={cfg.cpu.minutes} onChange={(e) => setMetric('cpu', 'minutes', Number(e.target.value))} disabled={!cfg.cpu.enabled} /> min avg
+            </span>
+          ))}
+        </div>
+        <label className="checkbox-row"><input type="checkbox" checked={cfg.storage_inactive.enabled} onChange={(e) => setCfg({ ...cfg, storage_inactive: { enabled: e.target.checked } })} /><span>Alert when a storage is not active (for example an NFS share that went away)</span></label>
+        <label className="checkbox-row"><input type="checkbox" checked={cfg.node_offline.enabled} onChange={(e) => setCfg({ ...cfg, node_offline: { enabled: e.target.checked } })} /><span>Alert when a node of a cluster is offline</span></label>
+        <label className="checkbox-row"><input type="checkbox" checked={cfg.ignore_iso_only} onChange={(e) => setCfg({ ...cfg, ignore_iso_only: e.target.checked })} /><span>Ignore storages that only hold ISO images and container templates</span></label>
+        <label>Ignore these storages (names, separated by commas)<input value={ignore} onChange={(e) => setIgnore(e.target.value)} placeholder="iso-share, old-nfs" /></label>
+        <div className="form-row">
+          <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+          <button type="button" onClick={checkNow} disabled={checking}>{checking ? 'Reading...' : 'Read the hypervisors now'}</button>
+        </div>
+      </form>
+      <h3>Over a level right now</h3>
+      {active.length === 0 ? <p className="muted">Nothing.</p> : (
+        <ul>{active.map((a) => <li key={`${a.connection_id}|${a.kind}|${a.subject}`}><span className={`status-badge ${a.level === 'crit' ? 'status-down' : 'status-degraded'}`}>{a.level === 'crit' ? 'critical' : 'warning'}</span> {a.connection_name}: {a.detail}</li>)}</ul>
+      )}
+    </section>
+  );
+}
+
 function HealthCheckConfigSection({ onSaved }) {
   const [cron, setCron] = useState('');
   const [minutes, setMinutes] = useState(5);
@@ -473,6 +595,15 @@ function ConnectionBrowser({ conn, canEdit, onEdit, onDelete, onToggleHealthChec
           </h2>
           <p className="muted mono">{conn.url}</p>
           {canEdit && <MaintenanceLink type="hypervisor" id={conn.id} />}
+          {conn.active_alerts?.length > 0 && (
+            <div className="hv-alerts">
+              {conn.active_alerts.map((a) => (
+                <span key={`${a.kind}|${a.subject}`} className={`status-badge ${a.level === 'crit' ? 'status-down' : 'status-degraded'}`} title={`${a.detail} (since ${new Date(a.since).toLocaleString()})`}>
+                  {alertLabel(a)}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="form-row">
           {canEdit && (
