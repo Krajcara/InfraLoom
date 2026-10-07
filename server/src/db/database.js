@@ -520,6 +520,23 @@ ensureColumn('patch_runs', 'blockers', 'TEXT');             // JSON { locks: [{p
 ensureColumn('patch_runs', 'paused_units', 'TEXT');         // JSON array of updater units stopped for this run (started again afterwards)
 ensureColumn('patch_runs', 'failure_reason', 'TEXT');       // JSON { code, title, detail, hint }
 
+// ── Hypervisor usage thresholds: the current level of everything being watched, so alerts fire on CHANGES ──
+db.exec(`
+  CREATE TABLE IF NOT EXISTS hypervisor_threshold_state (
+    connection_id  INTEGER NOT NULL REFERENCES hypervisor_connections(id) ON DELETE CASCADE,
+    kind           TEXT NOT NULL,    -- cpu | memory | node_disk | storage | storage_inactive | node_offline
+    subject        TEXT NOT NULL,    -- node name, "node/storage", or the storage name for a shared storage
+    level          TEXT NOT NULL DEFAULT 'ok',   -- ok | warn | crit
+    pending_level  TEXT,             -- a different level seen but not yet confirmed
+    pending_count  INTEGER DEFAULT 0,
+    value          REAL,
+    detail         TEXT,             -- the sentence describing the current reading
+    since          TEXT,
+    updated_at     TEXT,
+    PRIMARY KEY (connection_id, kind, subject)
+  );
+`);
+
 // ── Maintenance windows: mute state-change alerts of a target for a period ──
 db.exec(`
   CREATE TABLE IF NOT EXISTS maintenance_windows (

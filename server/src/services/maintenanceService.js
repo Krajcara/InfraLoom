@@ -7,6 +7,7 @@ const db = require('../db/database');
 // held back. Digest-style alerts (licence, SSL, Entra expiry) and "new device on the network" are never muted.
 const STATE_EVENTS = new Set([
   'monitor_down', 'monitor_up', 'hypervisor_down', 'hypervisor_up',
+  'hypervisor_threshold_warning', 'hypervisor_threshold_critical', 'hypervisor_threshold_ok',
   'ups_on_battery', 'ups_low_battery', 'ups_power_restored', 'ups_offline', 'ups_online',
   'network_device_offline',
 ]);
@@ -146,6 +147,15 @@ function collectProblems(w) {
   if (want('hypervisor')) {
     for (const c of db.prepare(`SELECT id, name FROM hypervisor_connections WHERE enabled = 1 AND health_check_enabled = 1 AND last_health_status = 'down'${idClause('id')}`).all()) {
       problems.push({ event: 'hypervisor_down', ctx: { type: 'hypervisor', id: c.id }, short: `hypervisor "${c.name}" is still unreachable`, msg: `Hypervisor connection "${c.name}" is still unreachable after maintenance.` });
+    }
+  }
+  if (want('hypervisor')) {
+    const th = require('./hypervisorThresholdService');
+    for (const b of th.activeBreaches(all ? null : Number(w.target_id))) {
+      problems.push({
+        event: th.EVENT_FOR[b.level], ctx: { type: 'hypervisor', id: b.connection_id },
+        short: `${b.connection_name}: ${b.detail}`, msg: `Hypervisor "${b.connection_name}": ${b.detail} — still the case after maintenance.`,
+      });
     }
   }
   if (want('ups')) {

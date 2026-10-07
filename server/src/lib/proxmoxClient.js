@@ -265,6 +265,32 @@ async function fetchNodesSummary(conn) {
   return details.sort((a, b) => a.node.localeCompare(b.node));
 }
 
+/** Every storage of the given nodes, flat — for the usage thresholds. A node whose call fails is reported in
+ * `failedNodes` (not silently treated as "has no storages"), so its earlier state is kept instead of being cleared. */
+async function fetchStorages(conn, nodeNames) {
+  const baseUrl = conn.url;
+  const token = buildToken(conn);
+  const items = [];
+  const failedNodes = new Set();
+  await Promise.all(
+    nodeNames.map(async (node) => {
+      try {
+        const list = await pveGet(baseUrl, `/nodes/${node}/storage`, token);
+        for (const s of list) {
+          items.push({
+            node, storage: s.storage, type: s.type, content: s.content || '',
+            shared: s.shared ? 1 : 0, enabled: s.enabled === 0 ? 0 : 1, active: s.active ? 1 : 0,
+            total: Number(s.total) || 0, used: Number(s.used) || 0,
+          });
+        }
+      } catch {
+        failedNodes.add(node);
+      }
+    })
+  );
+  return { items, failedNodes };
+}
+
 /** Basic guest list for one node — no guest-agent calls, so it's cheap
  * enough to call across every node of every connection for an overview
  * page (unlike fetchNodeDetail, which enriches with IP/OS/disk usage). */
@@ -322,5 +348,5 @@ async function powerAction(conn, node, type, vmid, action) {
 }
 
 module.exports = {
-  fetchNodesSummary, fetchNodeDetail, listGuestsBasic, powerAction, buildToken,
+  fetchNodesSummary, fetchNodeDetail, fetchStorages, listGuestsBasic, powerAction, buildToken,
 };

@@ -29,6 +29,15 @@ async function collectOne(conn) {
       if (n.status !== 'online') continue;
       insertStmt.run(conn.id, n.node, n.cpu_usage ?? null, n.mem_usage ?? null, n.disk_usage ?? null);
     }
+    // Usage thresholds, with the data just fetched. Never lets a problem here stop metrics collection.
+    try {
+      const storages = conn.type === 'proxmox' && client.fetchStorages
+        ? await client.fetchStorages(conn, nodes.filter((n) => n.status === 'online').map((n) => n.node))
+        : null;
+      await require('./hypervisorThresholdService').evaluate(conn, nodes, storages);
+    } catch (err) {
+      console.error(`[HypervisorThresholds] ${conn.name}: ${err.message}`);
+    }
   } catch {
     // connection unreachable this tick — health check already tracks/alerts
     // on this separately, so metrics collection just skips silently.

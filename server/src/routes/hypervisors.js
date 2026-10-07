@@ -32,7 +32,14 @@ function clientFor(type) {
 router.get('/connections', (req, res) => {
   const rows = db.prepare('SELECT * FROM hypervisor_connections ORDER BY name').all();
   const inMaintenance = require('../services/maintenanceService').lookup();
-  res.json({ connections: rows.map((r) => ({ ...maskConnection(r), in_maintenance: inMaintenance('hypervisor', r.id) })) });
+  const breaches = require('../services/hypervisorThresholdService').activeBreaches();
+  res.json({
+    connections: rows.map((r) => ({
+      ...maskConnection(r),
+      in_maintenance: inMaintenance('hypervisor', r.id),
+      active_alerts: breaches.filter((b) => b.connection_id === r.id).map((b) => ({ kind: b.kind, subject: b.subject, level: b.level, value: b.value, detail: b.detail, since: b.since })),
+    })),
+  });
 });
 
 // POST /api/hypervisors/connections
@@ -388,6 +395,32 @@ router.post('/health-check/config', requireRole('superadmin', 'admin'), (req, re
     "INSERT INTO settings (key, value, updated_at) VALUES ('hypervisor_health_cron', ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
   ).run(cron);
   res.json({ ok: true });
+});
+
+// ── Usage thresholds ──────────────────────────────────────────────────────
+
+// GET /api/hypervisors/thresholds — the settings and everything over a level right now
+router.get('/thresholds', (req, res) => {
+  const th = require('../services/hypervisorThresholdService');
+  res.json({ config: th.getConfig(), defaults: th.DEFAULTS, active: th.activeBreaches() });
+});
+
+// PUT /api/hypervisors/thresholds
+router.put('/thresholds', requireRole('superadmin', 'admin'), (req, res) => {
+  const th = require('../services/hypervisorThresholdService');
+  try {
+    const config = th.saveConfig(req.body || {});
+    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'hypervisor.thresholds.update', entity_type: 'hypervisor', entity_id: null, module: 'hypervisors', details: config, ip_address: req.ip });
+    res.json({ config });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/hypervisors/thresholds/evaluate — read the hypervisors now instead of waiting for the next collection
+router.post('/thresholds/evaluate', requireRole('superadmin', 'admin'), async (req, res) => {
+  await require('../services/hypervisorMetricsService').collectAll();
+  res.json({ ok: true, active: require('../services/hypervisorThresholdService').activeBreaches() });
 });
 
 module.exports = router;
