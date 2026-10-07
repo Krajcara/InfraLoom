@@ -115,7 +115,7 @@ function SnmpReading({ last, watch, setWatch }) {
       <Section title="Resources">
         <p>
           CPU {r.cpu ?? '—'}%{r.cores > 1 && ` (${r.cores} cores)`} · memory {r.memory ? `${r.memory.pct}%` : '—'}
-          {r.disks.map((d) => <span key={d.name}> · disk {d.name} {d.pct}%</span>)}
+          {r.disks.map((d) => <span key={d.name}> · disk {d.name} {d.pct}%{/^RouterOS\b/i.test(r.sys.description || '') ? ' (flash, not alerted)' : ''}</span>)}
           {r.temperature != null && <> · {r.temperature} °C</>}{r.voltage != null && <> · {r.voltage} V</>}
         </p>
       </Section>
