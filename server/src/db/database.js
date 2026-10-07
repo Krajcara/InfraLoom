@@ -520,6 +520,32 @@ ensureColumn('patch_runs', 'blockers', 'TEXT');             // JSON { locks: [{p
 ensureColumn('patch_runs', 'paused_units', 'TEXT');         // JSON array of updater units stopped for this run (started again afterwards)
 ensureColumn('patch_runs', 'failure_reason', 'TEXT');       // JSON { code, title, detail, hint }
 
+// ── Device health (FortiGate REST API / SNMP), opt-in per device ──
+for (const t of ['routers', 'switches', 'access_points']) {
+  ensureColumn(t, 'health_enabled', 'INTEGER DEFAULT 0');
+  ensureColumn(t, 'health_watch_ifaces', 'TEXT');   // comma-separated interface names whose link state alerts (SNMP devices)
+  ensureColumn(t, 'health_last', 'TEXT');           // JSON of the last reading
+  ensureColumn(t, 'health_raw', 'TEXT');            // JSON of the raw device replies, for checking field names
+  ensureColumn(t, 'health_checked_at', 'TEXT');
+  ensureColumn(t, 'health_error', 'TEXT');
+}
+db.exec(`
+  CREATE TABLE IF NOT EXISTS device_health_state (
+    device_table   TEXT NOT NULL,       -- routers | switches | access_points
+    device_id      INTEGER NOT NULL,
+    kind           TEXT NOT NULL,       -- cpu | memory | disk | temperature | ipsec | ha | licence | sdwan | link | poll
+    subject        TEXT NOT NULL,
+    level          TEXT NOT NULL DEFAULT 'ok',   -- ok | warn | crit
+    pending_level  TEXT,
+    pending_count  INTEGER DEFAULT 0,
+    value          REAL,
+    detail         TEXT,
+    since          TEXT,
+    updated_at     TEXT,
+    PRIMARY KEY (device_table, device_id, kind, subject)
+  );
+`);
+
 // ── Hypervisor usage thresholds: the current level of everything being watched, so alerts fire on CHANGES ──
 db.exec(`
   CREATE TABLE IF NOT EXISTS hypervisor_threshold_state (

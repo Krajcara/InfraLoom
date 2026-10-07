@@ -2,6 +2,7 @@
 
 const express = require('express');
 const maintenance = require('../services/maintenanceService');
+const deviceHealth = require('../services/deviceHealthService');
 const db = require('../db/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
@@ -24,12 +25,16 @@ function createDeviceRouter(table, moduleLabel) {
   const router = express.Router();
   router.use(requireAuth);
 
-  function withMonitor(row) {
-    if (!row) return row;
+  function withMonitor(input) {
+    if (!input) return input;
+    // the raw device replies are large and only needed on demand
+    const { health_raw, health_last, ...row } = input;
+    const health = deviceHealth.summaryFor(table, input);
     // FortiGate-discovered devices: status is what the FortiGate reports, not a ping.
     if (row.discovered_from_router_id) {
       return {
         ...row,
+        health,
         device_password: row.device_password ? '***' : null,
         api_token: row.api_token ? '***' : null,
         last_status: row.discovered_missing_at ? 'down' : row.controller_status || 'unknown',
@@ -42,6 +47,7 @@ function createDeviceRouter(table, moduleLabel) {
     const m = row.monitor_id ? db.prepare('SELECT last_status, last_latency_ms, last_checked_at FROM monitors WHERE id = ?').get(row.monitor_id) : null;
     return {
       ...row,
+      health,
       device_password: row.device_password ? '***' : null,
       api_token: row.api_token ? '***' : null,
       last_status: m?.last_status || 'unknown',
@@ -173,6 +179,7 @@ function createDeviceRouter(table, moduleLabel) {
       db.prepare('DELETE FROM monitors WHERE id = ?').run(existing.monitor_id);
     }
     db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(req.params.id);
+    db.prepare('DELETE FROM device_health_state WHERE device_table = ? AND device_id = ?').run(table, req.params.id);
 
     writeAuditLog({
       user_id: req.user.id, username: req.user.username, action: `${moduleLabel}.delete`,
@@ -208,6 +215,56 @@ function createDeviceRouter(table, moduleLabel) {
     };
     const result = await pollSnmp(existing.ip_address, cfg);
     res.json(result);
+  });
+
+  // ── Health (opt-in) ─────────────────────────────────────────────────────
+  const parse = (v) => { try { return v ? JSON.parse(v) : null; } catch { return null; } };
+  const healthView = (row) => ({
+    ...deviceHealth.summaryFor(table, row),
+    method: deviceHealth.methodFor(table, row),
+    watch_ifaces: deviceHealth.watchList(row),
+    last: parse(row.health_last),
+  });
+
+  // GET /api/{table}/:id/health
+  router.get('/:id/health', (req, res) => {
+    const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    res.json(healthView(row));
+  });
+
+  // GET /api/{table}/:id/health/raw — what the device actually answered, per section
+  router.get('/:id/health/raw', (req, res) => {
+    const row = db.prepare(`SELECT health_raw, health_checked_at FROM ${table} WHERE id = ?`).get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    res.json({ checked_at: row.health_checked_at, raw: parse(row.health_raw) });
+  });
+
+  // PUT /api/{table}/:id/health { enabled?, watch_ifaces?: [names], reset_ha_baseline? }
+  router.put('/:id/health', requireRole('superadmin', 'admin'), (req, res) => {
+    const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (row.discovered_from_router_id) return res.status(400).json({ error: 'FortiGate-discovered devices are not reachable from here; their state comes from the FortiGate' });
+    const { enabled, watch_ifaces: watch, reset_ha_baseline: resetHa } = req.body || {};
+    if (watch !== undefined) {
+      if (!Array.isArray(watch) || watch.length > 64 || watch.some((n) => typeof n !== 'string' || n.length > 64 || n.includes(','))) return res.status(400).json({ error: 'watch_ifaces must be a list of up to 64 interface names' });
+      db.prepare(`UPDATE ${table} SET health_watch_ifaces = ? WHERE id = ?`).run(watch.map((n) => n.trim()).filter(Boolean).join(','), row.id);
+    }
+    if (resetHa) {
+      const last = parse(row.health_last);
+      if (last?.baselines) { delete last.baselines.ha; db.prepare(`UPDATE ${table} SET health_last = ? WHERE id = ?`).run(JSON.stringify(last), row.id); }
+    }
+    if (typeof enabled === 'boolean') deviceHealth.setEnabled(table, row.id, enabled);
+    writeAuditLog({ user_id: req.user.id, username: req.user.username, action: `${moduleLabel}.health.update`, entity_type: moduleLabel, entity_id: row.id, module: moduleLabel, details: { name: row.name, enabled, watch_ifaces: watch }, ip_address: req.ip });
+    res.json(healthView(db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(row.id)));
+  });
+
+  // POST /api/{table}/:id/health/poll — read it now
+  router.post('/:id/health/poll', requireRole('superadmin', 'admin', 'operator'), async (req, res) => {
+    const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    const result = await deviceHealth.pollDevice(table, row.id);
+    res.json({ result, ...healthView(db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(row.id)) });
   });
 
   // POST /api/{table}/:id/sync — pulls managed switches/APs from this

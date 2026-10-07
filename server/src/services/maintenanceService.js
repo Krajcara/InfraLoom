@@ -8,6 +8,7 @@ const db = require('../db/database');
 const STATE_EVENTS = new Set([
   'monitor_down', 'monitor_up', 'hypervisor_down', 'hypervisor_up',
   'hypervisor_threshold_warning', 'hypervisor_threshold_critical', 'hypervisor_threshold_ok',
+  'device_health_warning', 'device_health_critical', 'device_health_ok', 'device_restarted',
   'ups_on_battery', 'ups_low_battery', 'ups_power_restored', 'ups_offline', 'ups_online',
   'network_device_offline',
 ]);
@@ -147,6 +148,16 @@ function collectProblems(w) {
   if (want('hypervisor')) {
     for (const c of db.prepare(`SELECT id, name FROM hypervisor_connections WHERE enabled = 1 AND health_check_enabled = 1 AND last_health_status = 'down'${idClause('id')}`).all()) {
       problems.push({ event: 'hypervisor_down', ctx: { type: 'hypervisor', id: c.id }, short: `hypervisor "${c.name}" is still unreachable`, msg: `Hypervisor connection "${c.name}" is still unreachable after maintenance.` });
+    }
+  }
+  if (want('monitor')) {
+    // network devices raise their health alerts against their ping monitor, so a window on the monitor covers them too
+    const dh = require('./deviceHealthService');
+    for (const b of dh.activeBreaches(all ? {} : { monitorId: Number(w.target_id) })) {
+      problems.push({
+        event: dh.EVENT_FOR[b.level], ctx: b.monitor_id ? { type: 'monitor', id: b.monitor_id } : null,
+        short: `${b.device_name}: ${b.detail}`, msg: `Device "${b.device_name}": ${b.detail} — still the case after maintenance.`,
+      });
     }
   }
   if (want('hypervisor')) {

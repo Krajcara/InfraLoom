@@ -21,7 +21,7 @@ hypervisor guests, applying OS updates (Patch Management), Wake-on-LAN, and an i
 | Module | What you get |
 |---|---|
 | **Uptime Monitor** | HTTP(S), TCP, ICMP ping, DNS, keyword, JSON query, Docker and push-heartbeat monitors; SSL certificate expiry tracking |
-| **Routers / Switches / Access Points** | Ping-backed status; optional SNMP (v1, v2c, v3) for interface statistics. **FortiGate** integration discovers FortiSwitches and FortiAPs through the REST API and shows the online/offline state the FortiGate itself reports |
+| **Routers / Switches / Access Points** | Ping-backed status; optional SNMP (v1, v2c, v3) for interface statistics. **FortiGate** integration discovers FortiSwitches and FortiAPs through the REST API and shows the online/offline state the FortiGate itself reports. Opt-in [device health](#network-device-health): FortiGate (CPU/memory, HA, IPsec tunnels, licences, SD-WAN) and any SNMP device such as **MikroTik** (CPU, memory, disk, temperature, restarts, watched uplinks) |
 | **UPS** | SNMP (v1, v2c, v3) via the standard UPS-MIB, with an APC PowerNet fallback: battery charge and runtime, load, input/output voltage, history charts, and alerts for power loss, low battery, power restored and unreachable UPS |
 | **DNS / DNS Analytics** | Health of local DNS servers (Technitium, Pi-hole, AdGuard Home), SPF/DKIM/DMARC/MX domain checks, Cloudflare zone integration, Technitium query statistics |
 | **Net Speed** | Scheduled internet speed tests (Cloudflare, Ookla CLI, LibreSpeed CLI) with history and retention |
@@ -29,6 +29,38 @@ hypervisor guests, applying OS updates (Patch Management), Wake-on-LAN, and an i
 | **Hypervisors** | Proxmox VE, Hyper-V and VMware ESXi (7.0+) in one view: node and guest drill-down, usage history, connection health alerts, [usage thresholds](#hypervisor-usage-thresholds) (storage, RAM, CPU, disk, offline nodes), power actions, SSH web terminal |
 | **Network Scanner** | `arp-scan` device inventory, on-demand `nmap` deep scan, Wake-on-LAN, new/offline device alerts |
 | **Patch Management** | See pending OS updates per guest (dry run), approve, apply with live output. Debian/Ubuntu (apt), RHEL/Fedora (dnf/yum), Alpine (apk) and Windows Update, across Proxmox VMs and LXC and Hyper-V VMs. Waits for other package managers, explains why a run failed, and tells you when a machine needs a restart — see [What a patch run does](#what-a-patch-run-does) |
+
+### Network device health
+
+Opt-in, per device: press **Health** on a router, switch or access point, then **Start collecting health data**. InfraLoom reads it every
+couple of minutes and alerts with the same discipline as the hypervisor thresholds (a level must hold for two readings, no repeats,
+"back to normal" is announced; a [maintenance window](#maintenance-windows) on the device mutes it).
+
+- **FortiGate** (brand `fortigate`, over the REST API token you already use for switch/AP sync): CPU and memory (also disk and session
+  count are shown), **IPsec tunnels** (site-to-site tunnels only — dial-up templates are ignored; a configured tunnel that never came up is
+  reported as down; some phase-2 selectors down is a warning), **HA** (a cluster that has fewer members than it had), **licences and
+  support** (any entitlement with an expiry date: warning 30 days before, critical 7 days before or expired), and **SD-WAN** health-check members that are down.
+- **Any SNMP device** — built for **MikroTik** RouterOS, but it uses the standard HOST-RESOURCES and IF-MIB objects, so Cisco, HP and Linux
+  work too: CPU, memory, disk, **temperature** (MikroTik health sensors, where the model has them), voltage (shown), **restarts**
+  (uptime went backwards), and the **interface links you tick** as must-stay-up (uplinks). Links you do not tick are never alerted — unplugged
+  desk ports are not incidents.
+- **Health data cannot be read** (the FortiGate API or SNMP stops answering) is itself an alert, so a silent device is not mistaken for a healthy one.
+- Each FortiGate section is read on its own: one that this FortiOS version does not offer, or that the API token may not read, shows its
+  reason (`HTTP 403`, `404`) and the others carry on. **Raw reply** shows exactly what the device answered, so a value that looks wrong
+  can be checked against the field names it was read from.
+- Default levels (**Health thresholds** on the page, administrators): CPU 90 / 98 %, memory 82 / 90 % (FortiOS enters conserve mode at 88 %),
+  disk 85 / 95 %, temperature 70 / 85 °C, licences 30 / 7 days.
+
+Setting up the devices:
+
+- **FortiGate:** the REST API administrator needs read access to system, VPN and network information. If a section shows `HTTP 403`, its profile
+  lacks that. The FortiGate is reached on HTTPS port 443 and the API must be allowed from the InfraLoom server (Trusted Hosts).
+- **MikroTik:** enable SNMP (`/snmp set enabled=yes`), add a read-only community (`/snmp community add name=<community> addresses=<InfraLoom IP>/32`),
+  then put the same community on the device in InfraLoom. RouterOS reports temperature in tenths of a degree; InfraLoom converts it.
+
+Limits: FortiOS field names differ between versions and the parsers accept several shapes, but they were written against the
+documented API, not against every release — use **Raw reply** when something looks off. Levels are global (not per device), and
+there are no repeat reminders.
 
 ### Hypervisor usage thresholds
 
@@ -83,7 +115,7 @@ back, and an amber banner on every page reminds you that alerts are muted.
 
 In-app bell with live toasts, plus Telegram, Slack, Discord, ntfy, Pushover and e-mail. Every event type
 (monitor down/up, SSL/licence/Entra expiry, new or offline network device, hypervisor unreachable, UPS on battery,
-low battery, power restored, UPS offline/online, hypervisor usage above warning/critical level and back to normal, patch run failed, machine needs a restart after patching) can be switched per channel, with quiet hours, and muted per target by a
+low battery, power restored, UPS offline/online, network device health and restarts, hypervisor usage above warning/critical level and back to normal, patch run failed, machine needs a restart after patching) can be switched per channel, with quiet hours, and muted per target by a
 [maintenance window](#maintenance-windows).
 
 ### Status pages
