@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../api';
 import NotificationBell from './NotificationBell';
 import TvPageLinks from './TvPageLinks';
 import MaintenanceBanner from './MaintenanceBanner';
@@ -44,6 +45,18 @@ const NAV_GROUPS = [
     ],
   },
   {
+    // shown only while the cabling module is on and this browser is inside its allowed networks (see /cabling/status)
+    key: 'cabling',
+    label: 'Cabling',
+    module: 'cabling',
+    items: [
+      { to: '/cabling', label: 'Rooms', end: true },
+      { to: '/cabling/offices', label: 'Offices' },
+      { to: '/cabling/devices', label: 'Devices' },
+      { to: '/cabling/templates', label: 'Templates' },
+    ],
+  },
+  {
     key: 'account',
     label: 'Account',
     items: [{ to: '/profile', label: 'Profile' }],
@@ -66,6 +79,11 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [openGroup, setOpenGroup] = useState(null);
+  const [cablingOn, setCablingOn] = useState(false);
+
+  useEffect(() => {
+    api.get('/cabling/status').then((s) => setCablingOn(!!(s.enabled && s.allowed))).catch(() => setCablingOn(false));
+  }, []);
 
   // Auto-open the group containing the active route; dashboard has none.
   useEffect(() => {
@@ -100,6 +118,7 @@ export default function Layout() {
             const visibleItems = group.items.filter((item) => !item.roles || item.roles.includes(user?.role));
             if (visibleItems.length === 0) return null;
             if (group.roles && !group.roles.includes(user?.role)) return null;
+            if (group.module === 'cabling' && !cablingOn) return null;
 
             const isOpen = openGroup === group.key;
             const isGroupActive = visibleItems.some((item) => location.pathname.startsWith(item.to));
@@ -119,6 +138,7 @@ export default function Layout() {
                       <NavLink
                         key={item.to}
                         to={item.to}
+                        end={item.end}
                         className={({ isActive }) => `sidebar-link nested${isActive ? ' active' : ''}`}
                       >
                         {item.label}

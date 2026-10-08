@@ -70,6 +70,27 @@ Limits: FortiOS field names differ between versions and the parsers accept sever
 documented API, not against every release — use **Raw reply** when something looks off. Levels are global (not per device), and
 there are no repeat reminders.
 
+### Cabling (technical rooms)
+
+**Cabling** documents your network equipment room by room: rooms and offices, racks, devices (switch, router, firewall, hypervisor, server, NAS,
+patch panel, fibre panel, desktop, notebook, printer, access point), and the **ports** of each device. It is documentation only — nothing here changes your network.
+
+- **Port groups and templates.** A device is created from groups (`Gi1/0/` 1–24 RJ45 1G PoE, `Te1/1/` 1–4 SFP+ 10G…) and the ports are generated; save a set of groups as a
+  template (for example *FortiSwitch 124F-POE*) and the next switch is one click. Ports can be edited one by one afterwards, and more can be added later.
+- **Room view.** Racks with their devices from the top unit down, each device's faceplate with its ports (switches in two rows like the real thing, panels in one),
+  a panel with the selected port's details, and a table of the other devices in the room.
+- **Wall outlets.** On a patch-panel port, record the office and the outlet label its rear side runs to; every office lists its outlets with the panel, port, room and rack.
+- **Search** by port, wall outlet, IP address, serial number or device name.
+- **Linked to monitoring.** A device can point at something InfraLoom monitors (router, switch, access point, hypervisor, UPS): its live state and alerts show on the room view,
+  and **Add from monitored devices** turns an existing item into an inventory device in one click. The link is a soft reference, so FortiGate-discovered switches and APs
+  can come and go without taking the documentation with them.
+- **Access.** Everyone who can sign in can read; operators and administrators create and edit; only administrators delete. Every change is written to the audit log.
+  In **Settings → Cabling module** an administrator can switch the module off or limit it to your own networks (a list that excludes your own address is refused).
+  Behind a reverse proxy the address comes from `X-Forwarded-For` (one proxy is trusted).
+- Links between ports, the trace of a port to its wall outlet or to another room, and CSV/Excel import and export come in the next releases; their tables already exist.
+
+`npm test` runs the module's tests (validation, port generation, triggers, the network matcher and the whole API on a throw-away database).
+
 ### Hypervisor usage thresholds
 
 **Infrastructure → Hypervisors → Usage thresholds** alerts when something gets too full or too busy — before it becomes an outage:
@@ -225,7 +246,7 @@ sudo journalctl -u infraloom -f
 | Role | Can do | Cannot do |
 |---|---|---|
 | **Viewer** | View everything | Create, edit, run or delete anything; user management |
-| **Operator** | Viewer + add devices, monitors and UPS units, start network scans and patch runs, schedule maintenance windows, renew licences, reveal stored passwords | Delete things, manage connections and credentials, change Settings, user management |
+| **Operator** | Viewer + add devices, monitors and UPS units, start network scans and patch runs, schedule maintenance windows, edit the cabling documentation, renew licences, reveal stored passwords | Delete things, manage connections and credentials, change Settings, user management |
 | **Admin** | Operator + delete, manage all connections and credentials, change Settings, manage Operator/Viewer accounts | Run system updates, manage Admin/Superadmin accounts |
 | **Superadmin** | Everything | — |
 

@@ -1,13 +1,14 @@
 {
   "name": "infraloom-server",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "migrate": "node src/db/migrate.js",
-    "seed": "node src/db/seed.js"
+    "seed": "node src/db/seed.js",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "axios": "^1.7.9",

@@ -2763,3 +2763,90 @@ label.checkbox-row input[type=checkbox] { width: auto; flex: none; margin-top: 3
 .health-alerts { margin: 10px 0; padding: 10px 14px; border: 1px solid #f87171; border-radius: 8px; background: rgba(248, 113, 113, 0.08); }
 .health-alerts p { margin: 4px 0; }
 .health-raw { max-height: 360px; overflow: auto; white-space: pre-wrap; font-size: 12px; }
+
+/* ── Cabling module (technical rooms, devices, ports) ─────────────────── */
+.cab-page .cab-wide { max-width: none; }
+.cab-crumbs { font-size: 13px; margin-bottom: 4px; }
+.cab-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+.cab-head h1 { margin: 0; }
+.cab-sub { color: #8b8f99; font-weight: 400; font-size: 0.7em; }
+.cab-head-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+a.cab-btn { display: inline-block; background: #2b6cff; color: #fff; border-radius: 6px; padding: 8px 14px; font-size: 14px; }
+a.cab-btn:hover { background: #1f57d6; }
+.cab-btn-ghost { background: transparent; color: #e6e6e6; border: 1px solid #3a3f4b; }
+.cab-btn-ghost:hover { background: #232730; }
+.cab-grow { flex: 1; min-width: 180px; }
+.cab-in-num { width: 80px; }
+.cab-in-prefix { width: 130px; }
+
+.cab-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 14px 0 18px; }
+.cab-kpi { background: #1a1d24; border: 1px solid #2a2e38; border-radius: 10px; padding: 12px 16px; }
+.cab-kpi-value { font-size: 22px; margin-top: 4px; color: #fff; }
+.cab-room-actions { margin-bottom: 10px; }
+
+.cab-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+.cab-panel { position: sticky; top: 16px; max-width: none; }
+.cab-panel h2 { margin-bottom: 8px; }
+.cab-dl { display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; margin: 12px 0; font-size: 13px; }
+.cab-dl dt { color: #8b8f99; } .cab-dl dd { margin: 0; }
+.cab-portform { display: flex; flex-direction: column; gap: 10px; }
+.cab-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #3a3f4b; }
+.cab-dot--outlet { background: transparent; border: 1px dashed #5b8def; }
+
+.cab-rack-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 6px 0 8px; }
+.cab-rack-head h2 { margin: 0; font-size: 17px; }
+.cab-legend { display: flex; gap: 14px; align-items: center; font-size: 12px; color: #a9adb8; }
+.cab-sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.cab-sw--free { background: #2e323b; border: 1px solid #3f4551; }
+.cab-sw--outlet { border: 1px dashed #5b8def; }
+.cab-h2 { font-size: 17px; margin: 22px 0 8px; }
+
+.cab-device { max-width: none; padding: 14px 18px 16px; margin-bottom: 14px; }
+.cab-device--hl { border-color: #5b8def; box-shadow: 0 0 0 1px #5b8def; }
+.cab-device-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+.cab-device-name { font-size: 15px; }
+.cab-device-meta { font-size: 12px; }
+.cab-device-sub { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; min-height: 22px; }
+.cab-device-actions { margin-left: auto; display: flex; gap: 8px; }
+.cab-tag { display: inline-block; background: #262a33; color: #c9ccd3; border-radius: 4px; padding: 1px 7px; font-size: 11px; }
+.cab-tag--purpose { background: rgba(240, 160, 80, 0.16); color: #f0a050; }
+
+.cab-strip { background: #101216; border: 1px solid #262a33; border-radius: 8px; padding: 10px 12px; display: flex; gap: 22px; align-items: flex-start; overflow-x: auto; }
+.cab-block { display: grid; gap: 5px; }
+.cab-block--two { grid-auto-flow: column; grid-template-rows: repeat(2, auto); }
+.cab-block--row { grid-auto-flow: column; }
+.cab-strip--panel .cab-block--row { gap: 5px; }
+.cab-port { min-width: 28px; height: 28px; padding: 0 4px; border-radius: 5px; border: 1px solid #3f4551; background: #2e323b; color: #c9ccd3; font-family: 'SF Mono', Consolas, monospace; font-size: 11px; cursor: pointer; line-height: 1; }
+.cab-port:hover { background: #3a3f4b; }
+.cab-port--wide { min-width: 52px; height: 32px; }
+.cab-port--outlet { background: transparent; border: 1px dashed #5b8def; color: #8fb4ff; }
+.cab-port--outlet:hover { background: rgba(91, 141, 239, 0.15); }
+.cab-port--sel { outline: 2px solid #fff; outline-offset: 1px; }
+.cab-noports { margin: 4px 0; }
+.cab-mini .cab-strip { padding: 5px 7px; }
+.cab-mini .cab-port { min-width: 22px; height: 22px; font-size: 10px; }
+
+.cab-search { position: relative; }
+.cab-search input { width: 300px; margin: 0; }
+.cab-search-results { position: absolute; right: 0; top: 100%; margin-top: 4px; width: 420px; max-height: 360px; overflow: auto; z-index: 30; background: #1a1d24; border: 1px solid #3a3f4b; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+.cab-search-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; background: transparent; color: #e6e6e6; border: none; border-bottom: 1px solid #262a33; border-radius: 0; padding: 8px 12px; text-align: left; }
+.cab-search-item:hover { background: #232730; }
+.cab-search-empty { padding: 10px 12px; }
+
+.cab-grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; margin-bottom: 12px; }
+.cab-grid4 input, .cab-grid4 select { width: 100%; }
+.cab-rackpos { display: grid; grid-template-columns: 1fr 110px; gap: 10px; }
+.cab-sec-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.cab-sec-head h2 { margin-bottom: 2px; }
+.cab-groups .table input, .cab-groups .table select { margin: 0; }
+.cab-preview { border-top: 1px solid #2a2e38; margin-top: 14px; padding-top: 12px; }
+.cab-preview .muted { font-size: 12px; margin-bottom: 6px; }
+.cab-inline-form { align-items: flex-end; }
+.cab-office-detail h3 { font-size: 14px; margin: 12px 0 2px; color: #a9adb8; }
+
+@media (max-width: 1150px) {
+  .cab-layout { grid-template-columns: minmax(0, 1fr); }
+  .cab-panel { position: static; }
+  .cab-grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cab-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

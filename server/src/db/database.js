@@ -725,6 +725,8 @@ const defaultSettings = {
   netscan_last_run: '',
   hypervisor_health_cron: '*/5 * * * *',
   tv_dashboard_enabled: '1',
+  cabling_enabled: 'true',          // the cabling module can be switched off in Settings
+  cabling_allowed_networks: '',     // comma-separated networks allowed to use it; empty = everyone who can sign in
   tv_hypervisors_enabled: '1',
   hypervisor_metrics_cron: '*/2 * * * *',
   hypervisor_metrics_retention_hours: '24',
@@ -737,5 +739,8 @@ const insertSetting = db.prepare(
 for (const [key, value] of Object.entries(defaultSettings)) {
   insertSetting.run(key, value);
 }
+
+// Cabling module (technical rooms, devices, ports, patch panels): numbered SQL migrations of its own.
+require('./cabling').migrate(db);
 
 module.exports = db;

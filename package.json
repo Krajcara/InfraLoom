@@ -1,6 +1,6 @@
 {
   "name": "infraloom",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "workspaces": [
     "client",
@@ -12,7 +12,8 @@
     "start": "npm run start --workspace=server",
     "migrate": "npm run migrate --workspace=server",
     "seed": "npm run seed --workspace=server",
-    "prepare": "git config core.hooksPath .githooks || true"
+    "prepare": "git config core.hooksPath .githooks || true",
+    "test": "npm test -w server"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

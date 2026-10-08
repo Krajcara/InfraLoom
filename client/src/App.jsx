@@ -30,6 +30,12 @@ import UpsPage from './pages/UpsPage';
 import MaintenancePage from './pages/MaintenancePage';
 import NetworkScannerPage from './pages/NetworkScannerPage';
 import PatchManagementPage from './pages/PatchManagementPage';
+import CablingRoomsPage from './pages/cabling/CablingRoomsPage';
+import CablingRoomPage from './pages/cabling/CablingRoomPage';
+import CablingOfficesPage from './pages/cabling/CablingOfficesPage';
+import CablingDevicesPage from './pages/cabling/CablingDevicesPage';
+import CablingDeviceFormPage from './pages/cabling/CablingDeviceFormPage';
+import CablingTemplatesPage from './pages/cabling/CablingTemplatesPage';
 
 export default function App() {
   return (
@@ -61,6 +67,13 @@ export default function App() {
           <Route path="/hypervisors" element={<HypervisorsPage />} />
           <Route path="/ups" element={<UpsPage />} />
           <Route path="/maintenance" element={<MaintenancePage />} />
+          <Route path="/cabling" element={<CablingRoomsPage />} />
+          <Route path="/cabling/rooms/:id" element={<CablingRoomPage />} />
+          <Route path="/cabling/offices" element={<CablingOfficesPage />} />
+          <Route path="/cabling/devices" element={<CablingDevicesPage />} />
+          <Route path="/cabling/devices/new" element={<CablingDeviceFormPage />} />
+          <Route path="/cabling/devices/:id/edit" element={<CablingDeviceFormPage />} />
+          <Route path="/cabling/templates" element={<CablingTemplatesPage />} />
           <Route path="/network-scanner" element={<NetworkScannerPage />} />
           <Route path="/patch-management" element={<PatchManagementPage />} />
           <Route

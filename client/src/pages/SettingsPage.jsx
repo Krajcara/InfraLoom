@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
+import CablingSettingsCard from '../components/cabling/CablingSettingsCard';
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -11,6 +12,7 @@ export default function SettingsPage() {
       <h1>Settings</h1>
       {canEdit && <GeneralSection />}
       {canEdit && <TvPagesSection />}
+      {canEdit && <CablingSettingsCard />}
       {canEdit && <SmtpSection />}
       {canEdit && <NotificationsSection />}
       {canEdit && <NotificationRulesSection />}
