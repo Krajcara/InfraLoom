@@ -2,18 +2,21 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api';
 import CablingSearch from '../../components/cabling/CablingSearch';
+import RoomsMap from '../../components/cabling/RoomsMap';
 import { errText, useCablingRights } from '../../components/cabling/common';
 
 export default function CablingRoomsPage() {
   const rights = useCablingRights();
   const [rooms, setRooms] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [trunks, setTrunks] = useState([]);
   const [form, setForm] = useState(null);
   const [error, setError] = useState(null);
 
   const load = useCallback(() => {
     api.get('/cabling/rooms').then((d) => setRooms(d.rooms)).catch((e) => setError(errText(e)));
     api.get('/cabling/summary').then(setSummary).catch(() => {});
+    api.get('/cabling/trunks').then((d) => setTrunks(d.trunks)).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -40,6 +43,14 @@ export default function CablingRoomsPage() {
           <div className="cab-kpi"><div className="muted">Devices</div><div className="cab-kpi-value mono">{summary.devices}</div></div>
           <div className="cab-kpi"><div className="muted">Ports</div><div className="cab-kpi-value mono">{summary.ports}</div></div>
           <div className="cab-kpi"><div className="muted">Wall outlets recorded</div><div className="cab-kpi-value mono">{summary.outlets}</div></div>
+        </div>
+      )}
+
+      {rooms && trunks.length > 0 && (
+        <div className="card cab-wide cab-mapcard">
+          <h2>Map</h2>
+          <p className="muted">Rooms and the trunks between them (strands in use). Click a room to open it.</p>
+          <RoomsMap rooms={rooms} trunks={trunks} />
         </div>
       )}
 

@@ -5,6 +5,9 @@ import PortStrip from '../../components/cabling/PortStrip';
 import CablingSearch from '../../components/cabling/CablingSearch';
 import TraceView from '../../components/cabling/TraceView';
 import TrunkCard from '../../components/cabling/TrunkCard';
+import RackElevation from '../../components/cabling/RackElevation';
+import ConnectedList from '../../components/cabling/ConnectedList';
+import { BulkLinkForm } from '../../components/cabling/BulkForms';
 import { EditLinkForm, NewLinkForm } from '../../components/cabling/LinkForm';
 import { LiveBadge, errText, labelOf, portSummary, useCablingRights, useCatalog } from '../../components/cabling/common';
 
@@ -142,6 +145,7 @@ function PortPanel({ port, device, offices, catalog, rights, mode, setMode, onCh
 
 function DeviceCard({ device, catalog, selectedId, onSelect, rights, onDelete, highlight }) {
   const panel = (catalog?.panel_types || []).includes(device.device_type);
+  const [showConnected, setShowConnected] = useState(false);
   return (
     <div id={`cab-dev-${device.id}`} className={`card cab-device${highlight ? ' cab-device--hl' : ''}`}>
       <div className="cab-device-head">
@@ -158,12 +162,81 @@ function DeviceCard({ device, catalog, selectedId, onSelect, rights, onDelete, h
         <LiveBadge live={device.live} />
         {device.purpose !== 'production' && <span className="cab-tag cab-tag--purpose">{labelOf(catalog?.purposes, device.purpose)}</span>}
         <span className="cab-device-actions">
+          <button type="button" className="btn-link" onClick={() => setShowConnected(!showConnected)}>{showConnected ? 'Hide connected' : 'What is connected'}</button>
           {rights.canEdit && <Link className="btn-link" to={`/cabling/devices/${device.id}/edit`}>Edit / add ports</Link>}
           {rights.canDelete && <button type="button" className="btn-link danger" onClick={() => onDelete(device)}>Delete</button>}
         </span>
       </div>
       <PortStrip ports={device.ports} panel={panel} selectedId={selectedId} onSelect={(p) => onSelect(device, p)} />
+      {showConnected && <ConnectedList deviceId={device.id} catalog={catalog} />}
     </div>
+  );
+}
+
+function DevicePanel({ device, catalog, onShowPorts, rights }) {
+  if (!device) return <aside className="cab-panel card"><h2>Device</h2><p className="muted">Select a device in the rack to see it here.</p></aside>;
+  const top = device.rack_position ? device.rack_position + (device.height_u || 1) - 1 : null;
+  return (
+    <aside className="cab-panel card">
+      <div className="muted">Selected device</div>
+      <h2 className="mono">{device.name}</h2>
+      <p><span className="cab-tag">{labelOf(catalog?.device_types, device.device_type)}</span> <LiveBadge live={device.live} /></p>
+      <dl className="cab-dl">
+        {device.rack_name && (<><dt>Place</dt><dd className="mono">{device.rack_name}{device.rack_position ? ` · U${device.rack_position}${top > device.rack_position ? `–U${top}` : ''}` : ' · no position'}</dd></>)}
+        {device.model && (<><dt>Model</dt><dd>{device.model}</dd></>)}
+        {device.ip_address && (<><dt>IP</dt><dd className="mono">{device.ip_address}</dd></>)}
+        {device.serial_number && (<><dt>Serial</dt><dd className="mono">{device.serial_number}</dd></>)}
+        <dt>Ports</dt><dd className="mono">{portSummary(device.ports, catalog) || 'none'}</dd>
+      </dl>
+      <div className="form-row">
+        <button type="button" onClick={() => onShowPorts(device)}>Show ports</button>
+        {rights.canEdit && <Link className="cab-btn-ghost cab-linkbtn" to={`/cabling/devices/${device.id}/edit`}>Edit</Link>}
+      </div>
+      <h3 className="cab-h3">What is connected</h3>
+      <ConnectedList deviceId={device.id} catalog={catalog} />
+    </aside>
+  );
+}
+
+function RoomMaintenance({ roomId, info, canEdit, onChanged }) {
+  const [minutes, setMinutes] = useState(60);
+  const [reason, setReason] = useState('');
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  if (!info || !info.linked) return null;
+  const ends = info.room_window_ends_at ? new Date(info.room_window_ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  async function start(e) {
+    e.preventDefault(); setBusy(true); setMsg(null);
+    try {
+      const r = await api.post(`/cabling/rooms/${roomId}/maintenance`, { minutes: Number(minutes), reason });
+      setMsg({ ok: true, text: `Alerts held for ${r.created} device${r.created === 1 ? '' : 's'}${r.skipped.length ? `; skipped ${r.skipped.map((x) => `${x.name} (${x.reason})`).join(', ')}` : ''}.` });
+      onChanged();
+    } catch (err) { setMsg({ ok: false, text: errText(err) }); } finally { setBusy(false); }
+  }
+  async function end() {
+    setBusy(true); setMsg(null);
+    try { await api.del(`/cabling/rooms/${roomId}/maintenance`); onChanged(); } catch (err) { setMsg({ ok: false, text: errText(err) }); } finally { setBusy(false); }
+  }
+  if (info.room_windows > 0) {
+    return (
+      <div className="card cab-wide cab-maint cab-maint--on">
+        <span><strong>Maintenance is on</strong> for {info.room_windows} device{info.room_windows === 1 ? '' : 's'} of this room until {ends}: their alerts are held.</span>
+        {canEdit && <button type="button" onClick={end} disabled={busy}>{busy ? 'Ending...' : 'End maintenance'}</button>}
+        {msg && <span className={msg.ok ? 'success' : 'error'}>{msg.text}</span>}
+      </div>
+    );
+  }
+  if (!canEdit) return null;
+  return (
+    <form className="card cab-wide cab-maint" onSubmit={start} autoComplete="off">
+      <span>Working in this room? Hold the alerts of its {info.linked} monitored device{info.linked === 1 ? '' : 's'}:</span>
+      <select value={minutes} onChange={(e) => setMinutes(e.target.value)} aria-label="Maintenance minutes">
+        {[[30, '30 minutes'], [60, '1 hour'], [120, '2 hours'], [240, '4 hours'], [480, '8 hours']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="What for (optional)" maxLength={150} aria-label="Maintenance reason" />
+      <button type="submit" disabled={busy}>{busy ? 'Starting...' : 'Start maintenance'}</button>
+      {msg && <span className={msg.ok ? 'success' : 'error'}>{msg.text}</span>}
+    </form>
   );
 }
 
@@ -199,6 +272,8 @@ export default function CablingRoomPage() {
   const [mode, setMode] = useState(null);       // port panel: null | 'edit' | 'connect' | { side, connection }
   const [hint, setHint] = useState(null);
   const [openTrunk, setOpenTrunk] = useState({});
+  const [view, setView] = useState(params.get('view') === 'rack' ? 'rack' : 'ports'); // 'ports' | 'rack'
+  const [bulk, setBulk] = useState(false);
 
   const load = useCallback(() => api.get(`/cabling/rooms/${id}`).then(setData).catch((e) => setError(errText(e))), [id]);
   useEffect(() => { setData(null); setSelected(null); load(); }, [load]);
@@ -224,6 +299,8 @@ export default function CablingRoomPage() {
   const { room, racks, devices, summary } = data;
   const selDevice = selected && devices.find((d) => d.id === selected.deviceId);
   const selPort = selDevice && selDevice.ports.find((p) => p.id === selected.portId);
+  const chooseDevice = (device) => { setMode(null); setHint(null); setSelected({ deviceId: device.id, portId: null }); };
+  const showPorts = (device) => { setView('ports'); setSelected({ deviceId: device.id, portId: null }); setTimeout(() => document.getElementById(`cab-dev-${device.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60); };
   const choose = (device, port) => { setMode(null); setHint(null); setSelected({ deviceId: device.id, portId: port.id }); if (params.get('port') || params.get('device')) setParams({}, { replace: true }); };
 
   async function removeDevice(d) {
@@ -253,6 +330,11 @@ export default function CablingRoomPage() {
         <h1>{room.name}{room.location ? <span className="cab-sub"> · {room.location}</span> : null}{room.floor ? <span className="cab-sub"> · floor {room.floor}</span> : null}</h1>
         <div className="cab-head-tools">
           <CablingSearch />
+          <div className="cab-seg" role="group" aria-label="View">
+            <button type="button" className={view === 'ports' ? 'on' : ''} onClick={() => setView('ports')}>Ports</button>
+            <button type="button" className={view === 'rack' ? 'on' : ''} onClick={() => setView('rack')}>Rack view</button>
+          </div>
+          {rights.canEdit && <button type="button" className="cab-btn-ghost" onClick={() => setBulk(!bulk)}>Bulk connect</button>}
           {rights.canEdit && <button type="button" className="cab-btn-ghost" onClick={() => (selPort ? (setMode('connect'), setHint(null)) : setHint('Select a port in a device first, then press New link.'))}>New link</button>}
           {rights.canEdit && <Link className="cab-btn" to={`/cabling/devices/new?room=${room.id}`}>New device</Link>}
         </div>
@@ -266,6 +348,9 @@ export default function CablingRoomPage() {
         <Kpi label="Wall outlets in use / spare" value={`${summary.outlets_active} / ${summary.outlets_spare}`} />
         <Kpi label="Fibre to other rooms (strands)" value={summary.fiber_strands ? `${summary.fiber_strands_used} / ${summary.fiber_strands}` : '—'} />
       </div>
+
+      <RoomMaintenance roomId={room.id} info={data.maintenance} canEdit={rights.canEdit} onChanged={load} />
+      {bulk && <BulkLinkForm catalog={catalog} initialDeviceId={selDevice?.id} onCancel={() => setBulk(false)} onDone={() => { setBulk(false); load(); }} />}
 
       <div className="form-row cab-room-actions">
         {rights.canEdit && <button type="button" className="cab-btn-ghost" onClick={() => setAddRack(!addRack)}>+ Add rack</button>}
@@ -287,8 +372,9 @@ export default function CablingRoomPage() {
 
       <div className="cab-layout">
         <div className="cab-main">
-          {racks.length === 0 && <p className="muted">This room has no rack yet. {rights.canEdit && 'Add one to place devices in it.'}</p>}
-          {racks.map((r) => (
+          {view === 'rack' && <RackElevation racks={racks} devices={devices} catalog={catalog} selectedId={selected?.deviceId} onSelect={chooseDevice} canEdit={rights.canEdit} roomId={room.id} />}
+          {view === 'ports' && racks.length === 0 && <p className="muted">This room has no rack yet. {rights.canEdit && 'Add one to place devices in it.'}</p>}
+          {view === 'ports' && racks.map((r) => (
             <section key={r.id} className="cab-rack">
               <div className="cab-rack-head">
                 <h2>Rack {r.name} <span className="muted">· {r.height_u} U</span></h2>
@@ -310,7 +396,7 @@ export default function CablingRoomPage() {
             </section>
           ))}
 
-          {others.length > 0 && (
+          {view === 'ports' && others.length > 0 && (
             <>
               <h2 className="cab-h2">Other devices in this room</h2>
               <div className="card cab-wide">
@@ -344,11 +430,15 @@ export default function CablingRoomPage() {
             </>
           )}
         </div>
-        <PortPanel
-          port={selPort} device={selDevice} offices={offices} catalog={catalog} rights={rights} mode={mode} setMode={setMode}
-          onChanged={(portId) => { load(); setSelected((s) => (s ? { ...s, portId } : s)); }}
-          onDeleted={() => { setSelected(null); load(); }}
-        />
+        {view === 'rack'
+          ? <DevicePanel device={selDevice} catalog={catalog} rights={rights} onShowPorts={showPorts} />
+          : (
+          <PortPanel
+            port={selPort} device={selDevice} offices={offices} catalog={catalog} rights={rights} mode={mode} setMode={setMode}
+            onChanged={(portId) => { load(); setSelected((s) => (s ? { ...s, portId } : s)); }}
+            onDeleted={() => { setSelected(null); load(); }}
+          />
+          )}
       </div>
     </div>
   );

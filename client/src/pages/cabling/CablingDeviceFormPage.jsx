@@ -3,10 +3,11 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../../api';
 import PortStrip from '../../components/cabling/PortStrip';
 import PortGroupsEditor, { emptyGroup, groupsForApi, totalPorts } from '../../components/cabling/PortGroupsEditor';
+import { BulkOutletsForm } from '../../components/cabling/BulkForms';
 import { errText, useCablingRights, useCatalog } from '../../components/cabling/common';
 
-const blank = (room, office) => ({
-  name: '', device_type: 'switch', purpose: 'production', template_id: '', location: room ? `room:${room}` : office ? `office:${office}` : '', rack_id: '', rack_position: '',
+const blank = (room, office, rack, u) => ({
+  name: '', device_type: 'switch', purpose: 'production', template_id: '', location: room ? `room:${room}` : office ? `office:${office}` : '', rack_id: room && rack ? rack : '', rack_position: room && rack && u ? u : '', height_u: 1,
   ip_address: '', serial_number: '', manufacturer: '', model: '', mac_address: '', notes: '', linked: '',
 });
 
@@ -20,7 +21,7 @@ export default function CablingDeviceFormPage() {
   const catalog = useCatalog();
   const rights = useCablingRights();
 
-  const [form, setForm] = useState(blank(params.get('room'), params.get('office')));
+  const [form, setForm] = useState(blank(params.get('room'), params.get('office'), params.get('rack'), params.get('u')));
   const [groups, setGroups] = useState(editing ? [] : [emptyGroup()]);
   const [existing, setExisting] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -45,7 +46,7 @@ export default function CablingDeviceFormPage() {
     api.get(`/cabling/devices/${id}`).then(({ device: d }) => {
       setForm({
         name: d.name, device_type: d.device_type, purpose: d.purpose, template_id: d.template_id || '',
-        location: d.room_id ? `room:${d.room_id}` : d.office_id ? `office:${d.office_id}` : '', rack_id: d.rack_id || '', rack_position: d.rack_position || '',
+        location: d.room_id ? `room:${d.room_id}` : d.office_id ? `office:${d.office_id}` : '', rack_id: d.rack_id || '', rack_position: d.rack_position || '', height_u: d.height_u || 1,
         ip_address: d.ip_address || '', serial_number: d.serial_number || '', manufacturer: d.manufacturer || '', model: d.model || '', mac_address: d.mac_address || '', notes: d.notes || '',
         linked: d.linked_kind ? `${d.linked_kind}:${d.linked_id}` : '',
       });
@@ -77,7 +78,7 @@ export default function CablingDeviceFormPage() {
     const [kind, linkId] = form.linked ? form.linked.split(':') : [null, null];
     return {
       name: form.name, device_type: form.device_type, purpose: form.purpose, template_id: form.template_id || null,
-      room_id: roomId, office_id: officeId, rack_id: roomId && form.rack_id ? Number(form.rack_id) : null, rack_position: roomId && form.rack_id && form.rack_position ? Number(form.rack_position) : null,
+      room_id: roomId, office_id: officeId, rack_id: roomId && form.rack_id ? Number(form.rack_id) : null, rack_position: roomId && form.rack_id && form.rack_position ? Number(form.rack_position) : null, height_u: Number(form.height_u) || 1,
       ip_address: form.ip_address, serial_number: form.serial_number, manufacturer: form.manufacturer, model: form.model, mac_address: form.mac_address, notes: form.notes,
       linked_kind: kind, linked_id: linkId ? Number(linkId) : null,
     };
@@ -167,6 +168,7 @@ export default function CablingDeviceFormPage() {
               </label>
               <label>Position (U)<input type="number" min="1" max="60" value={form.rack_position} onChange={(e) => set('rack_position', e.target.value)} disabled={!form.rack_id} placeholder="U37" /></label>
             </div>
+            <label>Height (U)<input type="number" min="1" max="60" value={form.height_u} onChange={(e) => set('height_u', e.target.value)} disabled={!form.rack_id} aria-label="Height in rack units" /></label>
             <label>IP address<input className="mono" value={form.ip_address} onChange={(e) => set('ip_address', e.target.value)} placeholder="e.g. 10.10.0.13 or DHCP" /></label>
             <label>Serial number<input className="mono" value={form.serial_number} onChange={(e) => set('serial_number', e.target.value)} /></label>
             <label>Manufacturer<input value={form.manufacturer} onChange={(e) => set('manufacturer', e.target.value)} /></label>
@@ -202,6 +204,13 @@ export default function CablingDeviceFormPage() {
           <PortGroupsEditor groups={groups} onChange={setGroups} catalog={catalog} panel={panel} />
         </section>
       </form>
+      {editing && form.device_type === 'patch_panel' && existing.length > 0 && rights.canEdit && (
+        <BulkOutletsForm
+          key={existing.length}
+          device={{ id: Number(id), ports: existing }} offices={offices} catalog={catalog}
+          onDone={(n) => { setInfo(`${n} wall outlets labelled.`); api.get(`/cabling/devices/${id}`).then((r) => setExisting(r.device.ports)).catch(() => {}); }}
+        />
+      )}
       {editing && rights.canDelete && <p><button type="button" className="btn-link danger" onClick={remove}>Delete this device</button></p>}
     </div>
   );

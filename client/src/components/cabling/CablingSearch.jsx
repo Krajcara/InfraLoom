@@ -33,13 +33,13 @@ export default function CablingSearch() {
           {res.devices.map((d) => (
             <button type="button" key={`d${d.id}`} className="cab-search-item" onClick={() => go(d.room_id ? `/cabling/rooms/${d.room_id}?device=${d.id}` : `/cabling/devices/${d.id}/edit`)}>
               <strong className="mono">{d.name}</strong>
-              <span className="muted">{[d.ip_address, d.room_name || d.office_name].filter(Boolean).join(' · ')}</span>
+              <span className="muted">{[d.ip_address, d.room_name || d.office_name, d.rack_name ? `${d.rack_name}${d.rack_position ? ` U${d.rack_position}` : ''}` : null].filter(Boolean).join(' · ')}</span>
             </button>
           ))}
           {res.ports.map((p) => (
             <button type="button" key={`p${p.id}`} className="cab-search-item" onClick={() => go(p.room_id ? `/cabling/rooms/${p.room_id}?port=${p.id}` : `/cabling/devices/${p.device_id}/edit`)}>
               <strong className="mono">{p.outlet_label || p.name}</strong>
-              <span className="muted">{p.device_name} · port {p.name}{p.office_name ? ` · ${p.office_name}` : ''}</span>
+              <span className="muted">{p.device_name} · port {p.name}{p.office_name ? ` · ${p.office_name}` : ''}{p.leads_to ? ` · → ${p.leads_to}` : ' · not connected'}</span>
             </button>
           ))}
         </div>

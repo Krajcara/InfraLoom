@@ -90,7 +90,15 @@ patch panel, fibre panel, desktop, notebook, printer, access point), and the **p
 - **Links between rooms.** A *trunk* is a fibre or copper run between two rooms (fibre type, strands, length). The permanent link between the two panels uses strands of it: a duplex fibre
   link takes a pair, assigned automatically (1-2, 3-4…) or chosen by you, and a strand cannot be used twice. The page shows each trunk's strands in use, and every room lists the trunks that
   reach it and counts them in its KPIs. A trunk that links use cannot be deleted, shrunk below the strands in use, or moved to other rooms.
-- **Search** by port, wall outlet, IP address, serial number or device name.
+- **Rack view.** Switch the room between *Ports* and *Rack view*: every rack unit by unit (U1 at the bottom), devices as blocks as tall as their height in U, free units with a **+** that opens the
+  new-device form already placed at that unit, and a live dot on devices linked to monitoring. A device records its height in U; two devices cannot use the same unit, and a device cannot reach past the top of the rack.
+- **What is connected.** For any device: everything that is reached through it (switch → panel → wall outlet → desktop, or over the fibre to the other room), which offices that touches, and how many of those devices are
+  already down — the answer to "what goes quiet if I switch this off?".
+- **Bulk work.** *Bulk connect* joins a run of ports to a run of ports (panel 1–24 to switch 1–24, or ODF-1 1–6 to ODF-2 1–6 over a trunk with the strand pairs taken in turn): the preview lists every pair and what is wrong with it, and the
+  real run makes all of them or none. On a patch panel, *Label wall outlets* names a run of ports in one go (1–24 → K-01…K-24 in an office, with the cable to the outlet).
+- **Maintenance for the room.** One button holds the alerts of everything in the room that InfraLoom monitors, for a chosen time, so nobody is paged for the work; the windows appear in the Maintenance module and can be ended from the room.
+- **Map.** The rooms page draws the rooms and the trunks between them with the strands in use (red when a trunk is nearly full).
+- **Search** by port, wall outlet, IP address, serial number or device name; a found port says where it leads and a found device where it sits in its rack.
 - **Linked to monitoring.** A device can point at something InfraLoom monitors (router, switch, access point, hypervisor, UPS): its live state and alerts show on the room view,
   and **Add from monitored devices** turns an existing item into an inventory device in one click. The link is a soft reference, so FortiGate-discovered switches and APs
   can come and go without taking the documentation with them.

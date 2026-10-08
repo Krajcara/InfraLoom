@@ -2889,3 +2889,62 @@ a.cab-btn:hover { background: #1f57d6; }
 .cab-strand-squares i.on { background: #1f9e90; }
 .cab-strand-bar { width: 160px; height: 10px; border-radius: 5px; background: #2a2e38; overflow: hidden; }
 .cab-strand-bar i { display: block; height: 100%; background: #1f9e90; }
+
+/* ── Cabling: rack view, map, bulk work, maintenance ───────────────────── */
+.cab-seg { display: inline-flex; border: 1px solid #3a3f4b; border-radius: 6px; overflow: hidden; }
+.cab-seg button { background: transparent; color: #c9ccd3; border-radius: 0; padding: 8px 12px; }
+.cab-seg button:hover { background: #232730; }
+.cab-seg button.on { background: #2b6cff; color: #fff; }
+.cab-linkbtn { display: inline-block; padding: 8px 14px; border-radius: 6px; font-size: 14px; color: #e6e6e6; }
+
+.cab-racks { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+.cab-rackview { background: #101216; border: 1px solid #262a33; border-radius: 10px; padding: 12px 14px 14px; min-width: 300px; flex: 1 1 300px; max-width: 420px; }
+.cab-rackview-title { margin-bottom: 8px; }
+.cab-rackgrid { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 2px 8px; }
+.cab-ulabel { font-size: 10px; color: #6b7080; text-align: right; align-self: center; }
+.cab-uslot { border-top: 1px dashed #232730; display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; }
+.cab-uslot a { opacity: 0; font-size: 14px; color: #6ea8fe; padding: 0 6px; }
+.cab-uslot:hover a { opacity: 1; }
+.cab-udev { display: flex; align-items: center; gap: 8px; text-align: left; border-radius: 5px; border: 1px solid #3a3f4b; background: #2a2e38; color: #e6e6e6; padding: 0 10px; overflow: hidden; width: 100%; }
+.cab-udev:hover { filter: brightness(1.15); }
+.cab-udev--sel { outline: 2px solid #fff; outline-offset: 1px; }
+.cab-udev-name { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.cab-udev-sub { font-size: 11px; color: rgba(255, 255, 255, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cab-udev--sw { background: #24457f; border-color: #3b78e7; }
+.cab-udev--rt { background: #7a2f2b; border-color: #c4524b; }
+.cab-udev--sv { background: #4a3472; border-color: #7d5bc4; }
+.cab-udev--pp { background: #3b4049; border-color: #5b6270; }
+.cab-udev--fp { background: #14625a; border-color: #1f9e90; }
+.cab-udev--ap { background: #6b4f1d; border-color: #c08a2e; }
+.cab-live { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: #555a66; }
+.cab-live--up { background: #4ade80; } .cab-live--down { background: #ff6b6b; } .cab-live--warn { background: #fbbf24; }
+.cab-loose { margin-top: 8px; font-size: 12px; }
+.cab-warn { color: #ff6b6b; }
+
+.cab-maint { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 18px; margin-bottom: 14px; }
+.cab-maint select, .cab-maint input { margin: 0; }
+.cab-maint input { width: 220px; }
+.cab-maint--on { border-color: #b8860b; background: rgba(251, 191, 36, 0.07); }
+
+.cab-connected { margin-top: 10px; border-top: 1px solid #2a2e38; padding-top: 6px; }
+.cab-connected p { margin: 4px 0; }
+
+.cab-bulk h2 { margin-bottom: 4px; }
+.cab-bulkgrid { display: grid; grid-template-columns: minmax(0, 1fr) 150px minmax(0, 1fr); gap: 14px; align-items: start; margin: 10px 0; }
+.cab-bulkend { display: flex; flex-direction: column; gap: 8px; }
+.cab-bulkend select { width: 100%; }
+.cab-bulkmid { display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 18px; }
+.cab-scroll { max-height: 280px; overflow: auto; border: 1px solid #2a2e38; border-radius: 8px; padding: 4px 8px; margin: 8px 0; }
+.cab-preview-table td { padding: 4px 8px; }
+.cab-preview-table .cab-bad { background: rgba(255, 107, 107, 0.07); }
+
+.cab-mapcard h2 { margin-bottom: 2px; }
+.cab-map { width: 100%; max-width: 640px; height: auto; display: block; }
+.cab-map-room, .cab-map-trunk { cursor: pointer; }
+.cab-map-room:hover rect { stroke: #6ea8fe; }
+.cab-map-trunk:hover path { stroke-width: 5; }
+
+@media (max-width: 1150px) {
+  .cab-bulkgrid { grid-template-columns: minmax(0, 1fr); }
+  .cab-bulkmid { padding-top: 0; flex-direction: row; }
+}

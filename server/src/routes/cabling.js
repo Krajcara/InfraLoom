@@ -31,19 +31,21 @@ function isAllowed(req) {
 
 const audit = (req, action, type, id, details) => writeAuditLog({ user_id: req.user.id, username: req.user.username, action: `cabling.${action}`, entity_type: type, entity_id: id, module: 'cabling', details, ip_address: req.ip });
 
-/** Runs a handler and turns validation and constraint problems into readable 4xx answers. */
+/** Runs a handler (sync or async) and turns validation and constraint problems into readable 4xx answers. */
 const h = (fn) => (req, res) => {
-  try {
-    fn(req, res);
-  } catch (err) {
+  const fail = (err) => {
     if (err instanceof InputError) return res.status(err.status).json({ error: err.message });
     if (err.code === 'SQLITE_CONSTRAINT_TRIGGER' || /already connected/.test(err.message || '')) return res.status(409).json({ error: 'That port side is already connected' });
     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(409).json({ error: /name/i.test(err.message) ? 'That name is already used' : 'That value is already used' });
     if (err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') return res.status(400).json({ error: 'A referenced item does not exist' });
     if (err.code === 'SQLITE_CONSTRAINT_CHECK') return res.status(400).json({ error: 'A value is not allowed' });
     console.error('[cabling]', err);
-    res.status(500).json({ error: 'Internal error' });
-  }
+    return res.status(500).json({ error: 'Internal error' });
+  };
+  try {
+    const r = fn(req, res);
+    if (r && typeof r.then === 'function') r.catch(fail);
+  } catch (err) { fail(err); }
 };
 
 const str = (v, max = 200) => { const s = v === undefined || v === null ? '' : String(v).trim(); if (s.length > max) throw new InputError(`Text is too long (at most ${max} characters)`); return s || null; };
@@ -139,8 +141,10 @@ router.get('/rooms/:id', h((req, res) => {
   const switchPorts = devices.filter((d) => d.device_type === 'switch').flatMap((d) => d.ports);
   const trunks = trunksOf(room.id);
   const fiber = trunks.filter((t) => t.medium === 'fiber');
+  const win = db.prepare("SELECT COUNT(*) c, MAX(ends_at) e FROM maintenance_windows WHERE source = 'cabling' AND source_ref = ? AND ended_at IS NULL AND starts_at <= ? AND ends_at > ?").get(`room:${room.id}`, new Date().toISOString(), new Date().toISOString());
   res.json({
     room, racks, devices, trunks,
+    maintenance: { linked: devices.filter((d) => d.linked_kind).length, covered: devices.filter((d) => d.live?.maintenance).length, room_windows: win.c, room_window_ends_at: win.e },
     summary: {
       devices: devices.length, racks: racks.length, ports: devices.reduce((a, d) => a + d.ports.length, 0), panel_ports: panelPorts.length,
       outlets: outletPorts.length, outlets_active: outletPorts.filter((p) => p.connections.front).length, outlets_spare: outletPorts.filter((p) => !p.connections.front).length,
@@ -184,8 +188,8 @@ router.put('/racks/:id', canEdit, h((req, res) => {
   const cur = need(db.prepare('SELECT * FROM cab_racks WHERE id = ?').get(req.params.id), 'Rack');
   const b = req.body || {};
   const height = int(b.height_u ?? cur.height_u, 'Height', { min: 1, max: 60 });
-  const tooHigh = db.prepare('SELECT name, rack_position FROM cab_devices WHERE rack_id = ? AND rack_position > ? LIMIT 1').get(cur.id, height);
-  if (tooHigh) throw new InputError(`${tooHigh.name} sits at U${tooHigh.rack_position}, above the new height of ${height} U`);
+  const tooHigh = db.prepare('SELECT name, rack_position, height_u FROM cab_devices WHERE rack_id = ? AND rack_position + height_u - 1 > ? LIMIT 1').get(cur.id, height);
+  if (tooHigh) throw new InputError(`${tooHigh.name} reaches U${tooHigh.rack_position + tooHigh.height_u - 1}, above the new height of ${height} U`);
   db.prepare("UPDATE cab_racks SET name = ?, height_u = ?, notes = ?, updated_at = datetime('now') WHERE id = ?").run(name(b.name ?? cur.name), height, str(b.notes ?? cur.notes, 1000), cur.id);
   audit(req, 'rack.update', 'cab_rack', cur.id, { name: b.name ?? cur.name, height_u: height });
   res.json({ rack: db.prepare('SELECT * FROM cab_racks WHERE id = ?').get(cur.id) });
@@ -301,6 +305,14 @@ router.delete('/templates/:id', canDelete, h((req, res) => {
 
 const IP_OK = (v) => /^dhcp$/i.test(v) || net.isIP(v) !== 0;
 
+/** Two devices cannot use the same rack unit. */
+function assertRackFree(rack, pos, height, exceptId) {
+  const top = pos + height - 1;
+  const clash = db.prepare('SELECT name, rack_position, height_u FROM cab_devices WHERE rack_id = ? AND rack_position IS NOT NULL AND id IS NOT ?').all(rack.id, exceptId)
+    .find((d) => !(top < d.rack_position || d.rack_position + (d.height_u || 1) - 1 < pos));
+  if (clash) throw new InputError(`U${pos}${height > 1 ? `–U${top}` : ''} in ${rack.name} is taken by ${clash.name} (U${clash.rack_position}${(clash.height_u || 1) > 1 ? `–U${clash.rack_position + clash.height_u - 1}` : ''})`, 409);
+}
+
 /** Checks a device (create: all fields; update: `cur` supplies what is not sent) and returns the row values. */
 function deviceFields(b, cur = {}) {
   const pick = (k) => (k in b ? b[k] : cur[k]);
@@ -309,6 +321,7 @@ function deviceFields(b, cur = {}) {
     device_type: pick('device_type'), purpose: pick('purpose') || 'production',
     room_id: int(pick('room_id'), 'Room'), office_id: int(pick('office_id'), 'Office'),
     rack_id: int(pick('rack_id'), 'Rack'), rack_position: int(pick('rack_position'), 'Rack position', { min: 1, max: 60 }),
+    height_u: int(pick('height_u') ?? 1, 'Height', { min: 1, max: 60 }) ?? 1,
     template_id: int(pick('template_id'), 'Template'),
     manufacturer: str(pick('manufacturer'), 80), model: str(pick('model'), 80), serial_number: str(pick('serial_number'), 80), notes: str(pick('notes'), 1000),
     ip_address: str(pick('ip_address'), 45), mac_address: str(pick('mac_address'), 17),
@@ -323,7 +336,10 @@ function deviceFields(b, cur = {}) {
   if (v.rack_id) {
     const rack = need(db.prepare('SELECT * FROM cab_racks WHERE id = ?').get(v.rack_id), 'Rack');
     if (rack.room_id !== v.room_id) throw new InputError('That rack is not in the chosen room');
-    if (v.rack_position && v.rack_position > rack.height_u) throw new InputError(`${rack.name} is only ${rack.height_u} U high`);
+    if (v.rack_position && v.rack_position + v.height_u - 1 > rack.height_u) throw new InputError(`${rack.name} is only ${rack.height_u} U high: a ${v.height_u} U device at U${v.rack_position} would reach U${v.rack_position + v.height_u - 1}`);
+    // only when its place changes — an unrelated edit must not be blocked by an overlap that was already there
+    const moved = !cur.id || cur.rack_id !== v.rack_id || cur.rack_position !== v.rack_position || (cur.height_u || 1) !== v.height_u;
+    if (v.rack_position && moved) assertRackFree(rack, v.rack_position, v.height_u, cur.id || null);
   } else {
     v.rack_position = null;
   }
@@ -339,7 +355,7 @@ function deviceFields(b, cur = {}) {
   return v;
 }
 
-const DEVICE_COLS = ['name', 'device_type', 'purpose', 'room_id', 'office_id', 'rack_id', 'rack_position', 'template_id', 'manufacturer', 'model', 'serial_number', 'notes', 'ip_address', 'mac_address', 'linked_kind', 'linked_id'];
+const DEVICE_COLS = ['name', 'device_type', 'purpose', 'room_id', 'office_id', 'rack_id', 'rack_position', 'height_u', 'template_id', 'manufacturer', 'model', 'serial_number', 'notes', 'ip_address', 'mac_address', 'linked_kind', 'linked_id'];
 
 router.get('/devices', (req, res) => {
   const w = []; const a = [];
@@ -492,9 +508,10 @@ function usedStrands(trunkId, exceptLinkId = null) {
 
 /** A duplex fibre link uses 2 strands, a copper link 1 pair. A requested choice is checked; otherwise the lowest free one is taken
  * (standard pairs 1-2, 3-4 first). */
-function resolveStrands(trunk, requested, exceptLinkId = null) {
+function resolveStrands(trunk, requested, exceptLinkId = null, planned = null) {
   const need2 = trunk.medium === 'fiber' ? 2 : 1;
   const used = usedStrands(trunk.id, exceptLinkId);
+  if (planned) planned.forEach((n) => used.add(n)); // strands a dry run has already promised to earlier pairs
   let nums;
   if (requested !== undefined && requested !== null && String(requested).trim() !== '') {
     nums = parseStrands(requested);
@@ -513,6 +530,7 @@ function resolveStrands(trunk, requested, exceptLinkId = null) {
     }
     if (!nums) throw new InputError(`${trunk.name} has no free strands left`, 409);
   }
+  if (planned) nums.forEach((n) => planned.add(n));
   return formatStrands(nums);
 }
 
@@ -621,7 +639,7 @@ function checkLinkEnds(b) {
   return { A, B, sa, sb, kind };
 }
 
-function checkTrunk(trunkId, { A, B, kind }, strandsInput, exceptLinkId = null) {
+function checkTrunk(trunkId, { A, B, kind }, strandsInput, exceptLinkId = null, planned = null) {
   if (kind !== 'permanent') throw new InputError('Only a permanent installation (rear to rear) can run over a trunk');
   const t = need(db.prepare(`${TRUNK_SELECT} WHERE t.id = ?`).get(trunkId), 'Trunk cable');
   const rooms = [A.device_room_id, B.device_room_id];
@@ -629,7 +647,7 @@ function checkTrunk(trunkId, { A, B, kind }, strandsInput, exceptLinkId = null) 
   if (!oneEach) throw new InputError(`${t.name} runs between ${t.room_a_name} and ${t.room_b_name}: one panel must be in each of those rooms`);
   const okTypes = t.medium === 'fiber' ? cat.FIBER_PORT_TYPES : ['rj45'];
   if (![A, B].every((P) => okTypes.includes(P.port_type))) throw new InputError(t.medium === 'fiber' ? 'A fibre trunk joins fibre-panel ports (LC or SC duplex)' : 'A copper trunk joins RJ45 panel ports');
-  return { trunk: t, strands: resolveStrands(t, strandsInput, exceptLinkId) };
+  return { trunk: t, strands: resolveStrands(t, strandsInput, exceptLinkId, planned) };
 }
 
 function cableFields(b, cur = {}) {
@@ -652,14 +670,14 @@ router.get('/links', (req, res) => {
   res.json({ links: db.prepare(`${LINK_SELECT} ${w.length ? `WHERE ${w.join(' AND ')}` : ''} ORDER BY l.id`).all(...a) });
 });
 
-router.post('/links', canEdit, h((req, res) => {
-  const b = req.body || {};
+/** Checks everything about a new link and returns what to insert (nothing is written). */
+function buildLink(b, planned = null) {
   const ends = checkLinkEnds(b);
   const cable = cableFields(b);
   let trunk_cable_id = null; let strands = null;
   if (ends.kind === 'permanent') {
     if (b.trunk_cable_id) {
-      const r = checkTrunk(Number(b.trunk_cable_id), ends, b.strands);
+      const r = checkTrunk(Number(b.trunk_cable_id), ends, b.strands, null, planned);
       trunk_cable_id = r.trunk.id; strands = r.strands;
     } else if (ends.A.device_room_id !== ends.B.device_room_id) {
       throw new InputError('These panels are in different rooms: choose the trunk cable between them (add it first under Links between rooms)');
@@ -668,10 +686,18 @@ router.post('/links', canEdit, h((req, res) => {
     throw new InputError('Only a permanent installation (rear to rear) can run over a trunk');
   }
   if (trunk_cable_id === null && ends.kind === 'permanent' && b.strands) throw new InputError('Strands belong to a trunk link');
-  const r = db.prepare(`INSERT INTO cab_links (port_a_id, side_a, port_b_id, side_b, kind, trunk_cable_id, strands, cable_type, color, length_m, notes)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(ends.A.id, ends.sa, ends.B.id, ends.sb, ends.kind, trunk_cable_id, strands, cable.cable_type, cable.color, cable.length_m, cable.notes);
-  audit(req, 'link.create', 'cab_link', r.lastInsertRowid, { a: endName(ends.A, ends.sa), b: endName(ends.B, ends.sb), kind: ends.kind, trunk_cable_id, strands, cable_type: cable.cable_type });
-  res.status(201).json({ link: linkView(r.lastInsertRowid), trace: traceOf(ends.A.id) });
+  return { ends, cable, trunk_cable_id, strands };
+}
+
+const insertLink = ({ ends, cable, trunk_cable_id, strands }) => db.prepare(`INSERT INTO cab_links (port_a_id, side_a, port_b_id, side_b, kind, trunk_cable_id, strands, cable_type, color, length_m, notes)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(ends.A.id, ends.sa, ends.B.id, ends.sb, ends.kind, trunk_cable_id, strands, cable.cable_type, cable.color, cable.length_m, cable.notes).lastInsertRowid;
+
+router.post('/links', canEdit, h((req, res) => {
+  const built = buildLink(req.body || {});
+  const id = insertLink(built);
+  const { ends, cable, trunk_cable_id, strands } = built;
+  audit(req, 'link.create', 'cab_link', id, { a: endName(ends.A, ends.sa), b: endName(ends.B, ends.sb), kind: ends.kind, trunk_cable_id, strands, cable_type: cable.cable_type });
+  res.status(201).json({ link: linkView(id), trace: traceOf(ends.A.id) });
 }));
 
 // the ends of a link do not change (unplug and plug again instead); the cable's own data does
@@ -706,6 +732,174 @@ router.delete('/links/:id', canEdit, h((req, res) => {
 }));
 
 router.get('/ports/:id/trace', h((req, res) => res.json({ trace: need(traceOf(Number(req.params.id)), 'Port') })));
+
+// ── bulk work: many cables or many outlets at once ─────────────────────────
+
+const MAX_BULK = 96;
+
+/** `count` consecutive ports of a device, starting at the named (or numbered) port, in faceplate order. */
+function portSeq(deviceId, startRef, count, label) {
+  const ports = db.prepare('SELECT id, name FROM cab_ports WHERE device_id = ? ORDER BY sort_order, id').all(deviceId);
+  const ref = String(startRef ?? '').trim().toLowerCase();
+  const i = ports.findIndex((p) => String(p.id) === ref || p.name.toLowerCase() === ref);
+  if (!ref || i < 0) throw new InputError(`${label}: the first port "${startRef ?? ''}" was not found`);
+  const seq = ports.slice(i, i + count);
+  if (seq.length < count) throw new InputError(`${label} has only ${seq.length} port${seq.length === 1 ? '' : 's'} from ${ports[i].name} on, but ${count} are needed`);
+  return seq;
+}
+
+// Connect a run of ports to a run of ports: PP-A 1..24 (front) to SW-01 Gi1/0/1..24, or ODF-1 1..6 (rear) to ODF-2 1..6 (rear) over a trunk.
+// A dry run lists every pair and what is wrong with it; the real run is all or nothing.
+router.post('/links/bulk', canEdit, h((req, res) => {
+  const b = req.body || {};
+  const count = int(b.count, 'Count', { min: 1, max: MAX_BULK });
+  if (!count) throw new InputError('Count is required');
+  const devA = need(db.prepare('SELECT id, name, device_type FROM cab_devices WHERE id = ?').get(Number(b.a?.device_id)), 'The first device');
+  const devB = need(db.prepare('SELECT id, name, device_type FROM cab_devices WHERE id = ?').get(Number(b.b?.device_id)), 'The second device');
+  const sa = b.a?.side || 'front', sb = b.b?.side || 'front';
+  const A = portSeq(devA.id, b.a?.start_port, count, devA.name);
+  const B = portSeq(devB.id, b.b?.start_port, count, devB.name);
+  const label = (dev, p, side) => `${dev.name} ${p.name}${isPanelType(dev.device_type) ? ` (${side})` : ''}`;
+  // strands are always assigned automatically in bulk (the next free pair for each cable)
+  const body = (i) => ({ port_a_id: A[i].id, side_a: sa, port_b_id: B[i].id, side_b: sb, cable_type: b.cable_type, color: b.color, length_m: b.length_m, notes: b.notes, trunk_cable_id: b.trunk_cable_id });
+
+  if (b.dry_run) {
+    const planned = new Set();
+    const pairs = A.map((p, i) => {
+      const row = { a: label(devA, p, sa), b: label(devB, B[i], sb), ok: true, error: null };
+      try {
+        const built = buildLink(body(i), planned);
+        row.kind = built.ends.kind; row.strands = built.strands;
+      } catch (err) {
+        if (!(err instanceof InputError)) throw err;
+        row.ok = false; row.error = err.message;
+      }
+      return row;
+    });
+    return res.json({ dry_run: true, pairs, ok_count: pairs.filter((x) => x.ok).length, error_count: pairs.filter((x) => !x.ok).length });
+  }
+
+  const ids = db.transaction(() => A.map((p, i) => {
+    try { return insertLink(buildLink(body(i))); } catch (err) {
+      if (err instanceof InputError) err.message = `Pair ${i + 1} of ${count} (${label(devA, p, sa)} ↔ ${label(devB, B[i], sb)}): ${err.message}. Nothing was connected.`;
+      throw err;
+    }
+  }))();
+  audit(req, 'link.bulk', 'cab_device', devA.id, { a: devA.name, b: devB.name, side_a: sa, side_b: sb, count, first_a: A[0].name, first_b: B[0].name, trunk_cable_id: b.trunk_cable_id || null });
+  res.status(201).json({ created: ids.length, link_ids: ids });
+}));
+
+// Label the wall outlets of a patch panel in one go: ports 1..24 -> K-01..K-24 in Office 02, with the permanent cable
+router.post('/devices/:id/outlets/bulk', canEdit, h((req, res) => {
+  const dev = need(db.prepare('SELECT id, name, device_type FROM cab_devices WHERE id = ?').get(req.params.id), 'Device');
+  if (dev.device_type !== 'patch_panel') throw new InputError('Wall outlets are recorded on patch-panel ports');
+  const b = req.body || {};
+  const count = int(b.count, 'Count', { min: 1, max: MAX_BULK });
+  if (!count) throw new InputError('Count is required');
+  const office_id = int(b.office_id, 'Office');
+  if (!office_id) throw new InputError('Choose the office');
+  need(db.prepare('SELECT id FROM cab_offices WHERE id = ?').get(office_id), 'Office');
+  const prefix = str(b.label_prefix ?? '', 30) || '';
+  const first = int(b.label_start ?? 1, 'First number', { min: 0, max: 99999 }) ?? 1;
+  const pad = int(b.label_pad ?? 0, 'Zero padding', { min: 0, max: 6 }) ?? 0;
+  const rearType = b.rear_cable_type || null;
+  if (rearType && !cat.CABLE_TYPES.includes(rearType)) throw new InputError('Unknown cable type');
+  const len = b.rear_length_m === undefined || b.rear_length_m === null || b.rear_length_m === '' ? null : Number(b.rear_length_m);
+  if (len !== null && !(len > 0 && len <= 100000)) throw new InputError('Cable length must be a number of metres above 0');
+
+  const seq = portSeq(dev.id, b.start_port, count, dev.name);
+  const plan = seq.map((p, i) => ({ port_id: p.id, port: p.name, label: `${prefix}${String(first + i).padStart(pad, '0')}` }));
+  const tooLong = plan.find((x) => x.label.length > 40);
+  if (tooLong) throw new InputError(`The label "${tooLong.label}" is longer than 40 characters`);
+  const had = db.prepare(`SELECT name, outlet_label FROM cab_ports WHERE id IN (${seq.map(() => '?').join(',')}) AND outlet_label IS NOT NULL AND outlet_label != ''`).all(...seq.map((p) => p.id));
+  if (had.length && !b.overwrite) throw new InputError(`${had.length} of these ports already have an outlet (${had.slice(0, 3).map((x) => `${x.name}: ${x.outlet_label}`).join(', ')}${had.length > 3 ? ', …' : ''}) — choose "replace existing outlets" to overwrite them`, 409);
+  if (b.dry_run) return res.json({ dry_run: true, plan, overwrites: had.length });
+
+  db.transaction(() => {
+    const upd = db.prepare("UPDATE cab_ports SET office_id = ?, outlet_label = ?, rear_cable_type = COALESCE(?, rear_cable_type), rear_length_m = COALESCE(?, rear_length_m), updated_at = datetime('now') WHERE id = ?");
+    for (const x of plan) upd.run(office_id, x.label, rearType, len, x.port_id);
+  })();
+  audit(req, 'outlets.bulk', 'cab_device', dev.id, { name: dev.name, office_id, count, first: plan[0].label, last: plan[plan.length - 1].label, overwrites: had.length });
+  res.json({ updated: plan.length, plan });
+}));
+
+// ── what is connected through a device ─────────────────────────────────────
+
+router.get('/devices/:id/connected', h((req, res) => {
+  const dev = need(db.prepare(`${DEVICE_SELECT} WHERE d.id = ?`).get(req.params.id), 'Device');
+  const g = engine.loadGraph(db);
+  const far = new Map();
+  const outlets = [];
+  for (const p of g.P.values()) {
+    if (p.device_id !== dev.id) continue;
+    const c = engine.connections(g, p.id);
+    if (!c.front && !c.rear) continue;
+    const t = engine.trace(g, p.id);
+    const ends = t.steps.filter((s) => s.type === 'port' && !s.panel && s.device_id !== dev.id);
+    const outlet = t.steps.find((s) => s.type === 'outlet');
+    if (outlet) outlets.push({ label: outlet.label, office_name: outlet.office_name, in_use: ends.length > 0, port: p.name });
+    for (const e of ends) {
+      const row = far.get(e.device_id) || { device_id: e.device_id, name: e.device_name, device_type: e.device_type, room_name: e.room_name, office_name: e.office_name, via: [] };
+      row.via.push({ port: p.name, remote_port: e.port_name, outlet: outlet?.label || null });
+      far.set(e.device_id, row);
+    }
+  }
+  const ids = [...far.keys()];
+  const linked = ids.length ? db.prepare(`SELECT id, linked_kind, linked_id FROM cab_devices WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids) : [];
+  const connected = [...far.values()].map((row) => {
+    const l = linked.find((x) => x.id === row.device_id);
+    return { ...row, live: l?.linked_kind ? liveFor(l.linked_kind, l.linked_id) : null };
+  }).sort((x, y) => x.name.localeCompare(y.name));
+  res.json({
+    device: { id: dev.id, name: dev.name }, connected,
+    offices: [...new Set(outlets.filter((o) => o.in_use && o.office_name).map((o) => o.office_name))].sort(),
+    outlets, down: connected.filter((x) => x.live?.state === 'down').length,
+  });
+}));
+
+// ── maintenance for the whole room ─────────────────────────────────────────
+// "I am working in the server room": one window for everything in it that InfraLoom monitors, so nobody is paged for the work.
+
+function maintenanceTarget(dev) {
+  if (dev.linked_kind === 'hypervisor') return { type: 'hypervisor', id: dev.linked_id };
+  if (dev.linked_kind === 'ups') return { type: 'ups', id: dev.linked_id };
+  const table = { router: 'routers', switch: 'switches', access_point: 'access_points' }[dev.linked_kind];
+  if (!table) return null;
+  const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(dev.linked_id);
+  if (!row) return null;
+  if (row.discovered_from_router_id) return { type: dev.linked_kind, id: row.id }; // FortiGate-discovered
+  return row.monitor_id ? { type: 'monitor', id: row.monitor_id } : null;
+}
+
+router.post('/rooms/:id/maintenance', canEdit, h((req, res) => {
+  const maintenance = require('../services/maintenanceService');
+  const room = need(db.prepare('SELECT * FROM cab_rooms WHERE id = ?').get(req.params.id), 'Room');
+  const minutes = int((req.body || {}).minutes, 'Minutes', { min: 1, max: maintenance.MAX_WINDOW_MIN });
+  if (!minutes) throw new InputError('Say for how many minutes');
+  const note = str((req.body || {}).reason, 150);
+  const reason = `Work in ${room.name}${note ? `: ${note}` : ''}`;
+  const now = new Date();
+  const ends = new Date(now.getTime() + minutes * 60000).toISOString();
+  const created = []; const skipped = [];
+  for (const d of db.prepare('SELECT id, name, linked_kind, linked_id FROM cab_devices WHERE room_id = ? AND linked_kind IS NOT NULL ORDER BY name').all(room.id)) {
+    const t = maintenanceTarget(d);
+    if (!t) { skipped.push({ name: d.name, reason: 'not monitored by InfraLoom (no monitor)' }); continue; }
+    if (maintenance.activeFor(t.type, t.id)) { skipped.push({ name: d.name, reason: 'already in a maintenance window' }); continue; }
+    const w = maintenance.createWindow({ target_type: t.type, target_id: t.id, target_label: d.name, starts_at: now.toISOString(), ends_at: ends, reason, source: 'cabling', source_ref: `room:${room.id}`, created_by: req.user.id });
+    created.push({ name: d.name, window_id: w.id });
+  }
+  audit(req, 'room.maintenance', 'cab_room', room.id, { name: room.name, minutes, created: created.length, skipped: skipped.length });
+  res.status(201).json({ created: created.length, skipped, ends_at: ends, devices: created });
+}));
+
+router.delete('/rooms/:id/maintenance', canEdit, h(async (req, res) => {
+  const maintenance = require('../services/maintenanceService');
+  const room = need(db.prepare('SELECT * FROM cab_rooms WHERE id = ?').get(req.params.id), 'Room');
+  const open = db.prepare("SELECT id FROM maintenance_windows WHERE source = 'cabling' AND source_ref = ? AND ended_at IS NULL").all(`room:${room.id}`);
+  for (const w of open) await maintenance.endNow(w.id);
+  audit(req, 'room.maintenance.end', 'cab_room', room.id, { name: room.name, ended: open.length });
+  res.json({ ended: open.length });
+}));
 
 // ── linking to what InfraLoom monitors ─────────────────────────────────────
 
@@ -758,9 +952,14 @@ router.get('/search', (req, res) => {
   if (q.length < 2) return res.json({ devices: [], ports: [] });
   const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
   const devices = db.prepare(`${DEVICE_SELECT} WHERE d.name LIKE ? ESCAPE '\\' OR d.ip_address LIKE ? ESCAPE '\\' OR d.serial_number LIKE ? ESCAPE '\\' OR d.model LIKE ? ESCAPE '\\' OR d.mac_address LIKE ? ESCAPE '\\' ORDER BY d.name LIMIT 20`).all(like, like, like, like, like);
+  const g = engine.loadGraph(db);
   const ports = db.prepare(`SELECT p.id, p.name, p.outlet_label, p.device_id, d.name AS device_name, d.room_id, r.name AS room_name, o.name AS office_name
     FROM cab_ports p JOIN cab_devices d ON d.id = p.device_id LEFT JOIN cab_rooms r ON r.id = d.room_id LEFT JOIN cab_offices o ON o.id = p.office_id
-    WHERE p.name LIKE ? ESCAPE '\\' OR p.outlet_label LIKE ? ESCAPE '\\' OR p.notes LIKE ? ESCAPE '\\' ORDER BY p.outlet_label, d.name, p.sort_order LIMIT 30`).all(like, like, like);
+    WHERE p.name LIKE ? ESCAPE '\\' OR p.outlet_label LIKE ? ESCAPE '\\' OR p.notes LIKE ? ESCAPE '\\' ORDER BY p.outlet_label, d.name, p.sort_order LIMIT 30`).all(like, like, like).map((p) => {
+    const c = engine.connections(g, p.id);
+    const first = c.front || c.rear;
+    return { ...p, status: engine.classify(g, p.id), leads_to: first ? `${first.other_device_name} ${first.other_port_name}` : null };
+  });
   res.json({ devices, ports });
 });
 

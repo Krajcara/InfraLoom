@@ -60,7 +60,7 @@ app.use(
   '/api',
   rateLimit({
     windowMs: 60 * 1000,
-    max: 300,
+    max: Number(process.env.API_RATE_LIMIT) || 300, // requests per minute per address; raise it for scripted use
     standardHeaders: true,
     legacyHeaders: false,
   })

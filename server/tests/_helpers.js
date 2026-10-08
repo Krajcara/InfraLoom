@@ -24,7 +24,7 @@ const hex = () => crypto.randomBytes(32).toString('hex');
 
 /** Environment for a disposable instance (also used by tests that load the database module in-process). */
 function tempEnv(dir) {
-  return { ...process.env, NODE_ENV: 'test', DB_PATH: path.join(dir, 'infraloom.db'), DB_ENCRYPTION_KEY: hex(), APP_SECRET: hex(), BACKUP_ENCRYPTION_PASSWORD: hex() };
+  return { ...process.env, NODE_ENV: 'test', API_RATE_LIMIT: '1000000', DB_PATH: path.join(dir, 'infraloom.db'), DB_ENCRYPTION_KEY: hex(), APP_SECRET: hex(), BACKUP_ENCRYPTION_PASSWORD: hex() };
 }
 
 async function startServer() {
