@@ -84,12 +84,12 @@ test('catalog: lists are complete and consistent', () => {
 });
 
 test('schema: migration applied once, tables prefixed, nothing collides with InfraLoom tables', () => {
-  assert.deepEqual(db.prepare('SELECT version FROM cab_migrations').all().map((r) => r.version), ['001_cabling']);
+  assert.deepEqual(db.prepare('SELECT version FROM cab_migrations').all().map((r) => r.version), ['001_cabling', '002_permanent_cable']);
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'cab_%'").all().map((r) => r.name);
   for (const t of ['cab_rooms', 'cab_offices', 'cab_racks', 'cab_device_templates', 'cab_template_port_groups', 'cab_devices', 'cab_ports', 'cab_trunk_cables', 'cab_links']) assert.ok(tables.includes(t), t);
   assert.equal(db.prepare("SELECT COUNT(*) c FROM sqlite_master WHERE name IN ('devices','ports','connections','rooms')").get().c, 0);
   require('../src/db/cabling').migrate(db); // running it again changes nothing
-  assert.equal(db.prepare('SELECT COUNT(*) c FROM cab_migrations').get().c, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM cab_migrations').get().c, 2);
 });
 
 test('schema: a port side takes part in at most one link, whichever end it is on (triggers)', () => {

@@ -9,6 +9,7 @@ const cat = require('../services/cabling/catalog');
 const { InputError, normalizeGroups, expandPortGroups, assertNoDuplicateNames, insertPorts } = require('../services/cabling/ports');
 const { liveFor } = require('../services/cabling/live');
 const { parseNetworks, buildMatcher } = require('../services/cabling/networks');
+const engine = require('../services/cabling/trace');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -36,6 +37,7 @@ const h = (fn) => (req, res) => {
     fn(req, res);
   } catch (err) {
     if (err instanceof InputError) return res.status(err.status).json({ error: err.message });
+    if (err.code === 'SQLITE_CONSTRAINT_TRIGGER' || /already connected/.test(err.message || '')) return res.status(409).json({ error: 'That port side is already connected' });
     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(409).json({ error: /name/i.test(err.message) ? 'That name is already used' : 'That value is already used' });
     if (err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') return res.status(400).json({ error: 'A referenced item does not exist' });
     if (err.code === 'SQLITE_CONSTRAINT_CHECK') return res.status(400).json({ error: 'A value is not allowed' });
@@ -93,14 +95,14 @@ router.get('/summary', (req, res) => {
 
 // ── building blocks of a device view ───────────────────────────────────────
 
-const portStatus = (p) => (p.outlet_label || p.office_id ? 'outlet' : 'free'); // link-based statuses arrive with the links release
-
-function attachPorts(devices) {
+// A port's colour and what is plugged into it come from the trace engine (one read of the whole inventory per request).
+function attachPorts(devices, graph) {
   if (!devices.length) return devices;
+  const g = graph || engine.loadGraph(db);
   const ids = devices.map((d) => d.id);
   const rows = db.prepare(`SELECT p.*, o.name AS office_name FROM cab_ports p LEFT JOIN cab_offices o ON o.id = p.office_id WHERE p.device_id IN (${ids.map(() => '?').join(',')}) ORDER BY p.device_id, p.sort_order, p.id`).all(...ids);
   const by = new Map(ids.map((i) => [i, []]));
-  for (const p of rows) by.get(p.device_id).push({ ...p, poe: !!p.poe, status: portStatus(p) });
+  for (const p of rows) by.get(p.device_id).push({ ...p, poe: !!p.poe, status: engine.classify(g, p.id), connections: engine.connections(g, p.id) });
   return devices.map((d) => ({ ...d, ports: by.get(d.id), live: d.linked_kind ? liveFor(d.linked_kind, d.linked_id) : null }));
 }
 
@@ -133,9 +135,18 @@ router.get('/rooms/:id', h((req, res) => {
   const devices = attachPorts(db.prepare(`${DEVICE_SELECT} WHERE d.room_id = ? ORDER BY d.rack_position DESC, d.name`).all(room.id));
   // wall outlets exist on copper patch panels; a fibre panel's ports run to another room, not to an outlet
   const panelPorts = devices.filter((d) => d.device_type === 'patch_panel').flatMap((d) => d.ports);
+  const outletPorts = panelPorts.filter((p) => p.outlet_label || p.office_id);
+  const switchPorts = devices.filter((d) => d.device_type === 'switch').flatMap((d) => d.ports);
+  const trunks = trunksOf(room.id);
+  const fiber = trunks.filter((t) => t.medium === 'fiber');
   res.json({
-    room, racks, devices,
-    summary: { devices: devices.length, racks: racks.length, ports: devices.reduce((a, d) => a + d.ports.length, 0), panel_ports: panelPorts.length, outlets: panelPorts.filter((p) => p.outlet_label).length },
+    room, racks, devices, trunks,
+    summary: {
+      devices: devices.length, racks: racks.length, ports: devices.reduce((a, d) => a + d.ports.length, 0), panel_ports: panelPorts.length,
+      outlets: outletPorts.length, outlets_active: outletPorts.filter((p) => p.connections.front).length, outlets_spare: outletPorts.filter((p) => !p.connections.front).length,
+      switch_ports: switchPorts.length, switch_ports_used: switchPorts.filter((p) => p.connections.front).length,
+      fiber_strands: fiber.reduce((a, t) => a + t.strand_count, 0), fiber_strands_used: fiber.reduce((a, t) => a + t.used_strands, 0),
+    },
   });
 }));
 
@@ -417,11 +428,21 @@ router.put('/ports/:id', canEdit, h((req, res) => {
   const office_id = int(pick('office_id'), 'Office');
   if (office_id) need(db.prepare('SELECT id FROM cab_offices WHERE id = ?').get(office_id), 'Office');
   const pname = name(pick('name'), 'Port name');
-  db.prepare("UPDATE cab_ports SET name = ?, port_type = ?, speed = ?, poe = ?, role = ?, transceiver = ?, connector = ?, office_id = ?, outlet_label = ?, notes = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(pname, port_type, speed, pick('poe') ? 1 : 0, role, str(pick('transceiver'), 80), connector, office_id, str(pick('outlet_label'), 40), str(pick('notes'), 1000), cur.id);
+  const outlet = str(pick('outlet_label'), 40);
+  const rearType = pick('rear_cable_type') || null;
+  if (rearType && !cat.CABLE_TYPES.includes(rearType)) throw new InputError('Unknown cable type');
+  const rearLen = pick('rear_length_m') === '' || pick('rear_length_m') === undefined ? null : pick('rear_length_m');
+  if (rearLen !== null && !(Number(rearLen) > 0 && Number(rearLen) <= 100000)) throw new InputError('Cable length must be a number of metres above 0');
+  if (office_id || outlet || rearType || rearLen !== null) {
+    const d = db.prepare('SELECT device_type FROM cab_devices WHERE id = ?').get(cur.device_id);
+    if (d.device_type !== 'patch_panel') throw new InputError('Wall outlets and the permanent cable can only be recorded on patch-panel ports');
+  }
+  db.prepare("UPDATE cab_ports SET name = ?, port_type = ?, speed = ?, poe = ?, role = ?, transceiver = ?, connector = ?, office_id = ?, outlet_label = ?, rear_cable_type = ?, rear_length_m = ?, notes = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(pname, port_type, speed, pick('poe') ? 1 : 0, role, str(pick('transceiver'), 80), connector, office_id, outlet, rearType, rearLen === null ? null : Number(rearLen), str(pick('notes'), 1000), cur.id);
   audit(req, 'port.update', 'cab_port', cur.id, { device_id: cur.device_id, name: pname, outlet_label: pick('outlet_label') || null, office_id });
+  const g = engine.loadGraph(db);
   const row = db.prepare('SELECT p.*, o.name AS office_name FROM cab_ports p LEFT JOIN cab_offices o ON o.id = p.office_id WHERE p.id = ?').get(cur.id);
-  res.json({ port: { ...row, poe: !!row.poe, status: portStatus(row) } });
+  res.json({ port: { ...row, poe: !!row.poe, status: engine.classify(g, row.id), connections: engine.connections(g, row.id) } });
 }));
 
 router.delete('/ports/:id', canDelete, h((req, res) => {
@@ -430,6 +451,261 @@ router.delete('/ports/:id', canDelete, h((req, res) => {
   audit(req, 'port.delete', 'cab_port', cur.id, { device_id: cur.device_id, name: cur.name });
   res.json({ ok: true });
 }));
+
+// ── trunk cables (fibre or copper runs between two rooms) ──────────────────
+
+const TRUNK_SELECT = `SELECT t.*, a.name AS room_a_name, b.name AS room_b_name FROM cab_trunk_cables t JOIN cab_rooms a ON a.id = t.room_a_id JOIN cab_rooms b ON b.id = t.room_b_id`;
+const MAX_STRANDS = 288;
+
+/** "1-2", "1,2", "3", "1-2, 5-6" -> [1, 2, 5, 6] */
+function parseStrands(text) {
+  const out = new Set();
+  for (const part of String(text ?? '').split(/[,;\s]+/).filter(Boolean)) {
+    const m = /^(\d+)(?:-(\d+))?$/.exec(part);
+    if (!m) throw new InputError(`Strands look like 1-2 or 3,4 (got "${part}")`);
+    const a = Number(m[1]), b = m[2] === undefined ? a : Number(m[2]);
+    if (b < a || b - a > MAX_STRANDS) throw new InputError(`The strand range "${part}" is not valid`);
+    for (let n = a; n <= b; n++) out.add(n);
+  }
+  return [...out].sort((x, y) => x - y);
+}
+
+function formatStrands(nums) {
+  const parts = [];
+  for (let i = 0; i < nums.length; i++) {
+    let j = i;
+    while (j + 1 < nums.length && nums[j + 1] === nums[j] + 1) j++;
+    parts.push(j > i ? `${nums[i]}-${nums[j]}` : `${nums[i]}`);
+    i = j;
+  }
+  return parts.join(',');
+}
+
+function usedStrands(trunkId, exceptLinkId = null) {
+  const used = new Set();
+  for (const r of db.prepare('SELECT id, strands FROM cab_links WHERE trunk_cable_id = ? AND strands IS NOT NULL').all(trunkId)) {
+    if (r.id === exceptLinkId) continue;
+    try { parseStrands(r.strands).forEach((n) => used.add(n)); } catch { /* an unreadable value uses nothing */ }
+  }
+  return used;
+}
+
+/** A duplex fibre link uses 2 strands, a copper link 1 pair. A requested choice is checked; otherwise the lowest free one is taken
+ * (standard pairs 1-2, 3-4 first). */
+function resolveStrands(trunk, requested, exceptLinkId = null) {
+  const need2 = trunk.medium === 'fiber' ? 2 : 1;
+  const used = usedStrands(trunk.id, exceptLinkId);
+  let nums;
+  if (requested !== undefined && requested !== null && String(requested).trim() !== '') {
+    nums = parseStrands(requested);
+    if (nums.length !== need2) throw new InputError(need2 === 2 ? 'A duplex fibre link uses 2 strands (for example 1-2)' : 'A copper link uses 1 pair (for example 5)');
+    const missing = nums.find((n) => n < 1 || n > trunk.strand_count);
+    if (missing) throw new InputError(`Strand ${missing} does not exist: ${trunk.name} has ${trunk.strand_count}`);
+    const taken = nums.filter((n) => used.has(n));
+    if (taken.length) throw new InputError(`Strand ${taken.join(', ')} is already used on ${trunk.name}`, 409);
+  } else {
+    nums = null;
+    if (need2 === 2) {
+      for (let s = 1; !nums && s + 1 <= trunk.strand_count; s += 2) if (!used.has(s) && !used.has(s + 1)) nums = [s, s + 1];
+      for (let s = 1; !nums && s + 1 <= trunk.strand_count; s += 1) if (!used.has(s) && !used.has(s + 1)) nums = [s, s + 1];
+    } else {
+      for (let s = 1; !nums && s <= trunk.strand_count; s++) if (!used.has(s)) nums = [s];
+    }
+    if (!nums) throw new InputError(`${trunk.name} has no free strands left`, 409);
+  }
+  return formatStrands(nums);
+}
+
+const LINK_SELECT = `SELECT l.*, t.name AS trunk_name,
+  pa.name AS port_a_name, da.id AS device_a_id, da.name AS device_a_name, da.room_id AS room_a_id,
+  pb.name AS port_b_name, db_.id AS device_b_id, db_.name AS device_b_name, db_.room_id AS room_b_id
+  FROM cab_links l JOIN cab_ports pa ON pa.id = l.port_a_id JOIN cab_devices da ON da.id = pa.device_id
+  JOIN cab_ports pb ON pb.id = l.port_b_id JOIN cab_devices db_ ON db_.id = pb.device_id
+  LEFT JOIN cab_trunk_cables t ON t.id = l.trunk_cable_id`;
+const linkView = (id) => db.prepare(`${LINK_SELECT} WHERE l.id = ?`).get(id);
+
+function trunkView(t, withLinks = false) {
+  const used = [...usedStrands(t.id)].sort((a, b) => a - b);
+  const out = { ...t, used_strands: used.length, strand_numbers: used };
+  if (withLinks) out.links = db.prepare(`${LINK_SELECT} WHERE l.trunk_cable_id = ? ORDER BY l.strands, l.id`).all(t.id);
+  return out;
+}
+
+function trunksOf(roomId) {
+  return db.prepare(`${TRUNK_SELECT} WHERE t.room_a_id = ? OR t.room_b_id = ? ORDER BY t.name`).all(roomId, roomId).map((t) => ({
+    ...trunkView(t, true), other_room_id: t.room_a_id === roomId ? t.room_b_id : t.room_a_id, other_room_name: t.room_a_id === roomId ? t.room_b_name : t.room_a_name,
+  }));
+}
+
+function trunkFields(b, cur = {}) {
+  const pick = (k) => (k in b ? b[k] : cur[k]);
+  const medium = pick('medium');
+  if (!['fiber', 'copper'].includes(medium)) throw new InputError('Choose fibre or copper');
+  const fiber_type = medium === 'fiber' ? (pick('fiber_type') || null) : null;
+  if (fiber_type && !cat.FIBER_TYPES.includes(fiber_type)) throw new InputError('Unknown fibre type');
+  const room_a_id = int(pick('room_a_id'), 'First room'), room_b_id = int(pick('room_b_id'), 'Second room');
+  if (!room_a_id || !room_b_id) throw new InputError('Choose the two rooms');
+  if (room_a_id === room_b_id) throw new InputError('A trunk joins two different rooms');
+  for (const id of [room_a_id, room_b_id]) need(db.prepare('SELECT id FROM cab_rooms WHERE id = ?').get(id), 'Room');
+  const strand_count = int(pick('strand_count'), 'Number of strands', { min: 1, max: MAX_STRANDS });
+  if (!strand_count) throw new InputError('Number of strands is required');
+  const len = pick('length_m');
+  if (len !== null && len !== undefined && len !== '' && !(Number(len) > 0 && Number(len) <= 100000)) throw new InputError('Length must be a number of metres above 0');
+  return { name: name(pick('name')), room_a_id, room_b_id, medium, fiber_type, strand_count, length_m: len === null || len === undefined || len === '' ? null : Number(len), notes: str(pick('notes'), 1000) };
+}
+
+router.get('/trunks', (req, res) => {
+  const rows = db.prepare(`${TRUNK_SELECT} ORDER BY t.name`).all();
+  res.json({ trunks: rows.map((t) => trunkView(t, true)) });
+});
+
+router.get('/trunks/:id', h((req, res) => res.json({ trunk: trunkView(need(db.prepare(`${TRUNK_SELECT} WHERE t.id = ?`).get(req.params.id), 'Trunk cable'), true) })));
+
+router.post('/trunks', canEdit, h((req, res) => {
+  const f = trunkFields(req.body || {});
+  const r = db.prepare('INSERT INTO cab_trunk_cables (name, room_a_id, room_b_id, medium, fiber_type, strand_count, length_m, notes) VALUES (@name,@room_a_id,@room_b_id,@medium,@fiber_type,@strand_count,@length_m,@notes)').run(f);
+  audit(req, 'trunk.create', 'cab_trunk', r.lastInsertRowid, { name: f.name, rooms: [f.room_a_id, f.room_b_id], strands: f.strand_count });
+  res.status(201).json({ trunk: trunkView(db.prepare(`${TRUNK_SELECT} WHERE t.id = ?`).get(r.lastInsertRowid), true) });
+}));
+
+router.put('/trunks/:id', canEdit, h((req, res) => {
+  const cur = need(db.prepare('SELECT * FROM cab_trunk_cables WHERE id = ?').get(req.params.id), 'Trunk cable');
+  const f = trunkFields(req.body || {}, cur);
+  const linked = db.prepare('SELECT COUNT(*) c FROM cab_links WHERE trunk_cable_id = ?').get(cur.id).c;
+  if (linked && (f.room_a_id !== cur.room_a_id || f.room_b_id !== cur.room_b_id || f.medium !== cur.medium)) throw new InputError('The rooms and the medium cannot change while links use this trunk — remove the links first', 409);
+  const highest = Math.max(0, ...usedStrands(cur.id));
+  if (f.strand_count < highest) throw new InputError(`Strand ${highest} is in use, so the trunk cannot have fewer than ${highest} strands`, 409);
+  db.prepare("UPDATE cab_trunk_cables SET name = @name, room_a_id = @room_a_id, room_b_id = @room_b_id, medium = @medium, fiber_type = @fiber_type, strand_count = @strand_count, length_m = @length_m, notes = @notes, updated_at = datetime('now') WHERE id = @id").run({ ...f, id: cur.id });
+  audit(req, 'trunk.update', 'cab_trunk', cur.id, { name: f.name, strands: f.strand_count });
+  res.json({ trunk: trunkView(db.prepare(`${TRUNK_SELECT} WHERE t.id = ?`).get(cur.id), true) });
+}));
+
+router.delete('/trunks/:id', canDelete, h((req, res) => {
+  const cur = need(db.prepare('SELECT * FROM cab_trunk_cables WHERE id = ?').get(req.params.id), 'Trunk cable');
+  const linked = db.prepare('SELECT COUNT(*) c FROM cab_links WHERE trunk_cable_id = ?').get(cur.id).c;
+  if (linked) throw new InputError(`${linked} link${linked === 1 ? ' uses' : 's use'} this trunk — remove ${linked === 1 ? 'it' : 'them'} first`, 409);
+  db.prepare('DELETE FROM cab_trunk_cables WHERE id = ?').run(cur.id);
+  audit(req, 'trunk.delete', 'cab_trunk', cur.id, { name: cur.name });
+  res.json({ ok: true });
+}));
+
+// ── links between ports ────────────────────────────────────────────────────
+
+const portRow = (id) => db.prepare('SELECT p.*, d.name AS device_name, d.device_type, d.room_id AS device_room_id FROM cab_ports p JOIN cab_devices d ON d.id = p.device_id WHERE p.id = ?').get(id);
+const isPanelType = (t) => cat.PANEL_TYPES.includes(t);
+const endName = (p, side) => `${p.device_name} ${p.name}${isPanelType(p.device_type) ? ` (${side})` : ''}`;
+
+/** The rules of cabling: only panels have a rear side; two rears are a permanent installation; a patch cord reaches a rear only as
+ * the cord from a wall outlet to a device; and a port side holds one cable. */
+function checkLinkEnds(b) {
+  const sa = b.side_a || 'front', sb = b.side_b || 'front';
+  if (!['front', 'rear'].includes(sa) || !['front', 'rear'].includes(sb)) throw new InputError('A side is front or rear');
+  const A = need(portRow(Number(b.port_a_id)), 'The first port');
+  const B = need(portRow(Number(b.port_b_id)), 'The second port');
+  if (A.id === B.id) throw new InputError('A port cannot be connected to itself');
+  for (const [P, s] of [[A, sa], [B, sb]]) if (s === 'rear' && !isPanelType(P.device_type)) throw new InputError(`${P.device_name} is not a patch or fibre panel, so its ports have no rear side`);
+  const kind = sa === 'rear' && sb === 'rear' ? 'permanent' : 'patch';
+  if (b.kind && b.kind !== kind) throw new InputError(kind === 'permanent' ? 'A cable between two rear sides is a permanent installation' : 'A patch cord cannot join two rear sides — that is a permanent installation');
+  if (kind === 'patch') {
+    for (const [P, s, O] of [[A, sa, B], [B, sb, A]]) {
+      if (s !== 'rear') continue;
+      if (P.device_type !== 'patch_panel' || !(P.outlet_label || P.office_id)) throw new InputError(`A patch cord can only be plugged into the rear of a patch-panel port that has a wall outlet — record the office and outlet on ${endName(P, 'rear')} first`);
+      if (isPanelType(O.device_type)) throw new InputError('The cord from a wall outlet goes to a device, not to another panel');
+    }
+  }
+  const g = engine.loadGraph(db);
+  for (const [P, s] of [[A, sa], [B, sb]]) {
+    const taken = engine.connections(g, P.id)[s];
+    if (taken) throw new InputError(`${endName(P, s)} is already connected to ${taken.other_device_name} ${taken.other_port_name}`, 409);
+  }
+  return { A, B, sa, sb, kind };
+}
+
+function checkTrunk(trunkId, { A, B, kind }, strandsInput, exceptLinkId = null) {
+  if (kind !== 'permanent') throw new InputError('Only a permanent installation (rear to rear) can run over a trunk');
+  const t = need(db.prepare(`${TRUNK_SELECT} WHERE t.id = ?`).get(trunkId), 'Trunk cable');
+  const rooms = [A.device_room_id, B.device_room_id];
+  const oneEach = (rooms[0] === t.room_a_id && rooms[1] === t.room_b_id) || (rooms[0] === t.room_b_id && rooms[1] === t.room_a_id);
+  if (!oneEach) throw new InputError(`${t.name} runs between ${t.room_a_name} and ${t.room_b_name}: one panel must be in each of those rooms`);
+  const okTypes = t.medium === 'fiber' ? cat.FIBER_PORT_TYPES : ['rj45'];
+  if (![A, B].every((P) => okTypes.includes(P.port_type))) throw new InputError(t.medium === 'fiber' ? 'A fibre trunk joins fibre-panel ports (LC or SC duplex)' : 'A copper trunk joins RJ45 panel ports');
+  return { trunk: t, strands: resolveStrands(t, strandsInput, exceptLinkId) };
+}
+
+function cableFields(b, cur = {}) {
+  const pick = (k) => (k in b ? b[k] : cur[k]);
+  const cable_type = pick('cable_type') || null;
+  if (cable_type && !cat.CABLE_TYPES.includes(cable_type)) throw new InputError('Unknown cable type');
+  const len = pick('length_m');
+  if (len !== null && len !== undefined && len !== '' && !(Number(len) > 0 && Number(len) <= 100000)) throw new InputError('Length must be a number of metres above 0');
+  return { cable_type, color: str(pick('color'), 20), length_m: len === null || len === undefined || len === '' ? null : Number(len), notes: str(pick('notes'), 1000) };
+}
+
+const traceOf = (portId) => engine.trace(engine.loadGraph(db), portId);
+
+router.get('/links', (req, res) => {
+  const w = []; const a = [];
+  const { room_id: room, device_id: device, trunk_id: trunk } = req.query;
+  if (room) { w.push('(da.room_id = ? OR db_.room_id = ?)'); a.push(Number(room), Number(room)); }
+  if (device) { w.push('(da.id = ? OR db_.id = ?)'); a.push(Number(device), Number(device)); }
+  if (trunk) { w.push('l.trunk_cable_id = ?'); a.push(Number(trunk)); }
+  res.json({ links: db.prepare(`${LINK_SELECT} ${w.length ? `WHERE ${w.join(' AND ')}` : ''} ORDER BY l.id`).all(...a) });
+});
+
+router.post('/links', canEdit, h((req, res) => {
+  const b = req.body || {};
+  const ends = checkLinkEnds(b);
+  const cable = cableFields(b);
+  let trunk_cable_id = null; let strands = null;
+  if (ends.kind === 'permanent') {
+    if (b.trunk_cable_id) {
+      const r = checkTrunk(Number(b.trunk_cable_id), ends, b.strands);
+      trunk_cable_id = r.trunk.id; strands = r.strands;
+    } else if (ends.A.device_room_id !== ends.B.device_room_id) {
+      throw new InputError('These panels are in different rooms: choose the trunk cable between them (add it first under Links between rooms)');
+    }
+  } else if (b.trunk_cable_id) {
+    throw new InputError('Only a permanent installation (rear to rear) can run over a trunk');
+  }
+  if (trunk_cable_id === null && ends.kind === 'permanent' && b.strands) throw new InputError('Strands belong to a trunk link');
+  const r = db.prepare(`INSERT INTO cab_links (port_a_id, side_a, port_b_id, side_b, kind, trunk_cable_id, strands, cable_type, color, length_m, notes)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(ends.A.id, ends.sa, ends.B.id, ends.sb, ends.kind, trunk_cable_id, strands, cable.cable_type, cable.color, cable.length_m, cable.notes);
+  audit(req, 'link.create', 'cab_link', r.lastInsertRowid, { a: endName(ends.A, ends.sa), b: endName(ends.B, ends.sb), kind: ends.kind, trunk_cable_id, strands, cable_type: cable.cable_type });
+  res.status(201).json({ link: linkView(r.lastInsertRowid), trace: traceOf(ends.A.id) });
+}));
+
+// the ends of a link do not change (unplug and plug again instead); the cable's own data does
+router.put('/links/:id', canEdit, h((req, res) => {
+  const cur = need(db.prepare('SELECT * FROM cab_links WHERE id = ?').get(req.params.id), 'Link');
+  const b = req.body || {};
+  if ('port_a_id' in b || 'port_b_id' in b || 'side_a' in b || 'side_b' in b || 'kind' in b) throw new InputError('The ends of a link cannot be changed — remove it and connect again');
+  const cable = cableFields(b, cur);
+  const A = portRow(cur.port_a_id), B = portRow(cur.port_b_id);
+  let trunk_cable_id = 'trunk_cable_id' in b ? (b.trunk_cable_id ? Number(b.trunk_cable_id) : null) : cur.trunk_cable_id;
+  let strands = cur.strands;
+  if (trunk_cable_id) {
+    const changed = trunk_cable_id !== cur.trunk_cable_id || 'strands' in b;
+    if (changed) strands = checkTrunk(trunk_cable_id, { A, B, kind: cur.kind }, 'strands' in b ? b.strands : null, cur.id).strands;
+    else checkTrunk(trunk_cable_id, { A, B, kind: cur.kind }, cur.strands, cur.id);
+  } else {
+    if (cur.kind === 'permanent' && A.device_room_id !== B.device_room_id) throw new InputError('These panels are in different rooms, so the link has to stay on a trunk');
+    strands = null;
+  }
+  db.prepare("UPDATE cab_links SET trunk_cable_id = ?, strands = ?, cable_type = ?, color = ?, length_m = ?, notes = ?, updated_at = datetime('now') WHERE id = ?").run(trunk_cable_id, strands, cable.cable_type, cable.color, cable.length_m, cable.notes, cur.id);
+  audit(req, 'link.update', 'cab_link', cur.id, { a: endName(A, cur.side_a), b: endName(B, cur.side_b), cable_type: cable.cable_type, strands });
+  res.json({ link: linkView(cur.id), trace: traceOf(cur.port_a_id) });
+}));
+
+// patching changes all the time, so an operator may unplug a cable; deleting devices stays with administrators
+router.delete('/links/:id', canEdit, h((req, res) => {
+  const cur = need(db.prepare('SELECT * FROM cab_links WHERE id = ?').get(req.params.id), 'Link');
+  const A = portRow(cur.port_a_id), B = portRow(cur.port_b_id);
+  db.prepare('DELETE FROM cab_links WHERE id = ?').run(cur.id);
+  audit(req, 'link.delete', 'cab_link', cur.id, { a: endName(A, cur.side_a), b: endName(B, cur.side_b), kind: cur.kind, strands: cur.strands });
+  res.json({ ok: true });
+}));
+
+router.get('/ports/:id/trace', h((req, res) => res.json({ trace: need(traceOf(Number(req.params.id)), 'Port') })));
 
 // ── linking to what InfraLoom monitors ─────────────────────────────────────
 

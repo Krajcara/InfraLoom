@@ -53,6 +53,7 @@ const NAV_GROUPS = [
       { to: '/cabling', label: 'Rooms', end: true },
       { to: '/cabling/offices', label: 'Offices' },
       { to: '/cabling/devices', label: 'Devices' },
+      { to: '/cabling/trunks', label: 'Links between rooms' },
       { to: '/cabling/templates', label: 'Templates' },
     ],
   },

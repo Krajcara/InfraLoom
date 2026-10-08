@@ -48,6 +48,10 @@ const PORT_ROLES = [
 
 const CONNECTORS = ['LC', 'SC', 'ST', 'MPO'];
 const FIBER_TYPES = ['OS2', 'OM3', 'OM4', 'OM5'];
+const CABLE_TYPES = ['Cat5e', 'Cat6', 'Cat6a', 'Cat7', 'OS2', 'OM3', 'OM4', 'OM5', 'DAC', 'Other'];
+const CABLE_COLORS = ['blue', 'red', 'yellow', 'green', 'orange', 'grey', 'white', 'black', 'purple', 'pink'];
+const FIBER_PORT_TYPES = ['lc_duplex', 'sc_duplex'];
+const LINK_KINDS_OF_CABLE = ['patch', 'permanent'];
 
 // What InfraLoom can monitor and a cabling device can point at.
 const LINK_KINDS = ['router', 'switch', 'access_point', 'hypervisor', 'ups'];
@@ -56,7 +60,7 @@ const values = (list) => list.map((x) => (typeof x === 'string' ? x : x.value));
 const oneOf = (list, v) => values(list).includes(v);
 
 function catalog() {
-  return { device_types: DEVICE_TYPES, panel_types: PANEL_TYPES, purposes: PURPOSES, port_types: PORT_TYPES, speeds: SPEEDS, port_roles: PORT_ROLES, connectors: CONNECTORS, fiber_types: FIBER_TYPES, link_kinds: LINK_KINDS };
+  return { device_types: DEVICE_TYPES, panel_types: PANEL_TYPES, purposes: PURPOSES, port_types: PORT_TYPES, speeds: SPEEDS, port_roles: PORT_ROLES, connectors: CONNECTORS, fiber_types: FIBER_TYPES, link_kinds: LINK_KINDS, cable_types: CABLE_TYPES, cable_colors: CABLE_COLORS };
 }
 
-module.exports = { DEVICE_TYPES, PANEL_TYPES, PURPOSES, PORT_TYPES, SPEEDS, PORT_ROLES, CONNECTORS, FIBER_TYPES, LINK_KINDS, values, oneOf, catalog };
+module.exports = { DEVICE_TYPES, PANEL_TYPES, PURPOSES, PORT_TYPES, SPEEDS, PORT_ROLES, CONNECTORS, FIBER_TYPES, CABLE_TYPES, CABLE_COLORS, FIBER_PORT_TYPES, LINK_KINDS_OF_CABLE, LINK_KINDS, values, oneOf, catalog };

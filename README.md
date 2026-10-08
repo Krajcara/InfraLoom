@@ -79,17 +79,28 @@ patch panel, fibre panel, desktop, notebook, printer, access point), and the **p
   template (for example *FortiSwitch 124F-POE*) and the next switch is one click. Ports can be edited one by one afterwards, and more can be added later.
 - **Room view.** Racks with their devices from the top unit down, each device's faceplate with its ports (switches in two rows like the real thing, panels in one),
   a panel with the selected port's details, and a table of the other devices in the room.
-- **Wall outlets.** On a patch-panel port, record the office and the outlet label its rear side runs to; every office lists its outlets with the panel, port, room and rack.
+- **Wall outlets.** On a patch-panel port, record the office and the outlet label its rear side runs to, and the permanent cable (type, length) between the port and the outlet;
+  every office lists its outlets with the panel, port, room and rack.
+- **Links and trace.** Connect one side of a port to a free side of another (**Connect…** in the port panel, or **New link**). A device port has one side; a patch-panel or fibre-panel
+  port has two: *front* (patch cords in the room) and *rear* (the permanent installation). Select any port and the **trace** shows where it goes — switch → patch cord → panel →
+  permanent cable → wall outlet → patch cord → desktop — with the cable type, length and colour of every step, and it reads the same from either end. Ports are coloured by where they
+  lead: to an office, straight to a device, fibre, a wall outlet without a patch cord yet, or free. The rules keep the documentation honest: only panels have a rear side, two rear sides
+  are a permanent installation, a patch cord reaches a rear side only as the cord from a recorded wall outlet to a device, and a port side holds one cable (the message says who has it).
+  A ring of cables or an absurdly long chain ends the trace with a note instead of hanging. Operators can edit and unplug cables (patching changes all the time); administrators delete devices.
+- **Links between rooms.** A *trunk* is a fibre or copper run between two rooms (fibre type, strands, length). The permanent link between the two panels uses strands of it: a duplex fibre
+  link takes a pair, assigned automatically (1-2, 3-4…) or chosen by you, and a strand cannot be used twice. The page shows each trunk's strands in use, and every room lists the trunks that
+  reach it and counts them in its KPIs. A trunk that links use cannot be deleted, shrunk below the strands in use, or moved to other rooms.
 - **Search** by port, wall outlet, IP address, serial number or device name.
 - **Linked to monitoring.** A device can point at something InfraLoom monitors (router, switch, access point, hypervisor, UPS): its live state and alerts show on the room view,
   and **Add from monitored devices** turns an existing item into an inventory device in one click. The link is a soft reference, so FortiGate-discovered switches and APs
   can come and go without taking the documentation with them.
-- **Access.** Everyone who can sign in can read; operators and administrators create and edit; only administrators delete. Every change is written to the audit log.
+- **Access.** Everyone who can sign in can read; operators and administrators create and edit (including connecting and unplugging cables); only administrators delete devices, ports,
+  racks, rooms, templates and trunks. Every change is written to the audit log.
   In **Settings → Cabling module** an administrator can switch the module off or limit it to your own networks (a list that excludes your own address is refused).
   Behind a reverse proxy the address comes from `X-Forwarded-For` (one proxy is trusted).
-- Links between ports, the trace of a port to its wall outlet or to another room, and CSV/Excel import and export come in the next releases; their tables already exist.
+- CSV/Excel import and export come in the next release.
 
-`npm test` runs the module's tests (validation, port generation, triggers, the network matcher and the whole API on a throw-away database).
+`npm test` runs the module's tests: validation, port generation, the trace engine (loops, long chains, outlets, fibre paths), triggers, the network matcher, and the whole API with roles on a throw-away database.
 
 ### Hypervisor usage thresholds
 
