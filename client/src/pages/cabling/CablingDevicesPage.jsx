@@ -14,6 +14,9 @@ export default function CablingDevicesPage() {
   const [rooms, setRooms] = useState([]);
   const [filter, setFilter] = useState({ q: '', room_id: '', type: '', purpose: '' });
   const [linkable, setLinkable] = useState(null);
+  const [templates, setTemplates] = useState([]);
+  const [adoptTpl, setAdoptTpl] = useState('');
+  const [adoptRoom, setAdoptRoom] = useState('');
   const [error, setError] = useState(null);
 
   const load = useCallback(() => {
@@ -23,9 +26,14 @@ export default function CablingDevicesPage() {
   useEffect(() => { const t = setTimeout(load, filter.q ? 250 : 0); return () => clearTimeout(t); }, [load, filter.q]);
   useEffect(() => { api.get('/cabling/rooms').then((d) => setRooms(d.rooms)).catch(() => {}); }, []);
 
-  async function openLinkable() { try { setLinkable((await api.get('/cabling/linkable')).items.filter((i) => !i.linked)); } catch (e) { setError(errText(e)); } }
+  async function openLinkable() {
+    try {
+      setLinkable((await api.get('/cabling/linkable')).items.filter((i) => !i.linked));
+      setTemplates((await api.get('/cabling/templates')).templates);
+    } catch (e) { setError(errText(e)); }
+  }
   async function adopt(item) {
-    try { const r = await api.post('/cabling/devices/from-linked', { kind: item.kind, id: item.id }); navigate(`/cabling/devices/${r.device.id}/edit`); } catch (e) { setError(errText(e)); }
+    try { const r = await api.post('/cabling/devices/from-linked', { kind: item.kind, id: item.id, template_id: adoptTpl ? Number(adoptTpl) : undefined, room_id: adoptRoom ? Number(adoptRoom) : undefined }); navigate(`/cabling/devices/${r.device.id}/edit`); } catch (e) { setError(errText(e)); }
   }
   const set = (k, v) => setFilter((f) => ({ ...f, [k]: v }));
 
@@ -59,6 +67,14 @@ export default function CablingDevicesPage() {
       {linkable && (
         <div className="card cab-wide">
           <h2>Monitored by InfraLoom, not documented yet</h2>
+          <div className="form-row">
+            <label>Template for the new device (creates its ports)
+              <select value={adoptTpl} onChange={(e) => setAdoptTpl(e.target.value)} aria-label="Template for new devices"><option value="">— none, I will add ports later —</option>{templates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.port_count} ports)</option>)}</select>
+            </label>
+            <label>Room
+              <select value={adoptRoom} onChange={(e) => setAdoptRoom(e.target.value)} aria-label="Room for new devices"><option value="">— choose later —</option>{rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+            </label>
+          </div>
           {linkable.length === 0 ? <p className="muted">Everything InfraLoom monitors already has a device here.</p> : (
             <table className="table">
               <thead><tr><th>Name</th><th>Kind</th><th>Address</th><th /></tr></thead>

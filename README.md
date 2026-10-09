@@ -100,7 +100,7 @@ patch panel, fibre panel, desktop, notebook, printer, access point), and the **p
 - **Map.** The rooms page draws the rooms and the trunks between them with the strands in use (red when a trunk is nearly full).
 - **Search** by port, wall outlet, IP address, serial number or device name; a found port says where it leads and a found device where it sits in its rack.
 - **Linked to monitoring.** A device can point at something InfraLoom monitors (router, switch, access point, hypervisor, UPS): its live state and alerts show on the room view,
-  and **Add from monitored devices** turns an existing item into an inventory device in one click. The link is a soft reference, so FortiGate-discovered switches and APs
+  and **Add from monitored devices** turns an existing item into an inventory device in one click — pick a template and a room first and the ports are created with it (on a device that is already in the inventory, choosing a template loads it under *Add ports*). The link is a soft reference, so FortiGate-discovered switches and APs
   can come and go without taking the documentation with them.
 - **Access.** Everyone who can sign in can read; operators and administrators create and edit (including connecting and unplugging cables); only administrators delete devices, ports,
   racks, rooms, templates and trunks. Every change is written to the audit log.

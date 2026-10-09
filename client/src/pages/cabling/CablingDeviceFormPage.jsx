@@ -71,7 +71,13 @@ export default function CablingDeviceFormPage() {
     const t = templates.find((x) => String(x.id) === String(value));
     if (!t) return;
     setForm((f) => ({ ...f, template_id: value, device_type: t.device_type, manufacturer: f.manufacturer || t.manufacturer || '', model: f.model || t.model || '' }));
-    if (!editing) setGroups(fromTemplateGroups(t.groups));
+    // a new device: the ports are made when it is saved; an existing one (e.g. added from a monitored device) gets them
+    // through "Add these ports", so the template goes into that editor instead of doing nothing
+    setGroups(fromTemplateGroups(t.groups));
+    if (editing) {
+      const n = t.groups.reduce((a, g) => a + g.end_no - g.start_no + 1, 0);
+      setInfo(`Template "${t.name}" is loaded under "Add ports" below. Press "Add these ports" to create its ${n} port${n === 1 ? '' : 's'}${existing.length ? ' (names that already exist are refused)' : ''}.`);
+    }
   }
 
   const payload = () => {
