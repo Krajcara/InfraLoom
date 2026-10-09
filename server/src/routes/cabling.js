@@ -134,7 +134,15 @@ router.post('/rooms', canEdit, h((req, res) => {
 router.get('/rooms/:id', h((req, res) => {
   const room = need(db.prepare('SELECT * FROM cab_rooms WHERE id = ?').get(req.params.id), 'Room');
   const racks = db.prepare('SELECT * FROM cab_racks WHERE room_id = ? ORDER BY name').all(room.id);
-  const devices = attachPorts(db.prepare(`${DEVICE_SELECT} WHERE d.room_id = ? ORDER BY d.rack_position DESC, d.name`).all(room.id));
+  const devices = attachPorts(db.prepare(`${DEVICE_SELECT} WHERE d.room_id = ?`).all(room.id));
+  // inside a rack the devices read the way the rack is labelled: from the top of the rack down, which is the highest unit number
+  // when U1 is at the bottom and the lowest when U1 is at the top. Devices without a position come last.
+  const fromTop = new Map(racks.map((r) => [r.id, !!r.units_from_top]));
+  devices.sort((a, b) => {
+    if (a.rack_id !== b.rack_id) return (a.rack_id ?? Infinity) - (b.rack_id ?? Infinity);
+    if (a.rack_position == null || b.rack_position == null) return (a.rack_position == null) - (b.rack_position == null) || a.name.localeCompare(b.name);
+    return (fromTop.get(a.rack_id) ? 1 : -1) * (a.rack_position - b.rack_position) || a.name.localeCompare(b.name);
+  });
   // wall outlets exist on copper patch panels; a fibre panel's ports run to another room, not to an outlet
   const panelPorts = devices.filter((d) => d.device_type === 'patch_panel').flatMap((d) => d.ports);
   const outletPorts = panelPorts.filter((p) => p.outlet_label || p.office_id);

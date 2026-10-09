@@ -46,3 +46,15 @@ test('the numbers are the ones on the rack: overlaps, height and limits work the
   const log = JSON.stringify((await c.admin.get('/api/audit-log?limit=100')).body);
   assert.ok(log.includes('cabling.rack.update') && log.includes('units_from_top'));
 });
+
+test('devices in a room are listed from the top of each rack down, whichever way the rack is numbered', async () => {
+  const room = (await c.admin.post(`${A}/rooms`, { name: 'TS-2' })).body.room.id;
+  const up = (await c.operator.post(`${A}/rooms/${room}/racks`, { name: 'UP', height_u: 42 })).body.rack.id;
+  const down = (await c.operator.post(`${A}/rooms/${room}/racks`, { name: 'DOWN', height_u: 42, units_from_top: true })).body.rack.id;
+  for (const [rack, tag] of [[up, 'u'], [down, 'd']]) for (const [n, pos] of [['sw', 6], ['p1', 7], ['p2', 8]]) assert.equal((await c.operator.post(`${A}/devices`, { name: `${n}-${tag}`, device_type: 'switch', room_id: room, rack_id: rack, rack_position: pos })).status, 201);
+  await c.operator.post(`${A}/devices`, { name: 'loose-d', device_type: 'other', room_id: room, rack_id: down });
+  const devs = (await c.viewer.get(`${A}/rooms/${room}`)).body.devices;
+  const order = (rack) => devs.filter((d) => d.rack_id === rack).map((d) => d.name);
+  assert.deepEqual(order(up), ['p2-u', 'p1-u', 'sw-u'], 'U1 at the bottom: the highest unit is at the top');
+  assert.deepEqual(order(down), ['sw-d', 'p1-d', 'p2-d', 'loose-d'], 'U1 at the top: the lowest unit is at the top, and a device without a position comes last');
+});
