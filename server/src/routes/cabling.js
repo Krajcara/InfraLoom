@@ -179,8 +179,9 @@ router.delete('/rooms/:id', canDelete, h((req, res) => {
 router.post('/rooms/:id/racks', canEdit, h((req, res) => {
   const room = need(db.prepare('SELECT id FROM cab_rooms WHERE id = ?').get(req.params.id), 'Room');
   const b = req.body || {};
-  const r = db.prepare('INSERT INTO cab_racks (room_id, name, height_u, notes) VALUES (?,?,?,?)').run(room.id, name(b.name), int(b.height_u ?? 42, 'Height', { min: 1, max: 60 }), str(b.notes, 1000));
-  audit(req, 'rack.create', 'cab_rack', r.lastInsertRowid, { room_id: room.id, name: b.name });
+  const fromTop = b.units_from_top === true || b.units_from_top === 1 ? 1 : 0;
+  const r = db.prepare('INSERT INTO cab_racks (room_id, name, height_u, units_from_top, notes) VALUES (?,?,?,?,?)').run(room.id, name(b.name), int(b.height_u ?? 42, 'Height', { min: 1, max: 60 }), fromTop, str(b.notes, 1000));
+  audit(req, 'rack.create', 'cab_rack', r.lastInsertRowid, { room_id: room.id, name: b.name, units_from_top: !!fromTop });
   res.status(201).json({ rack: db.prepare('SELECT * FROM cab_racks WHERE id = ?').get(r.lastInsertRowid) });
 }));
 
@@ -190,8 +191,9 @@ router.put('/racks/:id', canEdit, h((req, res) => {
   const height = int(b.height_u ?? cur.height_u, 'Height', { min: 1, max: 60 });
   const tooHigh = db.prepare('SELECT name, rack_position, height_u FROM cab_devices WHERE rack_id = ? AND rack_position + height_u - 1 > ? LIMIT 1').get(cur.id, height);
   if (tooHigh) throw new InputError(`${tooHigh.name} reaches U${tooHigh.rack_position + tooHigh.height_u - 1}, above the new height of ${height} U`);
-  db.prepare("UPDATE cab_racks SET name = ?, height_u = ?, notes = ?, updated_at = datetime('now') WHERE id = ?").run(name(b.name ?? cur.name), height, str(b.notes ?? cur.notes, 1000), cur.id);
-  audit(req, 'rack.update', 'cab_rack', cur.id, { name: b.name ?? cur.name, height_u: height });
+  const fromTop = 'units_from_top' in b ? (b.units_from_top === true || b.units_from_top === 1 ? 1 : 0) : cur.units_from_top;
+  db.prepare("UPDATE cab_racks SET name = ?, height_u = ?, units_from_top = ?, notes = ?, updated_at = datetime('now') WHERE id = ?").run(name(b.name ?? cur.name), height, fromTop, str(b.notes ?? cur.notes, 1000), cur.id);
+  audit(req, 'rack.update', 'cab_rack', cur.id, { name: b.name ?? cur.name, height_u: height, units_from_top: !!fromTop });
   res.json({ rack: db.prepare('SELECT * FROM cab_racks WHERE id = ?').get(cur.id) });
 }));
 

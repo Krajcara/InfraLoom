@@ -11,15 +11,18 @@ function Rack({ rack, devices, catalog, selectedId, onSelect, canEdit, roomId })
   const loose = devices.filter((d) => !d.rack_position || !fits(d));
   const taken = new Set();
   placed.forEach((d) => { for (let u = d.rack_position; u < d.rack_position + unitsOf(d); u++) taken.add(u); });
-  const units = Array.from({ length: H }, (_, i) => H - i); // the top of the rack first, U1 at the bottom
+  const fromTop = !!rack.units_from_top;
+  // the numbers are the ones printed on the rack: U1 at the bottom (the usual way) or at the top
+  const units = Array.from({ length: H }, (_, i) => (fromTop ? i + 1 : H - i));
+  const rowOf = (u) => (fromTop ? u : H - u + 1);
 
   return (
     <div className="cab-rackview">
-      <div className="cab-rackview-title"><strong>{rack.name}</strong> <span className="muted">· {H} U · {taken.size} used</span></div>
+      <div className="cab-rackview-title"><strong>{rack.name}</strong> <span className="muted">· {H} U · {taken.size} used{fromTop ? ' · U1 at the top' : ''}</span></div>
       <div className="cab-rackgrid" style={{ gridTemplateRows: `repeat(${H}, 24px)` }}>
         {units.map((u, i) => <div key={`l${u}`} className="cab-ulabel mono" style={{ gridColumn: 1, gridRow: i + 1 }}>{u}</div>)}
         {units.filter((u) => !taken.has(u)).map((u) => (
-          <div key={`f${u}`} className="cab-uslot" style={{ gridColumn: 2, gridRow: H - u + 1 }}>
+          <div key={`f${u}`} className="cab-uslot" style={{ gridColumn: 2, gridRow: rowOf(u) }}>
             {canEdit && <Link to={`/cabling/devices/new?room=${roomId}&rack=${rack.id}&u=${u}`} title={`Add a device at U${u}`} aria-label={`Add a device at U${u}`}>+</Link>}
           </div>
         ))}
@@ -29,7 +32,7 @@ function Rack({ rack, devices, catalog, selectedId, onSelect, canEdit, roomId })
             <button
               type="button" key={d.id} id={`cab-u-${d.id}`}
               className={`cab-udev cab-udev--${TYPE_CLASS[d.device_type] || 'ot'}${selectedId === d.id ? ' cab-udev--sel' : ''}`}
-              style={{ gridColumn: 2, gridRow: `${H - top + 1} / span ${unitsOf(d)}` }}
+              style={{ gridColumn: 2, gridRow: `${fromTop ? d.rack_position : H - top + 1} / span ${unitsOf(d)}` }}
               onClick={() => onSelect(d)}
               title={`${d.name} · U${d.rack_position}${unitsOf(d) > 1 ? `–U${top}` : ''}`}
             >

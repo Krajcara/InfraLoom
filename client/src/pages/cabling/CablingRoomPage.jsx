@@ -243,12 +243,19 @@ function RoomMaintenance({ roomId, info, canEdit, onChanged }) {
 function RackForm({ initial, onSave, onCancel, label }) {
   const [name, setName] = useState(initial?.name || '');
   const [height, setHeight] = useState(initial?.height_u || 42);
+  const [fromTop, setFromTop] = useState(initial ? !!initial.units_from_top : false);
   const [error, setError] = useState(null);
-  async function submit(e) { e.preventDefault(); setError(null); try { await onSave({ name, height_u: Number(height) }); } catch (err) { setError(errText(err)); } }
+  async function submit(e) { e.preventDefault(); setError(null); try { await onSave({ name, height_u: Number(height), units_from_top: fromTop }); } catch (err) { setError(errText(err)); } }
   return (
     <form onSubmit={submit} className="form-row cab-inline-form" autoComplete="off">
       <label>Rack name<input value={name} onChange={(e) => setName(e.target.value)} required placeholder="R1" /></label>
       <label>Height (U)<input type="number" min="1" max="60" value={height} onChange={(e) => setHeight(e.target.value)} className="cab-in-num" /></label>
+      <label>Unit numbers
+        <select value={fromTop ? 'top' : 'bottom'} onChange={(e) => setFromTop(e.target.value === 'top')} aria-label="Unit numbering">
+          <option value="bottom">U1 at the bottom (usual)</option>
+          <option value="top">U1 at the top</option>
+        </select>
+      </label>
       <button type="submit">{label}</button>
       <button type="button" className="cab-btn-ghost" onClick={onCancel}>Cancel</button>
       {error && <span className="error">{error}</span>}
@@ -377,7 +384,7 @@ export default function CablingRoomPage() {
           {view === 'ports' && racks.map((r) => (
             <section key={r.id} className="cab-rack">
               <div className="cab-rack-head">
-                <h2>Rack {r.name} <span className="muted">· {r.height_u} U</span></h2>
+                <h2>Rack {r.name} <span className="muted">· {r.height_u} U{r.units_from_top ? ' · U1 at the top' : ''}</span></h2>
                 <div className="cab-legend">
                   <span><i className="cab-sw cab-sw--office" /> To office</span>
                   <span><i className="cab-sw cab-sw--device" /> Direct to device</span>

@@ -90,7 +90,7 @@ patch panel, fibre panel, desktop, notebook, printer, access point), and the **p
 - **Links between rooms.** A *trunk* is a fibre or copper run between two rooms (fibre type, strands, length). The permanent link between the two panels uses strands of it: a duplex fibre
   link takes a pair, assigned automatically (1-2, 3-4…) or chosen by you, and a strand cannot be used twice. The page shows each trunk's strands in use, and every room lists the trunks that
   reach it and counts them in its KPIs. A trunk that links use cannot be deleted, shrunk below the strands in use, or moved to other rooms.
-- **Rack view.** Switch the room between *Ports* and *Rack view*: every rack unit by unit (U1 at the bottom), devices as blocks as tall as their height in U, free units with a **+** that opens the
+- **Rack view.** Switch the room between *Ports* and *Rack view*: every rack unit by unit (U1 at the bottom by default, or at the top for a rack that is labelled that way — set per rack, so the numbers match the ones printed on the rack; a device's position is the lowest unit number it covers), devices as blocks as tall as their height in U, free units with a **+** that opens the
   new-device form already placed at that unit, and a live dot on devices linked to monitoring. A device records its height in U; two devices cannot use the same unit, and a device cannot reach past the top of the rack.
 - **What is connected.** For any device: everything that is reached through it (switch → panel → wall outlet → desktop, or over the fibre to the other room), which offices that touches, and how many of those devices are
   already down — the answer to "what goes quiet if I switch this off?".

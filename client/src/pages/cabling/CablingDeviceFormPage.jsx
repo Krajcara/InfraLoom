@@ -170,9 +170,9 @@ export default function CablingDeviceFormPage() {
             </label>
             <div className="cab-rackpos">
               <label>Rack
-                <select value={form.rack_id} onChange={(e) => set('rack_id', e.target.value)} disabled={!roomId}><option value="">—</option>{racks.map((r) => <option key={r.id} value={r.id}>{r.name} ({r.height_u} U)</option>)}</select>
+                <select value={form.rack_id} onChange={(e) => set('rack_id', e.target.value)} disabled={!roomId}><option value="">—</option>{racks.map((r) => <option key={r.id} value={r.id}>{r.name} ({r.height_u} U{r.units_from_top ? ', U1 at the top' : ''})</option>)}</select>
               </label>
-              <label>Position (U)<input type="number" min="1" max="60" value={form.rack_position} onChange={(e) => set('rack_position', e.target.value)} disabled={!form.rack_id} placeholder="U37" /></label>
+              <label title="The lowest unit number the device covers, as printed on the rack">Position (U)<input type="number" min="1" max="60" value={form.rack_position} onChange={(e) => set('rack_position', e.target.value)} disabled={!form.rack_id} placeholder="U37" /></label>
             </div>
             <label>Height (U)<input type="number" min="1" max="60" value={form.height_u} onChange={(e) => set('height_u', e.target.value)} disabled={!form.rack_id} aria-label="Height in rack units" /></label>
             <label>IP address<input className="mono" value={form.ip_address} onChange={(e) => set('ip_address', e.target.value)} placeholder="e.g. 10.10.0.13 or DHCP" /></label>
