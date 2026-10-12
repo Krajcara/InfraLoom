@@ -2950,3 +2950,14 @@ a.cab-btn:hover { background: #1f57d6; }
 }
 
 .cab-outlets { font-size: 13px; margin: 6px 0 4px; display: grid; gap: 3px; }
+
+/* ── Cabling: telephone lines ──────────────────────────────────────────── */
+.cab-port--voice { background: #a1307a; border-color: #d65db1; color: #fff; }
+.cab-port--voice:hover { background: #b83c8d; }
+.cab-port--svc-voice.cab-port--outlet { border-color: #d65db1; color: #f0a6d6; }
+.cab-port--svc-voice.cab-port--outlet:hover { background: rgba(214, 93, 177, 0.15); }
+.cab-port--svc-voice.cab-port--free { border-color: #8a3a70; color: #d98cc0; }
+.cab-sw--voice { background: #a1307a; }
+.cab-dot--voice { background: #a1307a; }
+.cab-udev--pbx { background: #6b2a58; border-color: #d65db1; }
+.cab-tag--voice { background: rgba(214, 93, 177, 0.18); color: #f0a6d6; }

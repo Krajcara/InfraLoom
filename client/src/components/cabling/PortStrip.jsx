@@ -21,7 +21,7 @@ function blocks(ports) {
   return out;
 }
 
-const STATUS_TITLE = { free: 'free', outlet: 'wall outlet recorded, no patch cord', office: 'leads to an office', device: 'connected to a device', fiber: 'fibre' };
+const STATUS_TITLE = { free: 'free', outlet: 'wall outlet recorded, no patch cord', office: 'leads to an office', device: 'connected to a device', fiber: 'fibre', voice: 'telephone line' };
 
 /** The front of a device: switches in two rows (odd numbers above even, like the real faceplate), panels in one row. */
 export default function PortStrip({ ports, panel = false, selectedId = null, onSelect = null }) {
@@ -35,8 +35,8 @@ export default function PortStrip({ ports, panel = false, selectedId = null, onS
             <button
               type="button"
               key={p.id ?? p.name}
-              className={`cab-port cab-port--${p.status || 'free'}${FIBER.includes(p.port_type) ? ' cab-port--wide' : ''}${selectedId !== null && selectedId === p.id ? ' cab-port--sel' : ''}`}
-              title={`${p.name} · ${STATUS_TITLE[p.status || 'free'] || p.status}${p.outlet_label ? ` · ${p.outlet_label}` : ''}`}
+              className={`cab-port cab-port--${p.status || 'free'}${p.service === 'voice' && p.status !== 'voice' ? ' cab-port--svc-voice' : ''}${FIBER.includes(p.port_type) ? ' cab-port--wide' : ''}${selectedId !== null && selectedId === p.id ? ' cab-port--sel' : ''}`}
+              title={`${p.name} · ${STATUS_TITLE[p.status || 'free'] || p.status}${p.service === 'voice' && p.status !== 'voice' ? ' · telephone port' : ''}${p.outlet_label ? ` · ${p.outlet_label}` : ''}`}
               onClick={onSelect ? () => onSelect(p) : undefined}
               tabIndex={onSelect ? 0 : -1}
             >

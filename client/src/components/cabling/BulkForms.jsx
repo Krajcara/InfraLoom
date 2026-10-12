@@ -136,13 +136,13 @@ export function BulkLinkForm({ catalog, initialDeviceId, onDone, onCancel }) {
 
 /** Label the wall outlets of a patch panel in one go: ports 1–24 → K-01…K-24 in an office. */
 export function BulkOutletsForm({ device, offices, catalog, onDone }) {
-  const [f, setF] = useState({ office_id: '', start_port: device.ports[0]?.name || '', count: Math.min(24, device.ports.length) || 1, label_prefix: 'K-', label_start: 1, label_pad: 2, rear_cable_type: '', rear_length_m: '', overwrite: false });
+  const [f, setF] = useState({ office_id: '', start_port: device.ports[0]?.name || '', count: Math.min(24, device.ports.length) || 1, label_prefix: 'K-', label_start: 1, label_pad: 2, rear_cable_type: '', rear_length_m: '', service: '', overwrite: false });
   const [plan, setPlan] = useState(null);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(null);
   const [busy, setBusy] = useState(false);
   const set = (k, v) => { setPlan(null); setError(null); setDone(null); setF((x) => ({ ...x, [k]: v })); };
-  const body = (dry) => ({ ...f, office_id: f.office_id ? Number(f.office_id) : null, count: Number(f.count), label_start: Number(f.label_start), label_pad: Number(f.label_pad), rear_length_m: f.rear_length_m === '' ? null : f.rear_length_m, rear_cable_type: f.rear_cable_type || null, dry_run: dry || undefined });
+  const body = (dry) => ({ ...f, office_id: f.office_id ? Number(f.office_id) : null, count: Number(f.count), label_start: Number(f.label_start), label_pad: Number(f.label_pad), rear_length_m: f.rear_length_m === '' ? null : f.rear_length_m, rear_cable_type: f.rear_cable_type || null, service: f.service || null, dry_run: dry || undefined });
   async function run(dry) {
     setError(null); setBusy(true);
     try {
@@ -169,6 +169,11 @@ export function BulkOutletsForm({ device, offices, catalog, onDone }) {
           <select value={f.rear_cable_type} onChange={(e) => set('rear_cable_type', e.target.value)} aria-label="Outlets cable"><option value="">—</option>{(catalog?.cable_types || []).map((c) => <option key={c} value={c}>{c}</option>)}</select>
         </label>
         <label>Length (m)<input type="number" min="0" step="0.1" value={f.rear_length_m} onChange={(e) => set('rear_length_m', e.target.value)} aria-label="Outlets length" /></label>
+        <label>Service
+          <select value={f.service} onChange={(e) => set('service', e.target.value)} aria-label="Outlets service">
+            <option value="">leave as it is</option>{(catalog?.services || []).map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+          </select>
+        </label>
       </div>
       <label className="checkbox-row"><input type="checkbox" checked={f.overwrite} onChange={(e) => set('overwrite', e.target.checked)} /><span>Replace outlets that are already recorded</span></label>
       {error && <p className="error">{error}</p>}

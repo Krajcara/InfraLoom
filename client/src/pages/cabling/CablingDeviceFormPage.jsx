@@ -11,7 +11,7 @@ const blank = (room, office, rack, u) => ({
   ip_address: '', serial_number: '', manufacturer: '', model: '', mac_address: '', notes: '', linked: '',
 });
 
-const fromTemplateGroups = (groups) => groups.map((g) => ({ prefix: g.prefix, start_no: g.start_no, end_no: g.end_no, port_type: g.port_type, speed: g.speed || '', poe: !!g.poe, role: g.role || '', connector: g.connector || '' }));
+const fromTemplateGroups = (groups) => groups.map((g) => ({ prefix: g.prefix, start_no: g.start_no, end_no: g.end_no, port_type: g.port_type, speed: g.speed || '', poe: !!g.poe, role: g.role || '', connector: g.connector || '', service: g.service || 'data' }));
 
 export default function CablingDeviceFormPage() {
   const { id } = useParams();

@@ -1,6 +1,6 @@
 'use strict';
 
-const { PORT_TYPES, SPEEDS, PORT_ROLES, CONNECTORS, oneOf } = require('./catalog');
+const { PORT_TYPES, SPEEDS, PORT_ROLES, CONNECTORS, SERVICES, oneOf } = require('./catalog');
 
 const MAX_PORTS_PER_DEVICE = 512;
 
@@ -26,7 +26,9 @@ function normalizeGroups(groups) {
     if (role && !oneOf(PORT_ROLES, role)) throw new InputError(`Group ${n}: unknown role "${role}"`);
     const connector = g.connector || null;
     if (connector && !CONNECTORS.includes(connector)) throw new InputError(`Group ${n}: unknown connector "${connector}"`);
-    return { prefix, start_no: start, end_no: end, port_type: g.port_type, speed, poe: g.poe ? 1 : 0, role, connector };
+    const service = g.service || 'data';
+    if (!oneOf(SERVICES, service)) throw new InputError(`Group ${n}: unknown service "${service}"`);
+    return { prefix, start_no: start, end_no: end, port_type: g.port_type, speed, poe: g.poe ? 1 : 0, role, connector, service };
   });
   const total = out.reduce((a, g) => a + (g.end_no - g.start_no + 1), 0);
   if (total > MAX_PORTS_PER_DEVICE) throw new InputError(`That would create ${total} ports; a device can have at most ${MAX_PORTS_PER_DEVICE}`);
@@ -39,7 +41,7 @@ function expandPortGroups(groups, startOrder = 0) {
   let order = startOrder;
   for (const g of groups) {
     for (let n = g.start_no; n <= g.end_no; n++) {
-      ports.push({ name: `${g.prefix || ''}${n}`, sort_order: ++order, port_type: g.port_type, speed: g.speed || null, poe: g.poe ? 1 : 0, role: g.role || null, connector: g.connector || null });
+      ports.push({ name: `${g.prefix || ''}${n}`, sort_order: ++order, port_type: g.port_type, speed: g.speed || null, poe: g.poe ? 1 : 0, role: g.role || null, connector: g.connector || null, service: g.service || 'data' });
     }
   }
   return ports;
@@ -59,8 +61,8 @@ function assertNoDuplicateNames(ports, existingNames = []) {
 
 function insertPorts(db, deviceId, ports) {
   const stmt = db.prepare(
-    `INSERT INTO cab_ports (device_id, name, sort_order, port_type, speed, poe, role, connector)
-     VALUES (@device_id, @name, @sort_order, @port_type, @speed, @poe, @role, @connector)`
+    `INSERT INTO cab_ports (device_id, name, sort_order, port_type, speed, poe, role, connector, service)
+     VALUES (@device_id, @name, @sort_order, @port_type, @speed, @poe, @role, @connector, @service)`
   );
   for (const p of ports) stmt.run({ ...p, device_id: deviceId });
 }

@@ -87,6 +87,10 @@ patch panel, fibre panel, desktop, notebook, printer, access point), and the **p
   lead: to an office, straight to a device, fibre, a wall outlet without a patch cord yet, or free. The rules keep the documentation honest: only panels have a rear side, two rear sides
   are a permanent installation, a patch cord reaches a rear side only as the cord from a recorded wall outlet to a device, and a port side holds one cable (the message says who has it).
   A ring of cables or an absurdly long chain ends the trace with a note instead of hanging. Operators can edit and unplug cables (patching changes all the time); administrators delete devices.
+- **Telephone lines.** Some patch-panel ports lead to a telephone exchange, not to the network. The port stays RJ45; give it the **Telephone** service (per port, per port group or template, or for a run of
+  outlets in *Label wall outlets*) and use the **Telephone** cable for the patch cord and for the cable to the wall socket. Add the exchange as a *Telephone exchange (PBX)* with RJ11/RJ12, RJ21 or LSA/Krone ports.
+  Telephone lines have their own colour (magenta) on ports, in the legend, in the trace (*Telephone outlet T-05*) and in an office's outlet list; a path with a telephone port, a telephone cable or an exchange on it is a
+  telephone line, and that colour wins over the others. A telephone outlet nobody has patched yet keeps the dashed outlet look, with a telephone border.
 - **Links between rooms.** A *trunk* is a fibre or copper run between two rooms (fibre type, strands, length). The permanent link between the two panels uses strands of it: a duplex fibre
   link takes a pair, assigned automatically (1-2, 3-4…) or chosen by you, and a strand cannot be used twice. The page shows each trunk's strands in use, and every room lists the trunks that
   reach it and counts them in its KPIs. A trunk that links use cannot be deleted, shrunk below the strands in use, or moved to other rooms.

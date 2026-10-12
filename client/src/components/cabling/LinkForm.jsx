@@ -33,6 +33,11 @@ export function NewLinkForm({ fromPort, fromDevice, catalog, onDone, onCancel })
     return devices.filter((d) => d.id !== fromDevice.id || isPanel).filter((d) => !q || `${d.name} ${d.room_name || ''} ${d.office_name || ''}`.toLowerCase().includes(q));
   }, [devices, filter, fromDevice.id, isPanel]);
 
+  // towards an exchange or a telephone port the cable is a telephone one — preselected, still changeable
+  useEffect(() => {
+    if (target && (target.device_type === 'pbx' || fromDevice.device_type === 'pbx' || fromPort.service === 'voice')) setF((x) => (x.cable_type ? x : { ...x, cable_type: 'Telephone' }));
+  }, [target]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const targetPanel = target && panelOf(catalog, target.device_type);
   const options = target ? target.ports.flatMap((p) => {
     const sides = targetPanel ? ['front', 'rear'] : ['front'];

@@ -156,3 +156,45 @@ test('an outlet-side cord that arrives at the rear of a panel shows the outlet b
   });
   assert.deepEqual(shape(trace(g, 2)), ['PC:eth0', 'link', 'outlet K-5', 'installation', 'PP:5', 'link', 'SW:1']);
 });
+
+
+test('telephone lines: a port marked telephone, a telephone cable or an exchange on the path makes the whole path "voice"', () => {
+  linkId = 0;
+  const g = buildGraph({
+    devices: [dev(1, 'PBX-1', 'pbx'), dev(2, 'PP-T', 'patch_panel'), dev(3, 'SW-01', 'switch'), dev(4, 'PP-D', 'patch_panel')],
+    ports: [
+      port(1, 1, 'ext1', { port_type: 'rj11' }), port(2, 1, 'ext2'),
+      port(11, 2, '5', { office_id: 2, office_name: 'Office 02', outlet_label: 'T-5', service: 'voice', rear_cable_type: 'Telephone', rear_length_m: 20 }), port(12, 2, '6', { office_id: 2, office_name: 'Office 02', outlet_label: 'T-6', service: 'voice' }),
+      port(21, 3, 'Gi1', {}), port(22, 3, 'Gi2', {}), port(23, 3, 'Gi3', {}),
+      port(31, 4, '1', { office_id: 2, office_name: 'Office 02', outlet_label: 'D-1' }), port(32, 4, '2', { service: 'voice' }),
+    ],
+    links: [
+      link(1, 'front', 11, 'front', { cable_type: 'Telephone', length_m: 2 }),   // exchange -> panel port marked telephone
+      link(21, 'front', 31, 'front', { cable_type: 'Telephone' }),                // a data port patched with a telephone cable
+      link(22, 'front', 32, 'front'),                                             // a switch patched to a panel port marked telephone (a mistake, made visible)
+    ],
+  });
+  const t = trace(g, 1);
+  assert.deepEqual(shape(t), ['PBX-1:ext1', 'link', 'PP-T:5', 'installation', 'outlet T-5']);
+  assert.equal(t.steps[1].cable_type, 'Telephone'); assert.equal(t.steps[3].cable_type, 'Telephone'); assert.equal(t.steps[3].length_m, 20);
+  assert.equal(t.steps[4].service, 'voice', 'the outlet is a telephone socket'); assert.equal(t.steps[2].service, 'voice');
+  assert.equal(classify(g, 1), 'voice', 'the exchange port'); assert.equal(classify(g, 11), 'voice', 'the panel port');
+  assert.equal(classify(g, 12), 'outlet', 'a telephone outlet nobody has patched yet keeps the dashed outlet state (its service shows in the port itself)');
+  assert.equal(classify(g, 2), 'free', 'an exchange port with nothing on it');
+  assert.equal(classify(g, 21), 'voice', 'a telephone cable makes it a telephone line even on data ports');
+  assert.equal(classify(g, 22), 'voice');
+  assert.equal(classify(g, 23), 'free');
+});
+
+test('telephone wins over fibre and office; ordinary paths are untouched', () => {
+  linkId = 0;
+  const g = buildGraph({
+    devices: [dev(1, 'SW-A', 'switch'), dev(2, 'ODF-1', 'fiber_panel'), dev(3, 'ODF-2', 'fiber_panel', { room_id: 2, room_name: 'TS-2' }), dev(4, 'PBX-2', 'pbx', { room_id: 2, room_name: 'TS-2' }), dev(5, 'SW-B', 'switch')],
+    ports: [port(1, 1, '1', { port_type: 'sfp_plus' }), port(2, 2, '1', { port_type: 'lc_duplex' }), port(3, 3, '1', { port_type: 'lc_duplex' }), port(4, 4, 'x', { port_type: 'lsa' }), port(5, 5, '1')],
+    links: [link(1, 'front', 2, 'front'), link(2, 'rear', 3, 'rear', { trunk_cable_id: 9, trunk_name: 'T' }), link(3, 'front', 4, 'front')],
+  });
+  assert.equal(classify(g, 1), 'voice', 'a fibre path that ends at an exchange is a telephone line');
+  assert.equal(classify(g, 5), 'free');
+  const plain = fixture();
+  assert.equal(classify(plain, 1), 'office'); assert.equal(classify(plain, 2), 'device'); assert.equal(classify(plain, 3), 'fiber');
+});

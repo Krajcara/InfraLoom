@@ -14,7 +14,7 @@ function NodeCard({ n, catalog }) {
   if (n.type === 'outlet') {
     return (
       <div className="cab-tnode cab-tnode--outlet">
-        <div className="mono cab-tnode-title">Outlet {n.label || '—'}</div>
+        <div className="mono cab-tnode-title">{n.service === 'voice' ? 'Telephone outlet' : 'Outlet'} {n.label || '—'}</div>
         <div className="muted">{n.office_name || 'no office set'}</div>
       </div>
     );
@@ -22,7 +22,7 @@ function NodeCard({ n, catalog }) {
   const where = n.room_name ? `${n.room_name}${n.rack_name ? ` · rack ${n.rack_name}` : ''}` : n.office_name ? n.office_name : null;
   const sub = n.panel
     ? where
-    : [labelOf(catalog?.device_types, n.device_type), n.port_type ? labelOf(catalog?.port_types, n.port_type) : null, n.speed, n.poe ? 'PoE' : null, !n.room_name && n.office_name ? n.office_name : null].filter(Boolean).join(' · ');
+    : [labelOf(catalog?.device_types, n.device_type), n.port_type ? labelOf(catalog?.port_types, n.port_type) : null, n.speed, n.poe ? 'PoE' : null, n.service === 'voice' ? 'telephone' : null, !n.room_name && n.office_name ? n.office_name : null].filter(Boolean).join(' · ');
   return (
     <div className={`cab-tnode${n.is_start ? ' cab-tnode--start' : ''}`}>
       <div className="mono cab-tnode-title">{n.device_name || '?'} · {n.panel ? `port ${n.port_name}` : n.port_name}</div>

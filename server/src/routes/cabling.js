@@ -236,7 +236,7 @@ router.post('/offices', canEdit, h((req, res) => {
 router.get('/offices/:id', h((req, res) => {
   const office = need(db.prepare('SELECT * FROM cab_offices WHERE id = ?').get(req.params.id), 'Office');
   const devices = attachPorts(db.prepare(`${DEVICE_SELECT} WHERE d.office_id = ? ORDER BY d.name`).all(office.id));
-  const outlets = db.prepare(`SELECT p.id AS port_id, p.name AS port_name, p.outlet_label, d.id AS device_id, d.name AS device_name, r.id AS room_id, r.name AS room_name, k.name AS rack_name
+  const outlets = db.prepare(`SELECT p.id AS port_id, p.name AS port_name, p.outlet_label, p.service, d.id AS device_id, d.name AS device_name, r.id AS room_id, r.name AS room_name, k.name AS rack_name
     FROM cab_ports p JOIN cab_devices d ON d.id = p.device_id LEFT JOIN cab_rooms r ON r.id = d.room_id LEFT JOIN cab_racks k ON k.id = d.rack_id
     WHERE p.office_id = ? ORDER BY p.outlet_label, d.name, p.sort_order`).all(office.id);
   res.json({ office, devices, outlets });
@@ -259,13 +259,13 @@ router.delete('/offices/:id', canDelete, h((req, res) => {
 
 // ── templates ──────────────────────────────────────────────────────────────
 
-const templateGroups = (id) => db.prepare('SELECT prefix, start_no, end_no, port_type, speed, poe, role, connector FROM cab_template_port_groups WHERE template_id = ? ORDER BY sort_order, id').all(id).map((g) => ({ ...g, poe: !!g.poe }));
+const templateGroups = (id) => db.prepare('SELECT prefix, start_no, end_no, port_type, speed, poe, role, connector, service FROM cab_template_port_groups WHERE template_id = ? ORDER BY sort_order, id').all(id).map((g) => ({ ...g, poe: !!g.poe }));
 const templateView = (t) => { const groups = templateGroups(t.id); return { ...t, groups, port_count: groups.reduce((a, g) => a + g.end_no - g.start_no + 1, 0) }; };
 
 function writeTemplate(id, groups) {
   db.prepare('DELETE FROM cab_template_port_groups WHERE template_id = ?').run(id);
-  const ins = db.prepare('INSERT INTO cab_template_port_groups (template_id, prefix, start_no, end_no, port_type, speed, poe, role, connector, sort_order) VALUES (?,?,?,?,?,?,?,?,?,?)');
-  groups.forEach((g, i) => ins.run(id, g.prefix, g.start_no, g.end_no, g.port_type, g.speed, g.poe, g.role, g.connector, i));
+  const ins = db.prepare('INSERT INTO cab_template_port_groups (template_id, prefix, start_no, end_no, port_type, speed, poe, role, connector, service, sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+  groups.forEach((g, i) => ins.run(id, g.prefix, g.start_no, g.end_no, g.port_type, g.speed, g.poe, g.role, g.connector, g.service || 'data', i));
 }
 
 function templateFields(b, cur = {}) {
@@ -451,6 +451,7 @@ router.put('/ports/:id', canEdit, h((req, res) => {
   const speed = pick('speed') || null; if (speed && !cat.SPEEDS.includes(speed)) throw new InputError('Unknown speed');
   const role = pick('role') || null; if (role && !cat.oneOf(cat.PORT_ROLES, role)) throw new InputError('Unknown role');
   const connector = pick('connector') || null; if (connector && !cat.CONNECTORS.includes(connector)) throw new InputError('Unknown connector');
+  const service = pick('service') || 'data'; if (!cat.oneOf(cat.SERVICES, service)) throw new InputError('Unknown service');
   const office_id = int(pick('office_id'), 'Office');
   if (office_id) need(db.prepare('SELECT id FROM cab_offices WHERE id = ?').get(office_id), 'Office');
   const pname = name(pick('name'), 'Port name');
@@ -463,8 +464,8 @@ router.put('/ports/:id', canEdit, h((req, res) => {
     const d = db.prepare('SELECT device_type FROM cab_devices WHERE id = ?').get(cur.device_id);
     if (d.device_type !== 'patch_panel') throw new InputError('Wall outlets and the permanent cable can only be recorded on patch-panel ports');
   }
-  db.prepare("UPDATE cab_ports SET name = ?, port_type = ?, speed = ?, poe = ?, role = ?, transceiver = ?, connector = ?, office_id = ?, outlet_label = ?, rear_cable_type = ?, rear_length_m = ?, notes = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(pname, port_type, speed, pick('poe') ? 1 : 0, role, str(pick('transceiver'), 80), connector, office_id, outlet, rearType, rearLen === null ? null : Number(rearLen), str(pick('notes'), 1000), cur.id);
+  db.prepare("UPDATE cab_ports SET name = ?, port_type = ?, speed = ?, poe = ?, role = ?, transceiver = ?, connector = ?, service = ?, office_id = ?, outlet_label = ?, rear_cable_type = ?, rear_length_m = ?, notes = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(pname, port_type, speed, pick('poe') ? 1 : 0, role, str(pick('transceiver'), 80), connector, service, office_id, outlet, rearType, rearLen === null ? null : Number(rearLen), str(pick('notes'), 1000), cur.id);
   audit(req, 'port.update', 'cab_port', cur.id, { device_id: cur.device_id, name: pname, outlet_label: pick('outlet_label') || null, office_id });
   const g = engine.loadGraph(db);
   const row = db.prepare('SELECT p.*, o.name AS office_name FROM cab_ports p LEFT JOIN cab_offices o ON o.id = p.office_id WHERE p.id = ?').get(cur.id);
@@ -816,6 +817,8 @@ router.post('/devices/:id/outlets/bulk', canEdit, h((req, res) => {
   if (rearType && !cat.CABLE_TYPES.includes(rearType)) throw new InputError('Unknown cable type');
   const len = b.rear_length_m === undefined || b.rear_length_m === null || b.rear_length_m === '' ? null : Number(b.rear_length_m);
   if (len !== null && !(len > 0 && len <= 100000)) throw new InputError('Cable length must be a number of metres above 0');
+  const service = b.service || null; // null = leave each port's service as it is
+  if (service && !cat.oneOf(cat.SERVICES, service)) throw new InputError('Unknown service');
 
   const seq = portSeq(dev.id, b.start_port, count, dev.name);
   const plan = seq.map((p, i) => ({ port_id: p.id, port: p.name, label: `${prefix}${String(first + i).padStart(pad, '0')}` }));
@@ -826,10 +829,10 @@ router.post('/devices/:id/outlets/bulk', canEdit, h((req, res) => {
   if (b.dry_run) return res.json({ dry_run: true, plan, overwrites: had.length });
 
   db.transaction(() => {
-    const upd = db.prepare("UPDATE cab_ports SET office_id = ?, outlet_label = ?, rear_cable_type = COALESCE(?, rear_cable_type), rear_length_m = COALESCE(?, rear_length_m), updated_at = datetime('now') WHERE id = ?");
-    for (const x of plan) upd.run(office_id, x.label, rearType, len, x.port_id);
+    const upd = db.prepare("UPDATE cab_ports SET office_id = ?, outlet_label = ?, rear_cable_type = COALESCE(?, rear_cable_type), rear_length_m = COALESCE(?, rear_length_m), service = COALESCE(?, service), updated_at = datetime('now') WHERE id = ?");
+    for (const x of plan) upd.run(office_id, x.label, rearType, len, service, x.port_id);
   })();
-  audit(req, 'outlets.bulk', 'cab_device', dev.id, { name: dev.name, office_id, count, first: plan[0].label, last: plan[plan.length - 1].label, overwrites: had.length });
+  audit(req, 'outlets.bulk', 'cab_device', dev.id, { name: dev.name, office_id, count, first: plan[0].label, last: plan[plan.length - 1].label, overwrites: had.length, service });
   res.json({ updated: plan.length, plan });
 }));
 

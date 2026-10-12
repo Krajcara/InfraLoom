@@ -45,7 +45,7 @@ function linkAt(g, portId, side) {
 function portNode(g, portId, extra = {}) {
   const p = g.P.get(portId), d = g.D.get(p.device_id) || {};
   return {
-    type: 'port', port_id: p.id, port_name: p.name, port_type: p.port_type, speed: p.speed || null, poe: !!p.poe,
+    type: 'port', port_id: p.id, port_name: p.name, port_type: p.port_type, speed: p.speed || null, poe: !!p.poe, service: p.service || 'data',
     device_id: d.id ?? null, device_name: d.name ?? null, device_type: d.device_type ?? null, model: d.model ?? null,
     room_id: d.room_id ?? null, room_name: d.room_name ?? null, rack_name: d.rack_name ?? null, rack_position: d.rack_position ?? null,
     office_id: d.office_id ?? null, office_name: d.office_name ?? null, panel: PANEL_TYPES.includes(d.device_type), ...extra,
@@ -59,7 +59,7 @@ const linkEdge = (l) => ({
 
 // the permanent cable from a panel port's rear to its wall outlet is part of the port, not a link
 const installationEdge = (p) => ({ type: 'installation', cable_type: p.rear_cable_type || null, length_m: p.rear_length_m ?? null });
-const outletNode = (p) => ({ type: 'outlet', port_id: p.id, office_id: p.office_id ?? null, office_name: p.office_name ?? null, label: p.outlet_label || null });
+const outletNode = (p) => ({ type: 'outlet', port_id: p.id, office_id: p.office_id ?? null, office_name: p.office_name ?? null, label: p.outlet_label || null, service: p.service || 'data' });
 
 /** Walks away from a port side; the node of the port itself is not included. Returns the steps and how it ended:
  * 'device' (reached a device port), 'outlet' (reached a wall outlet with nothing plugged in), 'open' (a panel side with no cable), 'loop', 'truncated'. */
@@ -120,7 +120,8 @@ function trace(g, portId) {
 }
 
 /** Where does this port go? 'free' | 'outlet' (a wall outlet is recorded but no patch cord is plugged in) | 'office' (leads to a
- * wall outlet) | 'device' (patched straight to another device) | 'fiber' (goes over a trunk or a fibre port). */
+ * wall outlet) | 'device' (patched straight to another device) | 'fiber' (goes over a trunk or a fibre port) | 'voice' (a telephone line:
+ * a port marked telephone, a telephone cable, or a telephone exchange on the path — it wins over the others). */
 function classify(g, portId) {
   if (g.status.has(portId)) return g.status.get(portId);
   const p = g.P.get(portId);
@@ -132,7 +133,8 @@ function classify(g, portId) {
     const t = trace(g, portId);
     const fiber = t.steps.some((x) => (x.type === 'link' && x.trunk) || (x.type === 'port' && FIBER_PORT_TYPES.includes(x.port_type)));
     const office = t.steps.some((x) => x.type === 'outlet');
-    s = fiber ? 'fiber' : office ? 'office' : 'device';
+    const voice = t.steps.some((x) => (x.type === 'port' && (x.service === 'voice' || x.device_type === 'pbx')) || (x.type === 'outlet' && x.service === 'voice') || ((x.type === 'link' || x.type === 'installation') && x.cable_type === 'Telephone'));
+    s = voice ? 'voice' : fiber ? 'fiber' : office ? 'office' : 'device';
   }
   g.status.set(portId, s);
   return s;
@@ -154,7 +156,7 @@ function connections(g, portId) {
 /** Reads everything the engine needs in one go (a few thousand ports is a few milliseconds). */
 function loadGraph(db) {
   return buildGraph({
-    ports: db.prepare('SELECT p.id, p.device_id, p.name, p.port_type, p.speed, p.poe, p.office_id, p.outlet_label, p.rear_cable_type, p.rear_length_m, o.name AS office_name FROM cab_ports p LEFT JOIN cab_offices o ON o.id = p.office_id').all(),
+    ports: db.prepare('SELECT p.id, p.device_id, p.name, p.port_type, p.speed, p.poe, p.office_id, p.outlet_label, p.rear_cable_type, p.rear_length_m, p.service, o.name AS office_name FROM cab_ports p LEFT JOIN cab_offices o ON o.id = p.office_id').all(),
     devices: db.prepare('SELECT d.id, d.name, d.device_type, d.model, d.room_id, d.rack_position, d.office_id, r.name AS room_name, k.name AS rack_name, o.name AS office_name FROM cab_devices d LEFT JOIN cab_rooms r ON r.id = d.room_id LEFT JOIN cab_racks k ON k.id = d.rack_id LEFT JOIN cab_offices o ON o.id = d.office_id').all(),
     links: db.prepare('SELECT l.*, t.name AS trunk_name, t.medium AS trunk_medium, t.fiber_type AS trunk_fiber_type FROM cab_links l LEFT JOIN cab_trunk_cables t ON t.id = l.trunk_cable_id').all(),
   });

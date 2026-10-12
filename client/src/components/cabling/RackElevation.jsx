@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { labelOf } from './common';
 
-const TYPE_CLASS = { switch: 'sw', router: 'rt', firewall: 'rt', hypervisor: 'sv', server: 'sv', nas: 'sv', patch_panel: 'pp', fiber_panel: 'fp', access_point: 'ap' };
+const TYPE_CLASS = { pbx: 'pbx', switch: 'sw', router: 'rt', firewall: 'rt', hypervisor: 'sv', server: 'sv', nas: 'sv', patch_panel: 'pp', fiber_panel: 'fp', access_point: 'ap' };
 const unitsOf = (d) => d.height_u || 1;
 
 function Rack({ rack, devices, catalog, selectedId, onSelect, canEdit, roomId }) {

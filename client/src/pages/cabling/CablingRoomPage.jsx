@@ -16,7 +16,7 @@ function Kpi({ label, value }) {
 }
 
 const STATUS_TEXT = {
-  free: 'Free', office: 'Leads to an office wall outlet', device: 'Connected straight to a device', fiber: 'Fibre to another room or panel', outlet: 'Wall outlet recorded, no patch cord yet',
+  free: 'Free', office: 'Leads to an office wall outlet', device: 'Connected straight to a device', fiber: 'Fibre to another room or panel', outlet: 'Wall outlet recorded, no patch cord yet', voice: 'Telephone line',
 };
 
 function PortPanel({ port, device, offices, catalog, rights, mode, setMode, onChanged, onDeleted }) {
@@ -35,7 +35,7 @@ function PortPanel({ port, device, offices, catalog, rights, mode, setMode, onCh
 
   const isPatchPanel = device.device_type === 'patch_panel';
   const begin = () => {
-    setForm({ name: port.name, port_type: port.port_type, speed: port.speed || '', poe: port.poe, role: port.role || '', transceiver: port.transceiver || '', connector: port.connector || '', office_id: port.office_id || '', outlet_label: port.outlet_label || '', rear_cable_type: port.rear_cable_type || '', rear_length_m: port.rear_length_m ?? '', notes: port.notes || '' });
+    setForm({ name: port.name, port_type: port.port_type, speed: port.speed || '', poe: port.poe, role: port.role || '', transceiver: port.transceiver || '', connector: port.connector || '', service: port.service || 'data', office_id: port.office_id || '', outlet_label: port.outlet_label || '', rear_cable_type: port.rear_cable_type || '', rear_length_m: port.rear_length_m ?? '', notes: port.notes || '' });
     setMode('edit');
   };
   const set = (k, v) => { setError(null); setForm((f) => ({ ...f, [k]: v })); };
@@ -87,6 +87,9 @@ function PortPanel({ port, device, offices, catalog, rights, mode, setMode, onCh
               <select value={form.connector} onChange={(e) => set('connector', e.target.value)}><option value="">—</option>{(catalog?.connectors || []).map((x) => <option key={x} value={x}>{x}</option>)}</select>
             </label>
           </div>
+          <label>Service
+            <select value={form.service} onChange={(e) => set('service', e.target.value)} aria-label="Port service">{(catalog?.services || []).map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}</select>
+          </label>
           <label className="checkbox-row"><input type="checkbox" checked={form.poe} onChange={(e) => set('poe', e.target.checked)} /><span>PoE</span></label>
           <label>Transceiver<input value={form.transceiver} onChange={(e) => set('transceiver', e.target.value)} placeholder="e.g. SFP+ 10G LR" /></label>
           {isPatchPanel && (
@@ -121,6 +124,7 @@ function PortPanel({ port, device, offices, catalog, rights, mode, setMode, onCh
             <dt>Speed</dt><dd className="mono">{port.speed || '—'}</dd>
             <dt>PoE</dt><dd className="mono">{port.poe ? 'Yes' : 'No'}</dd>
             <dt>Role</dt><dd className="mono">{port.role ? labelOf(catalog?.port_roles, port.role) : '—'}</dd>
+            <dt>Service</dt><dd className="mono">{labelOf(catalog?.services, port.service || 'data')}</dd>
             {port.transceiver && (<><dt>Transceiver</dt><dd className="mono">{port.transceiver}</dd></>)}
             {port.connector && (<><dt>Connector</dt><dd className="mono">{port.connector}</dd></>)}
             {port.notes && (<><dt>Notes</dt><dd>{port.notes}</dd></>)}
@@ -389,6 +393,7 @@ export default function CablingRoomPage() {
                   <span><i className="cab-sw cab-sw--office" /> To office</span>
                   <span><i className="cab-sw cab-sw--device" /> Direct to device</span>
                   <span><i className="cab-sw cab-sw--fiber" /> Fibre</span>
+                  <span><i className="cab-sw cab-sw--voice" /> Telephone</span>
                   <span><i className="cab-sw cab-sw--outlet" /> Outlet, no patch cord</span>
                   <span><i className="cab-sw cab-sw--free" /> Free</span>
                   {rights.canEdit && <button type="button" className="btn-link" onClick={() => setEditRack(editRack === r.id ? null : r.id)}>Edit</button>}

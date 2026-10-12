@@ -3,7 +3,7 @@ import { api } from '../../api';
 import PortGroupsEditor, { emptyGroup, groupsForApi } from '../../components/cabling/PortGroupsEditor';
 import { errText, labelOf, useCablingRights, useCatalog } from '../../components/cabling/common';
 
-const toEditor = (groups) => groups.map((g) => ({ prefix: g.prefix, start_no: g.start_no, end_no: g.end_no, port_type: g.port_type, speed: g.speed || '', poe: !!g.poe, role: g.role || '', connector: g.connector || '' }));
+const toEditor = (groups) => groups.map((g) => ({ prefix: g.prefix, start_no: g.start_no, end_no: g.end_no, port_type: g.port_type, speed: g.speed || '', poe: !!g.poe, role: g.role || '', connector: g.connector || '', service: g.service || 'data' }));
 
 export default function CablingTemplatesPage() {
   const rights = useCablingRights();

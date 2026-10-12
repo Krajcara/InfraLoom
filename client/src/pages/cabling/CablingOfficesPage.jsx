@@ -16,7 +16,7 @@ function OfficeDetail({ id, catalog }) {
           <tbody>
             {d.outlets.map((o) => (
               <tr key={o.port_id}>
-                <td className="mono"><strong>{o.outlet_label || '—'}</strong></td>
+                <td className="mono"><strong>{o.outlet_label || '—'}</strong>{o.service === 'voice' && <span className="cab-tag cab-tag--voice" style={{ marginLeft: 6 }}>telephone</span>}</td>
                 <td className="mono">{o.device_name}</td><td className="mono">{o.port_name}</td>
                 <td>{o.room_id ? <Link to={`/cabling/rooms/${o.room_id}?port=${o.port_id}`}>{o.room_name}{o.rack_name ? ` · ${o.rack_name}` : ''}</Link> : '—'}</td>
               </tr>

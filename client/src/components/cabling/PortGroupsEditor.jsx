@@ -1,6 +1,6 @@
 import PortStrip from './PortStrip';
 
-export const emptyGroup = () => ({ prefix: '', start_no: 1, end_no: 24, port_type: 'rj45', speed: '1G', poe: false, role: 'lan', connector: '' });
+export const emptyGroup = () => ({ prefix: '', start_no: 1, end_no: 24, port_type: 'rj45', speed: '1G', poe: false, role: 'lan', connector: '', service: 'data' });
 
 const countOf = (g) => {
   const a = Number(g.start_no), b = Number(g.end_no);
@@ -13,7 +13,7 @@ export function expandGroups(groups) {
   const out = [];
   for (const g of groups) {
     for (let i = 0; i < countOf(g) && out.length < 600; i++) {
-      out.push({ name: `${g.prefix || ''}${Number(g.start_no) + i}`, port_type: g.port_type, speed: g.speed, poe: g.poe, role: g.role, status: 'free' });
+      out.push({ name: `${g.prefix || ''}${Number(g.start_no) + i}`, port_type: g.port_type, speed: g.speed, poe: g.poe, role: g.role, service: g.service, status: 'free' });
     }
   }
   return out;
@@ -29,7 +29,7 @@ export default function PortGroupsEditor({ groups, onChange, catalog, panel = fa
     <div className="cab-groups">
       <table className="table">
         <thead>
-          <tr><th>Name (prefix)</th><th>From</th><th>To</th><th>Port type</th><th>Speed</th><th>PoE</th><th>Role</th><th>Connector</th><th>Count</th><th /></tr>
+          <tr><th>Name (prefix)</th><th>From</th><th>To</th><th>Port type</th><th>Speed</th><th>PoE</th><th>Role</th><th>Connector</th><th>Service</th><th>Count</th><th /></tr>
         </thead>
         <tbody>
           {groups.map((g, i) => (
@@ -59,6 +59,11 @@ export default function PortGroupsEditor({ groups, onChange, catalog, panel = fa
                 <select value={g.connector || ''} onChange={(e) => set(i, { connector: e.target.value })} aria-label="Connector">
                   <option value="">—</option>
                   {(catalog?.connectors || []).map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </td>
+              <td>
+                <select value={g.service || 'data'} onChange={(e) => set(i, { service: e.target.value })} aria-label="Service">
+                  {(catalog?.services || []).map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
                 </select>
               </td>
               <td className="mono">{countOf(g)}</td>

@@ -20,7 +20,7 @@ const group = (o = {}) => ({ prefix: 'Gi1/0/', start_no: 1, end_no: 24, port_typ
 
 test('port groups: valid groups are normalised', () => {
   const [g] = normalizeGroups([group({ prefix: ' Gi1/0/ ', speed: '', role: '', poe: 1 })]);
-  assert.deepEqual(g, { prefix: 'Gi1/0/', start_no: 1, end_no: 24, port_type: 'rj45', speed: null, poe: 1, role: null, connector: null });
+  assert.deepEqual(g, { prefix: 'Gi1/0/', start_no: 1, end_no: 24, port_type: 'rj45', speed: null, poe: 1, role: null, connector: null, service: 'data' });
 });
 
 test('port groups: every bad input is refused with a message that names the group', () => {
@@ -32,6 +32,7 @@ test('port groups: every bad input is refused with a message that names the grou
     [group({ speed: '7G' }), /unknown speed/],
     [group({ role: 'boss' }), /unknown role/],
     [group({ connector: 'XX' }), /unknown connector/],
+    [group({ service: 'fax' }), /unknown service "fax"/],
     [group({ prefix: 'x'.repeat(21) }), /at most 20 characters/],
   ];
   for (const [g, re] of bad) assert.throws(() => normalizeGroups([g]), (e) => e instanceof InputError && e.status === 400 && re.test(e.message), re.source);
@@ -80,16 +81,17 @@ test('allowed networks: matching, parsing and loopback', () => {
 test('catalog: lists are complete and consistent', () => {
   assert.ok(cat.oneOf(cat.DEVICE_TYPES, 'patch_panel') && cat.oneOf(cat.PORT_TYPES, 'lc_duplex') && !cat.oneOf(cat.PORT_TYPES, 'usb'));
   for (const t of cat.PANEL_TYPES) assert.ok(cat.oneOf(cat.DEVICE_TYPES, t));
-  assert.equal(cat.DEVICE_TYPES.length, 13);
+  assert.equal(cat.DEVICE_TYPES.length, 14);
+  assert.ok(cat.oneOf(cat.DEVICE_TYPES, 'pbx') && cat.oneOf(cat.PORT_TYPES, 'rj11') && cat.oneOf(cat.SERVICES, 'voice') && cat.CABLE_TYPES.includes('Telephone'));
 });
 
 test('schema: migration applied once, tables prefixed, nothing collides with InfraLoom tables', () => {
-  assert.deepEqual(db.prepare('SELECT version FROM cab_migrations').all().map((r) => r.version), ['001_cabling', '002_permanent_cable', '003_device_height', '004_rack_numbering']);
+  assert.deepEqual(db.prepare('SELECT version FROM cab_migrations').all().map((r) => r.version), ['001_cabling', '002_permanent_cable', '003_device_height', '004_rack_numbering', '005_service']);
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'cab_%'").all().map((r) => r.name);
   for (const t of ['cab_rooms', 'cab_offices', 'cab_racks', 'cab_device_templates', 'cab_template_port_groups', 'cab_devices', 'cab_ports', 'cab_trunk_cables', 'cab_links']) assert.ok(tables.includes(t), t);
   assert.equal(db.prepare("SELECT COUNT(*) c FROM sqlite_master WHERE name IN ('devices','ports','connections','rooms')").get().c, 0);
   require('../src/db/cabling').migrate(db); // running it again changes nothing
-  assert.equal(db.prepare('SELECT COUNT(*) c FROM cab_migrations').get().c, 4);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM cab_migrations').get().c, 5);
 });
 
 test('schema: a port side takes part in at most one link, whichever end it is on (triggers)', () => {

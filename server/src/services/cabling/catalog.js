@@ -15,6 +15,7 @@ const DEVICE_TYPES = [
   { value: 'notebook', label: 'Notebook' },
   { value: 'printer', label: 'Printer' },
   { value: 'access_point', label: 'Access point' },
+  { value: 'pbx', label: 'Telephone exchange (PBX)' },
   { value: 'other', label: 'Other' },
 ];
 const PANEL_TYPES = ['patch_panel', 'fiber_panel'];
@@ -34,6 +35,15 @@ const PORT_TYPES = [
   { value: 'console', label: 'Console' },
   { value: 'lc_duplex', label: 'LC duplex' },
   { value: 'sc_duplex', label: 'SC duplex' },
+  { value: 'rj11', label: 'RJ11 / RJ12 (telephone)' },
+  { value: 'rj21', label: 'RJ21 (50-pin telephone)' },
+  { value: 'lsa', label: 'LSA / Krone (terminal block)' },
+];
+
+// What a port carries. A telephone line on a patch panel is still an RJ45 port: the service says what the cabling behind it is.
+const SERVICES = [
+  { value: 'data', label: 'Data' },
+  { value: 'voice', label: 'Telephone' },
 ];
 
 const SPEEDS = ['100M', '1G', '2.5G', '5G', '10G', '25G', '40G'];
@@ -48,7 +58,7 @@ const PORT_ROLES = [
 
 const CONNECTORS = ['LC', 'SC', 'ST', 'MPO'];
 const FIBER_TYPES = ['OS2', 'OM3', 'OM4', 'OM5'];
-const CABLE_TYPES = ['Cat5e', 'Cat6', 'Cat6a', 'Cat7', 'OS2', 'OM3', 'OM4', 'OM5', 'DAC', 'Other'];
+const CABLE_TYPES = ['Cat5e', 'Cat6', 'Cat6a', 'Cat7', 'OS2', 'OM3', 'OM4', 'OM5', 'DAC', 'Telephone', 'Other'];
 const CABLE_COLORS = ['blue', 'red', 'yellow', 'green', 'orange', 'grey', 'white', 'black', 'purple', 'pink'];
 const FIBER_PORT_TYPES = ['lc_duplex', 'sc_duplex'];
 const LINK_KINDS_OF_CABLE = ['patch', 'permanent'];
@@ -60,7 +70,7 @@ const values = (list) => list.map((x) => (typeof x === 'string' ? x : x.value));
 const oneOf = (list, v) => values(list).includes(v);
 
 function catalog() {
-  return { device_types: DEVICE_TYPES, panel_types: PANEL_TYPES, purposes: PURPOSES, port_types: PORT_TYPES, speeds: SPEEDS, port_roles: PORT_ROLES, connectors: CONNECTORS, fiber_types: FIBER_TYPES, link_kinds: LINK_KINDS, cable_types: CABLE_TYPES, cable_colors: CABLE_COLORS };
+  return { device_types: DEVICE_TYPES, panel_types: PANEL_TYPES, purposes: PURPOSES, services: SERVICES, port_types: PORT_TYPES, speeds: SPEEDS, port_roles: PORT_ROLES, connectors: CONNECTORS, fiber_types: FIBER_TYPES, link_kinds: LINK_KINDS, cable_types: CABLE_TYPES, cable_colors: CABLE_COLORS };
 }
 
-module.exports = { DEVICE_TYPES, PANEL_TYPES, PURPOSES, PORT_TYPES, SPEEDS, PORT_ROLES, CONNECTORS, FIBER_TYPES, CABLE_TYPES, CABLE_COLORS, FIBER_PORT_TYPES, LINK_KINDS_OF_CABLE, LINK_KINDS, values, oneOf, catalog };
+module.exports = { DEVICE_TYPES, PANEL_TYPES, PURPOSES, SERVICES, PORT_TYPES, SPEEDS, PORT_ROLES, CONNECTORS, FIBER_TYPES, CABLE_TYPES, CABLE_COLORS, FIBER_PORT_TYPES, LINK_KINDS_OF_CABLE, LINK_KINDS, values, oneOf, catalog };
