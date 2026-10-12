@@ -23,10 +23,12 @@ function NodeCard({ n, catalog }) {
   const sub = n.panel
     ? where
     : [labelOf(catalog?.device_types, n.device_type), n.port_type ? labelOf(catalog?.port_types, n.port_type) : null, n.speed, n.poe ? 'PoE' : null, n.service === 'voice' ? 'telephone' : null, !n.room_name && n.office_name ? n.office_name : null].filter(Boolean).join(' · ');
+  const gaps = n.gaps || [];
   return (
-    <div className={`cab-tnode${n.is_start ? ' cab-tnode--start' : ''}`}>
+    <div className={`cab-tnode${n.is_start ? ' cab-tnode--start' : ''}${gaps.length ? ' cab-tnode--gap' : ''}`}>
       <div className="mono cab-tnode-title">{n.device_name || '?'} · {n.panel ? `port ${n.port_name}` : n.port_name}</div>
       <div className="muted">{sub || labelOf(catalog?.device_types, n.device_type)}</div>
+      {gaps.length > 0 && <div className="cab-gaptext">Missing: {gaps.join(' and ')}</div>}
     </div>
   );
 }

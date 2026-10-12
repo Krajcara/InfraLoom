@@ -104,7 +104,7 @@ function attachPorts(devices, graph) {
   const ids = devices.map((d) => d.id);
   const rows = db.prepare(`SELECT p.*, o.name AS office_name FROM cab_ports p LEFT JOIN cab_offices o ON o.id = p.office_id WHERE p.device_id IN (${ids.map(() => '?').join(',')}) ORDER BY p.device_id, p.sort_order, p.id`).all(...ids);
   const by = new Map(ids.map((i) => [i, []]));
-  for (const p of rows) by.get(p.device_id).push({ ...p, poe: !!p.poe, status: engine.classify(g, p.id), connections: engine.connections(g, p.id) });
+  for (const p of rows) by.get(p.device_id).push({ ...p, poe: !!p.poe, status: engine.classify(g, p.id), gaps: engine.gapsOf(g, p.id), connections: engine.connections(g, p.id) });
   return devices.map((d) => ({ ...d, ports: by.get(d.id), live: d.linked_kind ? liveFor(d.linked_kind, d.linked_id) : null }));
 }
 
@@ -146,7 +146,9 @@ router.get('/rooms/:id', h((req, res) => {
   // wall outlets exist on copper patch panels; a fibre panel's ports run to another room, not to an outlet
   const panelPorts = devices.filter((d) => d.device_type === 'patch_panel').flatMap((d) => d.ports);
   const outletPorts = panelPorts.filter((p) => p.outlet_label || p.office_id);
-  const switchPorts = devices.filter((d) => d.device_type === 'switch').flatMap((d) => d.ports);
+  const switchPorts = devices.filter((d) => d.device_type === 'switch').flatMap((d) => d.ports).filter((p) => p.port_type !== 'console'); // a console port is never "in use" or "free"
+  // patch-panel ports that are patched but miss their office / outlet label, or have only half of that record
+  const incomplete = panelPorts.filter((p) => p.status === 'incomplete' && p.gaps.length > 0).length;
   const trunks = trunksOf(room.id);
   const fiber = trunks.filter((t) => t.medium === 'fiber');
   const win = db.prepare("SELECT COUNT(*) c, MAX(ends_at) e FROM maintenance_windows WHERE source = 'cabling' AND source_ref = ? AND ended_at IS NULL AND starts_at <= ? AND ends_at > ?").get(`room:${room.id}`, new Date().toISOString(), new Date().toISOString());
@@ -155,7 +157,7 @@ router.get('/rooms/:id', h((req, res) => {
     maintenance: { linked: devices.filter((d) => d.linked_kind).length, covered: devices.filter((d) => d.live?.maintenance).length, room_windows: win.c, room_window_ends_at: win.e },
     summary: {
       devices: devices.length, racks: racks.length, ports: devices.reduce((a, d) => a + d.ports.length, 0), panel_ports: panelPorts.length,
-      outlets: outletPorts.length, outlets_active: outletPorts.filter((p) => p.connections.front).length, outlets_spare: outletPorts.filter((p) => !p.connections.front).length,
+      incomplete, outlets: outletPorts.length, outlets_active: outletPorts.filter((p) => p.connections.front).length, outlets_spare: outletPorts.filter((p) => !p.connections.front).length,
       switch_ports: switchPorts.length, switch_ports_used: switchPorts.filter((p) => p.connections.front).length,
       fiber_strands: fiber.reduce((a, t) => a + t.strand_count, 0), fiber_strands_used: fiber.reduce((a, t) => a + t.used_strands, 0),
     },
@@ -916,6 +918,60 @@ router.delete('/rooms/:id/maintenance', canEdit, h(async (req, res) => {
   for (const w of open) await maintenance.endNow(w.id);
   audit(req, 'room.maintenance.end', 'cab_room', room.id, { name: room.name, ended: open.length });
   res.json({ ended: open.length });
+}));
+
+// ── reports: what is used, what is missing ────────────────────────────────
+
+// Ports of switches, routers and firewalls: which are in use (cabled on their front) and which are free. Console ports are left out.
+router.get('/reports/ports', h((req, res) => {
+  const types = String(req.query.type || 'switch,router,firewall').split(',').map((t) => t.trim()).filter(Boolean);
+  if (!types.length || types.some((t) => !cat.oneOf(cat.DEVICE_TYPES, t))) throw new InputError('Unknown device type');
+  const room = req.query.room_id ? Number(req.query.room_id) : null;
+  const g = engine.loadGraph(db);
+  const devices = db.prepare(`${DEVICE_SELECT} WHERE d.device_type IN (${types.map(() => '?').join(',')}) ${room ? 'AND d.room_id = ?' : ''} ORDER BY r.name, d.name`).all(...types, ...(room ? [room] : []));
+  const ports = new Map(devices.map((d) => [d.id, []]));
+  if (devices.length) {
+    for (const p of db.prepare(`SELECT id, device_id, name, port_type, speed, poe FROM cab_ports WHERE device_id IN (${devices.map(() => '?').join(',')}) ORDER BY device_id, sort_order, id`).all(...devices.map((d) => d.id))) ports.get(p.device_id).push(p);
+  }
+  const out = devices.map((d) => {
+    const all = ports.get(d.id);
+    const real = all.filter((p) => p.port_type !== 'console');
+    const used = []; const free = [];
+    for (const p of real) {
+      const front = engine.connections(g, p.id).front;
+      if (front) used.push({ port: p.name, port_type: p.port_type, speed: p.speed, leads_to: `${front.other_device_name} ${front.other_port_name}`, status: engine.classify(g, p.id) });
+      else free.push({ port: p.name, port_type: p.port_type, speed: p.speed, poe: !!p.poe });
+    }
+    return { device_id: d.id, name: d.name, device_type: d.device_type, room_id: d.room_id, room_name: d.room_name, rack_name: d.rack_name, rack_position: d.rack_position, ip_address: d.ip_address,
+      total: real.length, used: used.length, free: free.length, console_ports: all.length - real.length, used_ports: used, free_ports: free };
+  });
+  res.json({ devices: out, totals: { devices: out.length, ports: out.reduce((a, d) => a + d.total, 0), used: out.reduce((a, d) => a + d.used, 0), free: out.reduce((a, d) => a + d.free, 0) } });
+}));
+
+// Things that are probably a mistake or an unfinished entry: patch-panel ports that are patched but miss their office or outlet label
+// (or have half of that record), devices with no place, devices in a rack without a position.
+router.get('/reports/checks', h((req, res) => {
+  const room = req.query.room_id ? Number(req.query.room_id) : null;
+  const g = engine.loadGraph(db);
+  const gaps = [];
+  for (const p of g.P.values()) {
+    const d = g.D.get(p.device_id);
+    if (!d || d.device_type !== 'patch_panel' || (room && d.room_id !== room)) continue;
+    const missing = engine.gapsOf(g, p.id);
+    const front = engine.connections(g, p.id).front;
+    if (!missing.length || (!front && missing.length !== 1)) continue; // an untouched, unpatched port is just unused
+    gaps.push({
+      port_id: p.id, port_name: p.name, device_id: d.id, device_name: d.name, room_id: d.room_id, room_name: d.room_name, rack_name: d.rack_name,
+      office_id: p.office_id, office_name: p.office_name, outlet_label: p.outlet_label, missing,
+      front: front ? { device_name: front.other_device_name, port_name: front.other_port_name } : null, reason: front ? 'patched' : 'half-filled',
+    });
+  }
+  gaps.sort((a, b) => (a.room_name || '').localeCompare(b.room_name || '') || a.device_name.localeCompare(b.device_name) || a.port_id - b.port_id);
+  const inRoom = room ? 'AND d.room_id = ?' : '';
+  const args = room ? [room] : [];
+  const no_place = room ? [] : db.prepare('SELECT d.id, d.name, d.device_type FROM cab_devices d WHERE d.room_id IS NULL AND d.office_id IS NULL ORDER BY d.name').all();
+  const no_position = db.prepare(`SELECT d.id, d.name, d.device_type, d.room_id, r.name AS room_name, k.name AS rack_name FROM cab_devices d JOIN cab_racks k ON k.id = d.rack_id LEFT JOIN cab_rooms r ON r.id = d.room_id WHERE d.rack_position IS NULL ${inRoom} ORDER BY r.name, d.name`).all(...args);
+  res.json({ gaps, no_place, no_position, counts: { gaps: gaps.length, no_place: no_place.length, no_position: no_position.length } });
 }));
 
 // ── linking to what InfraLoom monitors ─────────────────────────────────────

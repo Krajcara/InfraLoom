@@ -16,10 +16,10 @@ function Kpi({ label, value }) {
 }
 
 const STATUS_TEXT = {
-  free: 'Free', office: 'Leads to an office wall outlet', device: 'Connected straight to a device', fiber: 'Fibre to another room or panel', outlet: 'Wall outlet recorded, no patch cord yet', voice: 'Telephone line',
+  free: 'Free', office: 'Leads to an office wall outlet', device: 'Connected straight to a device', fiber: 'Fibre to another room or panel', outlet: 'Wall outlet recorded, no patch cord yet', voice: 'Telephone line', incomplete: 'Incomplete: an office or outlet label is missing',
 };
 
-function PortPanel({ port, device, offices, catalog, rights, mode, setMode, onChanged, onDeleted }) {
+function PortPanel({ port, device, offices, catalog, rights, mode, setMode, onChanged, onDeleted, onGoToPort }) {
   const [form, setForm] = useState(null);
   const [error, setError] = useState(null);
   const [trace, setTrace] = useState(null);
@@ -117,6 +117,17 @@ function PortPanel({ port, device, offices, catalog, rights, mode, setMode, onCh
         <EditLinkForm connection={editing.connection} side={editing.side} port={{ ...port, device_id: device.id }} catalog={catalog} onCancel={() => setMode(null)} onDone={() => { setMode(null); setRev((r) => r + 1); onChanged(port.id); }} />
       ) : (
         <>
+          {port.status === 'incomplete' && (trace?.steps || []).some((s) => s.type === 'port' && s.gaps?.length > 0) && (
+            <div className="cab-missing">
+              <strong>Something is missing</strong>
+              {trace.steps.filter((s) => s.type === 'port' && s.gaps?.length > 0).map((s) => (
+                <div key={s.port_id}>
+                  {s.device_name} · port {s.port_name}: {s.gaps.join(' and ')}{' '}
+                  {s.port_id === port.id ? (rights.canEdit && <button type="button" className="btn-link" onClick={begin}>Fill in</button>) : <button type="button" className="btn-link" onClick={() => onGoToPort(s.port_id)}>Go to that port</button>}
+                </div>
+              ))}
+            </div>
+          )}
           <h3 className="cab-h3">Trace</h3>
           <TraceView trace={trace} catalog={catalog} />
           <dl className="cab-dl">
@@ -360,6 +371,12 @@ export default function CablingRoomPage() {
         <Kpi label="Fibre to other rooms (strands)" value={summary.fiber_strands ? `${summary.fiber_strands_used} / ${summary.fiber_strands}` : '—'} />
       </div>
 
+      {summary.incomplete > 0 && (
+        <div className="card cab-wide cab-warnbar">
+          <span><strong>{summary.incomplete}</strong> patch-panel port{summary.incomplete === 1 ? '' : 's'} in this room {summary.incomplete === 1 ? 'is' : 'are'} missing an office or an outlet label (shown in red).</span>
+          <Link to={`/cabling/reports?tab=gaps&room=${room.id}`}>Show the list</Link>
+        </div>
+      )}
       <RoomMaintenance roomId={room.id} info={data.maintenance} canEdit={rights.canEdit} onChanged={load} />
       {bulk && <BulkLinkForm catalog={catalog} initialDeviceId={selDevice?.id} onCancel={() => setBulk(false)} onDone={() => { setBulk(false); load(); }} />}
 
@@ -394,6 +411,7 @@ export default function CablingRoomPage() {
                   <span><i className="cab-sw cab-sw--device" /> Direct to device</span>
                   <span><i className="cab-sw cab-sw--fiber" /> Fibre</span>
                   <span><i className="cab-sw cab-sw--voice" /> Telephone</span>
+                  <span><i className="cab-sw cab-sw--incomplete" /> Incomplete</span>
                   <span><i className="cab-sw cab-sw--outlet" /> Outlet, no patch cord</span>
                   <span><i className="cab-sw cab-sw--free" /> Free</span>
                   {rights.canEdit && <button type="button" className="btn-link" onClick={() => setEditRack(editRack === r.id ? null : r.id)}>Edit</button>}
@@ -448,6 +466,7 @@ export default function CablingRoomPage() {
           <PortPanel
             port={selPort} device={selDevice} offices={offices} catalog={catalog} rights={rights} mode={mode} setMode={setMode}
             onChanged={(portId) => { load(); setSelected((s) => (s ? { ...s, portId } : s)); }}
+          onGoToPort={(portId) => { const d = devices.find((x) => x.ports.some((p) => p.id === portId)); if (d) { setMode(null); setSelected({ deviceId: d.id, portId }); setTimeout(() => document.getElementById(`cab-dev-${d.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60); } }}
             onDeleted={() => { setSelected(null); load(); }}
           />
           )}

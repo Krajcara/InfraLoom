@@ -3,7 +3,7 @@
 // The trace engine is pure: these tests need no database and no server.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildGraph, trace, classify, connections, MAX_HOPS } = require('../src/services/cabling/trace');
+const { buildGraph, trace, classify, connections, gapsOf, MAX_HOPS } = require('../src/services/cabling/trace');
 
 const dev = (id, name, device_type, extra = {}) => ({ id, name, device_type, model: null, room_id: 1, room_name: 'TS-1', rack_name: 'R1', rack_position: null, office_id: null, office_name: null, ...extra });
 const port = (id, device_id, name, extra = {}) => ({ id, device_id, name, port_type: 'rj45', speed: '1G', poe: 0, office_id: null, office_name: null, outlet_label: null, rear_cable_type: null, rear_length_m: null, ...extra });
@@ -182,7 +182,7 @@ test('telephone lines: a port marked telephone, a telephone cable or an exchange
   assert.equal(classify(g, 12), 'outlet', 'a telephone outlet nobody has patched yet keeps the dashed outlet state (its service shows in the port itself)');
   assert.equal(classify(g, 2), 'free', 'an exchange port with nothing on it');
   assert.equal(classify(g, 21), 'voice', 'a telephone cable makes it a telephone line even on data ports');
-  assert.equal(classify(g, 22), 'voice');
+  assert.equal(classify(g, 22), 'incomplete', 'a telephone port with no office and outlet label that is patched is something to fix first');
   assert.equal(classify(g, 23), 'free');
 });
 
@@ -197,4 +197,44 @@ test('telephone wins over fibre and office; ordinary paths are untouched', () =>
   assert.equal(classify(g, 5), 'free');
   const plain = fixture();
   assert.equal(classify(plain, 1), 'office'); assert.equal(classify(plain, 2), 'device'); assert.equal(classify(plain, 3), 'fiber');
+});
+
+
+test('incomplete: a patched patch-panel port that lacks its office or outlet label turns the whole path red', () => {
+  linkId = 0;
+  const g = buildGraph({
+    devices: [dev(1, 'SW', 'switch'), dev(2, 'PP', 'patch_panel'), dev(3, 'PP2', 'patch_panel'), dev(4, 'FP', 'fiber_panel')],
+    ports: [
+      port(1, 1, 'p1'), port(2, 1, 'p2'), port(3, 1, 'p3'), port(4, 1, 'p4'), port(8, 1, 'p8'), port(9, 1, 'p9', { port_type: 'sfp_plus' }),
+      port(11, 2, '1', { office_id: 2, office_name: 'O', outlet_label: 'K-1' }),   // complete
+      port(12, 2, '2'),                                                          // patched, nothing recorded
+      port(13, 2, '3', { office_id: 2, office_name: 'O' }),                      // patched, office only
+      port(14, 2, '4', { outlet_label: 'K-4' }),                                 // patched, label only
+      port(15, 2, '5', { outlet_label: 'K-5' }),                                 // not patched, label only (half a record)
+      port(16, 2, '6'),                                                          // not patched, nothing: simply unused
+      port(17, 2, '7', { office_id: 2, office_name: 'O', outlet_label: 'K-7' }), // not patched, complete: a spare outlet
+      port(18, 2, '8'),                                                          // patched, rear runs to another panel (a trunk, not an outlet)
+      port(21, 3, '1'),
+      port(31, 4, '1', { port_type: 'lc_duplex' }),                              // a fibre panel needs no outlet
+    ],
+    links: [link(1, 'front', 11, 'front'), link(2, 'front', 12, 'front'), link(3, 'front', 13, 'front'), link(4, 'front', 14, 'front'), link(8, 'front', 18, 'front'), link(18, 'rear', 21, 'rear'), link(9, 'front', 31, 'front')],
+  });
+  assert.deepEqual([gapsOf(g, 11), gapsOf(g, 12), gapsOf(g, 13), gapsOf(g, 14), gapsOf(g, 16)], [[], ['office', 'outlet label'], ['outlet label'], ['office'], ['office', 'outlet label']]);
+  assert.deepEqual(gapsOf(g, 18), [], 'a rear cabled to another panel is not an outlet'); assert.deepEqual(gapsOf(g, 31), [], 'nor is a fibre panel'); assert.deepEqual(gapsOf(g, 1), [], 'nor a switch port');
+  assert.equal(classify(g, 1), 'office'); assert.equal(classify(g, 11), 'office', 'a complete record stays blue');
+  for (const p of [2, 12, 3, 13, 4, 14]) assert.equal(classify(g, p), 'incomplete', `port ${p}: the switch port and the panel port are both flagged`);
+  assert.equal(classify(g, 15), 'incomplete', 'half a record is a mistake even when nothing is patched'); assert.equal(classify(g, 16), 'free'); assert.equal(classify(g, 17), 'outlet');
+  assert.equal(classify(g, 8), 'device', 'a trunk-side panel port is not flagged'); assert.equal(classify(g, 9), 'fiber', 'a fibre panel is not flagged');
+  const t = trace(g, 2);
+  assert.deepEqual(t.steps.filter((s) => s.type === 'port').map((s) => [s.port_name, s.gaps]), [['p2', []], ['2', ['office', 'outlet label']]], 'the trace says which step is missing what');
+});
+
+test('incomplete wins over telephone, fibre and office', () => {
+  linkId = 0;
+  const g = buildGraph({
+    devices: [dev(1, 'PBX', 'pbx'), dev(2, 'PP', 'patch_panel')],
+    ports: [port(1, 1, 'ext1', { port_type: 'rj11' }), port(11, 2, '1', { service: 'voice', office_id: 2, office_name: 'O' })],
+    links: [link(1, 'front', 11, 'front', { cable_type: 'Telephone' })],
+  });
+  assert.equal(classify(g, 1), 'incomplete');
 });

@@ -42,13 +42,21 @@ function linkAt(g, portId, side) {
   return { link: l, other };
 }
 
+/** What a patch-panel port is missing for its wall outlet: 'office' and / or 'outlet label'. Only a patch-panel port whose rear side runs
+ * to a wall outlet (nothing is cabled on its rear) can lack them — a rear cabled to another panel is a trunk, not an outlet. */
+function gapsOf(g, portId) {
+  if (!isPatchPanel(g, portId) || g.at.has(`${portId}:rear`)) return [];
+  const p = g.P.get(portId);
+  return [...(p.office_id ? [] : ['office']), ...(p.outlet_label ? [] : ['outlet label'])];
+}
+
 function portNode(g, portId, extra = {}) {
   const p = g.P.get(portId), d = g.D.get(p.device_id) || {};
   return {
     type: 'port', port_id: p.id, port_name: p.name, port_type: p.port_type, speed: p.speed || null, poe: !!p.poe, service: p.service || 'data',
     device_id: d.id ?? null, device_name: d.name ?? null, device_type: d.device_type ?? null, model: d.model ?? null,
     room_id: d.room_id ?? null, room_name: d.room_name ?? null, rack_name: d.rack_name ?? null, rack_position: d.rack_position ?? null,
-    office_id: d.office_id ?? null, office_name: d.office_name ?? null, panel: PANEL_TYPES.includes(d.device_type), ...extra,
+    office_id: d.office_id ?? null, office_name: d.office_name ?? null, panel: PANEL_TYPES.includes(d.device_type), gaps: gapsOf(g, p.id), ...extra,
   };
 }
 
@@ -119,7 +127,8 @@ function trace(g, portId) {
   return { start_port_id: portId, steps, ends, loop: ends.includes('loop'), truncated: ends.includes('truncated'), complete: good(ends[0]) && good(ends[1]) };
 }
 
-/** Where does this port go? 'free' | 'outlet' (a wall outlet is recorded but no patch cord is plugged in) | 'office' (leads to a
+/** Where does this port go? 'incomplete' (the path runs through a patch-panel port that is missing its office or outlet label — it wins
+ * over everything, because it is something to fix) | 'free' | 'outlet' (a wall outlet is recorded but no patch cord is plugged in) | 'office' (leads to a
  * wall outlet) | 'device' (patched straight to another device) | 'fiber' (goes over a trunk or a fibre port) | 'voice' (a telephone line:
  * a port marked telephone, a telephone cable, or a telephone exchange on the path — it wins over the others). */
 function classify(g, portId) {
@@ -128,13 +137,16 @@ function classify(g, portId) {
   if (!p) return null;
   let s;
   if (!g.at.has(`${portId}:front`)) {
-    s = isPatchPanel(g, portId) && hasOutlet(g, portId) ? 'outlet' : 'free';
+    // nothing patched: a full outlet record is a spare outlet; half a record (office without label, or the reverse) is a mistake
+    const full = p.office_id && p.outlet_label;
+    s = isPatchPanel(g, portId) && full ? 'outlet' : isPatchPanel(g, portId) && hasOutlet(g, portId) && !g.at.has(`${portId}:rear`) ? 'incomplete' : 'free';
   } else {
     const t = trace(g, portId);
+    const missing = t.steps.some((x) => x.type === 'port' && x.panel && x.gaps && x.gaps.length > 0);
     const fiber = t.steps.some((x) => (x.type === 'link' && x.trunk) || (x.type === 'port' && FIBER_PORT_TYPES.includes(x.port_type)));
     const office = t.steps.some((x) => x.type === 'outlet');
     const voice = t.steps.some((x) => (x.type === 'port' && (x.service === 'voice' || x.device_type === 'pbx')) || (x.type === 'outlet' && x.service === 'voice') || ((x.type === 'link' || x.type === 'installation') && x.cable_type === 'Telephone'));
-    s = voice ? 'voice' : fiber ? 'fiber' : office ? 'office' : 'device';
+    s = missing ? 'incomplete' : voice ? 'voice' : fiber ? 'fiber' : office ? 'office' : 'device';
   }
   g.status.set(portId, s);
   return s;
@@ -162,4 +174,4 @@ function loadGraph(db) {
   });
 }
 
-module.exports = { MAX_HOPS, buildGraph, loadGraph, trace, classify, connections, linkAt, isPanel, isPatchPanel, hasOutlet, opposite };
+module.exports = { MAX_HOPS, buildGraph, loadGraph, trace, classify, connections, gapsOf, linkAt, isPanel, isPatchPanel, hasOutlet, opposite };

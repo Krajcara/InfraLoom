@@ -37,6 +37,7 @@ import CablingDevicesPage from './pages/cabling/CablingDevicesPage';
 import CablingDeviceFormPage from './pages/cabling/CablingDeviceFormPage';
 import CablingTemplatesPage from './pages/cabling/CablingTemplatesPage';
 import CablingTrunksPage from './pages/cabling/CablingTrunksPage';
+import CablingReportsPage from './pages/cabling/CablingReportsPage';
 
 export default function App() {
   return (
@@ -76,6 +77,7 @@ export default function App() {
           <Route path="/cabling/devices/:id/edit" element={<CablingDeviceFormPage />} />
           <Route path="/cabling/templates" element={<CablingTemplatesPage />} />
           <Route path="/cabling/trunks" element={<CablingTrunksPage />} />
+          <Route path="/cabling/reports" element={<CablingReportsPage />} />
           <Route path="/network-scanner" element={<NetworkScannerPage />} />
           <Route path="/patch-management" element={<PatchManagementPage />} />
           <Route

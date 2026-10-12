@@ -138,7 +138,7 @@ test('bulk connect: a dry run shows every pair, the real run connects them all',
   assert.equal(real.status, 201); assert.equal(real.body.created, 4);
   const links = (await c.viewer.get(`${A}/links?device_id=${id['PP-A']}`)).body.links;
   assert.equal(links.length, 6); assert.ok(links.filter((l) => l.cable_type === 'Cat6' && l.color === 'blue' && l.length_m === 1).length >= 4);
-  assert.equal(await statusOf('PP-A', '8'), 'device'); assert.equal(await statusOf('SW-01', 'Gi1/0/8'), 'device');
+  assert.equal(await statusOf('PP-A', '8'), 'incomplete', 'patched, but the panel port has no office and outlet label yet'); assert.equal(await statusOf('SW-01', 'Gi1/0/8'), 'incomplete', 'and so is the switch port that leads to it');
   assert.equal((await c.viewer.post(`${A}/links/bulk`, body)).status, 403);
 });
 

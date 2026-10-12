@@ -2961,3 +2961,25 @@ a.cab-btn:hover { background: #1f57d6; }
 .cab-dot--voice { background: #a1307a; }
 .cab-udev--pbx { background: #6b2a58; border-color: #d65db1; }
 .cab-tag--voice { background: rgba(214, 93, 177, 0.18); color: #f0a6d6; }
+
+/* ── Cabling: what is missing, and the reports ─────────────────────────── */
+.cab-port--incomplete { background: #b3362f; border-color: #e5645c; color: #fff; }
+.cab-port--incomplete:hover { background: #c9453d; }
+.cab-sw--incomplete { background: #b3362f; }
+.cab-dot--incomplete { background: #b3362f; }
+.cab-warnbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 18px; margin-bottom: 14px; border-color: #b3362f; background: rgba(229, 100, 92, 0.08); }
+.cab-missing { border: 1px solid #b3362f; background: rgba(229, 100, 92, 0.08); border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 13px; }
+.cab-missing div { margin-top: 3px; }
+.cab-tnode--gap { border-color: #e5645c; border-style: dashed; }
+.cab-gaptext { font-size: 12px; color: #ff8a82; margin-top: 2px; }
+.cab-tag--gap { background: rgba(229, 100, 92, 0.18); color: #ff9a93; margin-right: 4px; }
+.cab-tabs { margin: 8px 0 14px; }
+.cab-inline { display: flex; align-items: center; gap: 8px; }
+.cab-inline select { margin: 0; }
+.cab-report-sum { font-size: 13px; }
+.cab-usage { width: 110px; height: 8px; border-radius: 4px; background: #2a2e38; overflow: hidden; }
+.cab-usage i { display: block; height: 100%; background: #3b78e7; }
+.cab-ports-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 20px; padding: 6px 4px 10px; }
+.cab-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cab-chip { background: #1f232b; border: 1px solid #3a3f4b; border-radius: 5px; padding: 2px 8px; font-size: 12px; }
+@media (max-width: 1000px) { .cab-ports-detail { grid-template-columns: minmax(0, 1fr); } }

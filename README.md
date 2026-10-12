@@ -102,6 +102,11 @@ patch panel, fibre panel, desktop, notebook, printer, access point), and the **p
   real run makes all of them or none. On a patch panel, *Label wall outlets* names a run of ports in one go (1–24 → K-01…K-24 in an office, with the cable to the outlet).
 - **Maintenance for the room.** One button holds the alerts of everything in the room that InfraLoom monitors, for a chosen time, so nobody is paged for the work; the windows appear in the Maintenance module and can be ended from the room.
 - **Map.** The rooms page draws the rooms and the trunks between them with the strands in use (red when a trunk is nearly full).
+- **What is missing.** A patch-panel port that is patched on its front but has no office or no outlet label (or only one of the two) is drawn **red**, and so is the switch or router port that leads to it, because
+  the whole connection is unfinished; a banner on the room counts them, and selecting a port says exactly what is missing and offers *Go to that port* / *Fill in*. A rear cabled to another panel (a trunk) and fibre panels are never
+  flagged, and an untouched, unpatched panel port is simply unused.
+- **Reports** (menu *Cabling → Reports*, optionally per room): **Ports in use** for switches, routers and firewalls (or servers and hypervisors) — in use and free per device, where each used port leads, console ports left out;
+  **Patch panel gaps** — the list behind the red ports; **Other checks** — devices with no place and devices in a rack without a unit. Each list downloads as a CSV that opens correctly in Excel (UTF-8, `sep=;`).
 - **Search** by port, wall outlet, IP address, serial number or device name; a found port says where it leads and a found device where it sits in its rack.
 - **Linked to monitoring.** A device can point at something InfraLoom monitors (router, switch, access point, hypervisor, UPS): its live state and alerts show on the room view,
   and **Add from monitored devices** turns an existing item into an inventory device in one click — pick a template and a room first and the ports are created with it (on a device that is already in the inventory, choosing a template loads it under *Add ports*). The link is a soft reference, so FortiGate-discovered switches and APs

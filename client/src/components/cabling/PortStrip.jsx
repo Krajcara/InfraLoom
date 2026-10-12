@@ -21,7 +21,7 @@ function blocks(ports) {
   return out;
 }
 
-const STATUS_TITLE = { free: 'free', outlet: 'wall outlet recorded, no patch cord', office: 'leads to an office', device: 'connected to a device', fiber: 'fibre', voice: 'telephone line' };
+const STATUS_TITLE = { free: 'free', outlet: 'wall outlet recorded, no patch cord', office: 'leads to an office', device: 'connected to a device', fiber: 'fibre', voice: 'telephone line', incomplete: 'office or outlet label missing' };
 
 /** The front of a device: switches in two rows (odd numbers above even, like the real faceplate), panels in one row. */
 export default function PortStrip({ ports, panel = false, selectedId = null, onSelect = null }) {

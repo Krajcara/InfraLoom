@@ -73,6 +73,7 @@ test('a data path next to it is not touched, and a telephone cable on a data por
   assert.equal((await c.operator.put(`${A}/ports/${portOf('PP-A', '1')}`, { office_id: id.office, outlet_label: 'K-01' })).status, 200);
   assert.equal((await link(['SW-01', 'Gi1/0/1'], 'front', ['PP-A', '1'], 'front', { cable_type: 'Cat6' })).status, 201);
   assert.equal((await portView('SW-01', 'Gi1/0/1')).status, 'office', 'an ordinary data patch stays blue');
+  assert.equal((await c.operator.put(`${A}/ports/${portOf('PP-A', '2')}`, { office_id: id.office, outlet_label: 'K-02' })).status, 200);
   assert.equal((await link(['SW-01', 'Gi1/0/2'], 'front', ['PP-A', '2'], 'front', { cable_type: 'Telephone' })).status, 201);
   assert.equal((await portView('SW-01', 'Gi1/0/2')).status, 'voice');
 });
