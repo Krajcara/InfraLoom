@@ -9,15 +9,31 @@ export default function ConnectedList({ deviceId, catalog }) {
   useEffect(() => { setD(null); setError(null); api.get(`/cabling/devices/${deviceId}/connected`).then(setD).catch((e) => setError(errText(e))); }, [deviceId]);
   if (error) return <p className="error">{error}</p>;
   if (!d) return <p className="muted">Reading...</p>;
-  if (!d.connected.length) return <p className="muted">Nothing is connected through this device yet.</p>;
+  const outlets = d.outlets || [];
+  if (!d.connected.length && !outlets.length) return <p className="muted">Nothing is connected through this device yet.</p>;
+  // wall outlets reached, grouped by office; one without a device recorded behind it is still an outlet that goes quiet
+  const byOffice = new Map();
+  for (const o of outlets) { const k = o.office_name || 'no office set'; byOffice.set(k, [...(byOffice.get(k) || []), o]); }
   return (
     <div className="cab-connected">
       <p className="muted">
-        {d.connected.length} device{d.connected.length === 1 ? '' : 's'} reached through it
+        {d.connected.length > 0 && <>{d.connected.length} device{d.connected.length === 1 ? '' : 's'} reached through it</>}
+        {d.connected.length > 0 && outlets.length > 0 && ' · '}
+        {outlets.length > 0 && <>{outlets.length} wall outlet{outlets.length === 1 ? '' : 's'} in {byOffice.size} office{byOffice.size === 1 ? '' : 's'}</>}
         {d.offices.length > 0 && <> · offices: {d.offices.join(', ')}</>}
         {d.down > 0 && <strong className="cab-warn"> · {d.down} already down</strong>}
       </p>
-      <table className="table">
+      {outlets.length > 0 && (
+        <div className="cab-outlets">
+          {[...byOffice.entries()].map(([office, list]) => (
+            <div key={office}>
+              <strong>{office}</strong>: <span className="mono">{list.map((o) => o.label || `port ${o.port}`).join(', ')}</span>
+              {list.some((o) => !o.in_use) && <span className="muted"> · no device recorded on {list.filter((o) => !o.in_use).length} of {list.length}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      {d.connected.length > 0 && <table className="table">
         <tbody>
           {d.connected.map((x) => (
             <tr key={x.device_id}>
@@ -29,7 +45,7 @@ export default function ConnectedList({ deviceId, catalog }) {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table>}
     </div>
   );
 }

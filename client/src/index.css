@@ -2948,3 +2948,5 @@ a.cab-btn:hover { background: #1f57d6; }
   .cab-bulkgrid { grid-template-columns: minmax(0, 1fr); }
   .cab-bulkmid { padding-top: 0; flex-direction: row; }
 }
+
+.cab-outlets { font-size: 13px; margin: 6px 0 4px; display: grid; gap: 3px; }

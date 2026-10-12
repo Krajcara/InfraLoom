@@ -839,7 +839,7 @@ router.get('/devices/:id/connected', h((req, res) => {
   const dev = need(db.prepare(`${DEVICE_SELECT} WHERE d.id = ?`).get(req.params.id), 'Device');
   const g = engine.loadGraph(db);
   const far = new Map();
-  const outlets = [];
+  const outlets = new Map(); // every wall outlet reached, with or without a device recorded at the end of it
   for (const p of g.P.values()) {
     if (p.device_id !== dev.id) continue;
     const c = engine.connections(g, p.id);
@@ -847,7 +847,10 @@ router.get('/devices/:id/connected', h((req, res) => {
     const t = engine.trace(g, p.id);
     const ends = t.steps.filter((s) => s.type === 'port' && !s.panel && s.device_id !== dev.id);
     const outlet = t.steps.find((s) => s.type === 'outlet');
-    if (outlet) outlets.push({ label: outlet.label, office_name: outlet.office_name, in_use: ends.length > 0, port: p.name });
+    for (const o of t.steps.filter((s) => s.type === 'outlet')) {
+      const prev = outlets.get(o.port_id);
+      if (!prev || (ends.length > 0 && !prev.in_use)) outlets.set(o.port_id, { label: o.label, office_name: o.office_name, in_use: ends.length > 0, port: p.name });
+    }
     for (const e of ends) {
       const row = far.get(e.device_id) || { device_id: e.device_id, name: e.device_name, device_type: e.device_type, room_name: e.room_name, office_name: e.office_name, via: [] };
       row.via.push({ port: p.name, remote_port: e.port_name, outlet: outlet?.label || null });
@@ -862,8 +865,9 @@ router.get('/devices/:id/connected', h((req, res) => {
   }).sort((x, y) => x.name.localeCompare(y.name));
   res.json({
     device: { id: dev.id, name: dev.name }, connected,
-    offices: [...new Set(outlets.filter((o) => o.in_use && o.office_name).map((o) => o.office_name))].sort(),
-    outlets, down: connected.filter((x) => x.live?.state === 'down').length,
+    // the offices a device serves are those of every outlet it reaches: they lose their connection whether or not a PC is recorded there yet
+    offices: [...new Set([...outlets.values()].filter((o) => o.office_name).map((o) => o.office_name))].sort(),
+    outlets: [...outlets.values()], down: connected.filter((x) => x.live?.state === 'down').length,
   });
 }));
 

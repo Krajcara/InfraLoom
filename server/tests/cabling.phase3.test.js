@@ -100,6 +100,27 @@ test('"what is connected": everything that depends on a device, with the wall ou
   assert.equal((await c.viewer.get(`${A}/devices/999999/connected`)).status, 404);
 });
 
+test('"what is connected" counts the wall outlets a device reaches, even when no device is recorded behind them yet', async () => {
+  const sw = await device('SW-X', 'switch', { room_id: id.r1 }, rj('p', 1, 4));
+  const pz = await device('PP-Z', 'patch_panel', { room_id: id.r1 }, rj('', 1, 4));
+  for (const [n, label] of [['1', 'Z-1'], ['2', 'Z-2'], ['3', 'Z-3']]) assert.equal((await c.operator.put(`${A}/ports/${portOf('PP-Z', n)}`, { office_id: id.office, outlet_label: label })).status, 200);
+  for (const [a, b] of [['p1', '1'], ['p2', '2']]) assert.equal((await link(['SW-X', a], 'front', ['PP-Z', b], 'front')).status, 201);
+  const x = (await c.viewer.get(`${A}/devices/${sw.id}/connected`)).body;
+  assert.deepEqual(x.connected, [], 'no device is recorded at the far end');
+  assert.deepEqual(x.outlets.map((o) => [o.label, o.in_use, o.port]).sort(), [['Z-1', false, 'p1'], ['Z-2', false, 'p2']], 'but two outlets are reached');
+  assert.deepEqual(x.offices, ['Office 02'], 'and the office they are in');
+  const panel = (await c.viewer.get(`${A}/devices/${pz.id}/connected`)).body;
+  assert.deepEqual(panel.connected.map((d) => d.name), ['SW-X'], 'from the panel the switch is a device at the far end');
+  assert.equal((await c.viewer.get(`${A}/devices/${id['PP-A']}/connected`)).body.outlets.length >= 1, true);
+  // a PC plugged into one of the outlets turns it "in use", and the others stay as they are
+  const pc = await device('PC-Z', 'desktop', { office_id: id.office }, rj('eth', 0, 0));
+  assert.equal((await link(['PP-Z', '1'], 'rear', ['PC-Z', 'eth0'], 'front')).status, 201);
+  const y = (await c.viewer.get(`${A}/devices/${sw.id}/connected`)).body;
+  assert.deepEqual(y.connected.map((d) => d.name), ['PC-Z']);
+  assert.deepEqual(y.outlets.map((o) => [o.label, o.in_use]).sort(), [['Z-1', true], ['Z-2', false]]);
+  void pc;
+});
+
 test('search: where a found port leads, and where a found device sits', async () => {
   const r = (await c.viewer.get(`${A}/search?q=K-02`)).body;
   assert.equal(r.ports.length, 1); assert.equal(r.ports[0].leads_to, 'SW-01 Gi1/0/3'); assert.equal(r.ports[0].status, 'office');
