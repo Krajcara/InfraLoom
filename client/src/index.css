@@ -2983,3 +2983,5 @@ a.cab-btn:hover { background: #1f57d6; }
 .cab-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .cab-chip { background: #1f232b; border: 1px solid #3a3f4b; border-radius: 5px; padding: 2px 8px; font-size: 12px; }
 @media (max-width: 1000px) { .cab-ports-detail { grid-template-columns: minmax(0, 1fr); } }
+
+.myip-widget-src { font-size: 12px; opacity: 0.7; margin-top: 2px; }

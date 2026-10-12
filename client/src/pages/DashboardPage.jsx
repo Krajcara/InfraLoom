@@ -467,8 +467,9 @@ function MyIpWidgetBody() {
     api
       .get('/myip/cards')
       .then((data) => {
-        const ok = data.results.find((r) => !r.error);
-        setState({ loading: false, error: null, result: ok || null });
+        // ip.sb is the preferred source for the location (its city is the one that matches this site); any other answer is the fallback
+        const good = data.results.filter((r) => !r.error);
+        setState({ loading: false, error: null, result: good.find((r) => r.source === 'ip.sb') || good[0] || null });
       })
       .catch((err) => setState({ loading: false, error: err.message, result: null }));
   }, []);
@@ -480,7 +481,9 @@ function MyIpWidgetBody() {
   return (
     <div>
       <p className="mono myip-widget-ip">{state.result.ip}</p>
-      <p className="muted">{[state.result.city, state.result.country_name].filter(Boolean).join(', ') || state.result.org}</p>
+      {/* the full place, like the MyIP page: city, region, country (a repeated part, e.g. city = region, is shown once) */}
+      <p className="muted">{[...new Set([state.result.city, state.result.region, state.result.country_name].filter(Boolean))].join(', ') || state.result.org}</p>
+      <p className="muted myip-widget-src">via {state.result.source}</p>
     </div>
   );
 }
