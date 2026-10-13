@@ -10,11 +10,23 @@ put on a NOC screen.
 InfraLoom runs on a single Linux server, stores everything in an encrypted SQLite database, and needs no
 cloud account.
 
+> **About this project.** InfraLoom is built mainly for my own needs: it monitors and documents the infrastructure I
+> look after, and its features follow what I use. I share it as it is, in case it is useful to someone else — it comes
+> with no support and no warranty (see the [MIT license](LICENSE)), and I may not take every feature request or pull
+> request. If it almost fits your environment, you are welcome to fork it and change it to suit you. Bug reports are
+> welcome, ideally with the steps to reproduce. Most of it was developed and tried against my own setup (FortiGate 100F
+> on FortiOS 7.4, Proxmox VE, FortiSwitch and FortiAP over FortiLink, MikroTik over SNMP); other vendors and versions may
+> need adjustments, and Hyper-V and VMware ESXi are less proven than Proxmox.
+
 ## What it does
 
 InfraLoom **monitors** your infrastructure. It does not provision VMs, run configuration management, or manage
 container clusters. The few things it can *change* are deliberately limited and role-restricted: power actions on
 hypervisor guests, applying OS updates (Patch Management), Wake-on-LAN, and an in-app SSH terminal.
+
+Next to the monitoring it can **document** the physical network — technical rooms, racks, devices, patch panels, wall
+outlets and cables ([Cabling](#cabling-technical-rooms)). That part only records what you tell it and changes nothing
+on your network.
 
 ### Monitoring and alerting
 
@@ -25,7 +37,7 @@ hypervisor guests, applying OS updates (Patch Management), Wake-on-LAN, and an i
 | **UPS** | SNMP (v1, v2c, v3) via the standard UPS-MIB, with an APC PowerNet fallback: battery charge and runtime, load, input/output voltage, history charts, and alerts for power loss, low battery, power restored and unreachable UPS |
 | **DNS / DNS Analytics** | Health of local DNS servers (Technitium, Pi-hole, AdGuard Home), SPF/DKIM/DMARC/MX domain checks, Cloudflare zone integration, Technitium query statistics |
 | **Net Speed** | Scheduled internet speed tests (Cloudflare, Ookla CLI, LibreSpeed CLI) with history and retention |
-| **MyIP** | Public IP lookup from several sources, IP query, DNS resolver check (UDP and DoH) |
+| **MyIP** | Public IP lookup from several sources (the dashboard card shows the location from ip.sb, in full), IP query, DNS resolver check (UDP and DoH) |
 | **Hypervisors** | Proxmox VE, Hyper-V and VMware ESXi (7.0+) in one view: node and guest drill-down, usage history, connection health alerts, [usage thresholds](#hypervisor-usage-thresholds) (storage, RAM, CPU, disk, offline nodes), power actions, SSH web terminal |
 | **Network Scanner** | `arp-scan` device inventory, on-demand `nmap` deep scan, Wake-on-LAN, new/offline device alerts |
 | **Patch Management** | See pending OS updates per guest (dry run), approve, apply with live output. Debian/Ubuntu (apt), RHEL/Fedora (dnf/yum), Alpine (apk) and Windows Update, across Proxmox VMs and LXC and Hyper-V VMs. Waits for other package managers, explains why a run failed, and tells you when a machine needs a restart — see [What a patch run does](#what-a-patch-run-does) |
@@ -242,6 +254,7 @@ All settings are environment variables in `/opt/infraloom/.env` (see [`.env.exam
 | `DB_ENCRYPTION_KEY` | Database encryption key. **Losing it means losing the data — back it up** |
 | `BACKUP_ENCRYPTION_PASSWORD` | Encrypts the `.env` copy inside backups (see [Backup and restore](#backup-and-restore)) |
 | `COOKIE_SECURE` | `true` once served over HTTPS |
+| `API_RATE_LIMIT` | Optional; requests per minute allowed from one address to the API (default `300`) |
 | `GITHUB_TOKEN` | Optional; only needed if the repository is private |
 
 Notification channels, SMTP, quiet hours, TV pages and schedules are configured in the UI under **Settings**.
@@ -405,8 +418,10 @@ Backups run on a configurable daily schedule with configurable retention, or on 
 - The database is encrypted at rest; `.env` is never committed (see `.env.example`).
 - Pre-commit secret scanning (gitleaks) is wired through `.githooks/pre-commit`; run `npm install` once after
   cloning to activate it.
-- Security headers (helmet), request rate limiting, and no CORS: the frontend and API are always served from the same
-  origin.
+- Security headers (helmet), request rate limiting (300 requests a minute per address by default, `API_RATE_LIMIT`), and no CORS: the
+  frontend and API are always served from the same origin.
+- The [Cabling](#cabling-technical-rooms) data is a map of your network (rooms, racks, patch panels, outlets). An administrator can switch
+  the module off, or limit it to your own networks, in **Settings → Cabling module**.
 - CSV exports neutralise formula-injection payloads (values starting with `=`, `+`, `-` or `@`).
 - Credentials with broad reach — the Proxmox host SSH login used for LXC patching, Hyper-V per-guest credentials, and
   the FortiGate API token — should only be configured where you actually need them. Prefer read-only profiles.
@@ -449,6 +464,7 @@ npm run dev              # API on :3000 (nodemon) + Vite dev server with proxy
 | `npm run build` | Production frontend build into `client/dist` |
 | `npm start` | Start the API (serves `client/dist`) |
 | `npm run migrate` / `npm run seed` | Create/upgrade the schema; create the first superadmin |
+| `npm test` | Server tests (`server/tests`): the cabling module — validation, port generation, the trace engine, triggers, the whole API with roles — on a throw-away encrypted database |
 
 ```
 client/            React 18 + Vite single-page app
@@ -456,7 +472,7 @@ server/src/
   routes/          REST API (one file per module)
   services/        Schedulers and background workers (monitors, polling, notifications, backup, patching)
   lib/             Protocol clients (SNMP, SSH, WinRM, Proxmox/Hyper-V/ESXi, FortiGate, nmap, ...)
-  db/              SQLCipher schema, migrations, seed
+  db/              SQLCipher schema, migrations, seed (db/cabling: numbered SQL migrations of the cabling module)
 install.sh         Installer          update.sh   Updater          infraloom.service   systemd unit
 ```
 
