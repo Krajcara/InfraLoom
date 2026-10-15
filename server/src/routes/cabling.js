@@ -20,14 +20,7 @@ const canAdmin = requireRole('superadmin', 'admin');
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-const setting = (key, fallback = '') => db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value ?? fallback;
-const isEnabled = () => !['false', '0', 'off'].includes(String(setting('cabling_enabled', 'true')).toLowerCase());
-const networks = () => parseNetworks(setting('cabling_allowed_networks'));
-function isAllowed(req) {
-  const list = networks();
-  if (!list.length) return true;
-  try { return buildMatcher(list)(req.ip); } catch { return true; } // a broken stored list must not lock everyone out
-}
+const { setting, isEnabled, networks, isAllowed } = require('../services/cabling/access');
 
 const audit = (req, action, type, id, details) => writeAuditLog({ user_id: req.user.id, username: req.user.username, action: `cabling.${action}`, entity_type: type, entity_id: id, module: 'cabling', details, ip_address: req.ip });
 
@@ -987,9 +980,7 @@ router.get('/reports/outlets', h((req, res) => {
 
 // Things that are probably a mistake or an unfinished entry: patch-panel ports that are patched but miss their office or outlet label
 // (or have half of that record), devices with no place, devices in a rack without a position.
-router.get('/reports/checks', h((req, res) => {
-  const room = req.query.room_id ? Number(req.query.room_id) : null;
-  const g = engine.loadGraph(db);
+function checksData(g, room) {
   const gaps = [];
   for (const p of g.P.values()) {
     const d = g.D.get(p.device_id);
@@ -1008,7 +999,35 @@ router.get('/reports/checks', h((req, res) => {
   const args = room ? [room] : [];
   const no_place = room ? [] : db.prepare('SELECT d.id, d.name, d.device_type FROM cab_devices d WHERE d.room_id IS NULL AND d.office_id IS NULL ORDER BY d.name').all();
   const no_position = db.prepare(`SELECT d.id, d.name, d.device_type, d.room_id, r.name AS room_name, k.name AS rack_name FROM cab_devices d JOIN cab_racks k ON k.id = d.rack_id LEFT JOIN cab_rooms r ON r.id = d.room_id WHERE d.rack_position IS NULL ${inRoom} ORDER BY r.name, d.name`).all(...args);
-  res.json({ gaps, no_place, no_position, counts: { gaps: gaps.length, no_place: no_place.length, no_position: no_position.length } });
+  return { gaps, no_place, no_position, counts: { gaps: gaps.length, no_place: no_place.length, no_position: no_position.length } };
+}
+
+router.get('/reports/checks', h((req, res) => {
+  res.json(checksData(engine.loadGraph(db), req.query.room_id ? Number(req.query.room_id) : null));
+}));
+
+// The numbers on the dashboard card: what is documented, what is in use, and what is unfinished.
+router.get('/dashboard', h((req, res) => {
+  const count = (t) => db.prepare(`SELECT COUNT(*) c FROM ${t}`).get().c;
+  const g = engine.loadGraph(db);
+  let total = 0; let used = 0;
+  for (const p of g.P.values()) {
+    const d = g.D.get(p.device_id);
+    if (!d || d.device_type !== 'switch' || p.port_type === 'console') continue;
+    total += 1; if (g.at.has(`${p.id}:front`)) used += 1;
+  }
+  const outlets = outletSummary(outletRows(g));
+  const fibre = db.prepare(TRUNK_SELECT).all().map((t) => trunkView(t)).filter((t) => t.medium === 'fiber');
+  const checks = checksData(g, null);
+  res.json({
+    counts: { rooms: count('cab_rooms'), racks: count('cab_racks'), devices: count('cab_devices') },
+    switch_ports: { used, total },
+    outlets: { total: outlets.total, in_use: outlets.in_use, free: outlets.free },
+    telephone: { total: outlets.voice, in_use: outlets.voice_in_use },
+    fibre: { trunks: fibre.length, strands: fibre.reduce((a, t) => a + t.strand_count, 0), used: fibre.reduce((a, t) => a + t.used_strands, 0),
+      nearly_full: fibre.filter((t) => t.strand_count > 0 && t.used_strands / t.strand_count >= 0.9).map((t) => t.name) },
+    warnings: { incomplete: checks.counts.gaps, no_place: checks.counts.no_place, no_position: checks.counts.no_position },
+  });
 }));
 
 // ── linking to what InfraLoom monitors ─────────────────────────────────────

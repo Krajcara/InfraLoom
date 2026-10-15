@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Fragment, useEffect, useState, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useSocket } from '../hooks/useSocket';
 import {
   DndContext,
@@ -18,6 +18,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { upsStatus } from './UpsPage';
+import { errText } from '../components/cabling/common';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -127,6 +128,7 @@ const WIDGET_LINKS = {
   netscan: '/network-scanner',
   patches: '/patch-management',
   ups: '/ups',
+  cabling: '/cabling',
 };
 
 function SortableWidget({ widget, onHide }) {
@@ -146,7 +148,7 @@ function SortableWidget({ widget, onHide }) {
   function handleCardClick(e) {
     if (!link) return;
     // Don't navigate when the click originated on the drag handle or hide button.
-    if (e.target.closest('.widget-drag-handle') || e.target.closest('.widget-hide')) return;
+    if (e.target.closest('.widget-drag-handle') || e.target.closest('.widget-hide') || e.target.closest('a')) return;
     navigate(link);
   }
 
@@ -193,10 +195,52 @@ function SortableWidget({ widget, onHide }) {
           <PatchesWidgetBody />
         ) : widget.id === 'ups' ? (
           <UpsWidgetBody />
+        ) : widget.id === 'cabling' ? (
+          <CablingWidgetBody />
         ) : (
           <p className="muted">Coming in Phase {widget.phase}.</p>
         )}
       </div>
+    </div>
+  );
+}
+
+// Cabling: what is documented, what is in use, and what is unfinished. Each warning opens the list behind it.
+function CablingWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, data: null });
+  useEffect(() => {
+    api.get('/cabling/dashboard')
+      .then((data) => setState({ loading: false, error: null, data }))
+      .catch((err) => setState({ loading: false, error: errText(err), data: null }));
+  }, []);
+  if (state.loading) return <p className="muted">Loading...</p>;
+  if (state.error) return <p className="widget-bad">{state.error}</p>;
+  const d = state.data;
+  const n = (v, one, many) => `${v} ${v === 1 ? one : many}`;
+  if (d.counts.rooms === 0 && d.counts.devices === 0) return <p className="muted">Nothing documented yet. <Link to="/cabling">Add a room</Link> to start.</p>;
+  const w = d.warnings;
+  const pct = d.switch_ports.total ? Math.round((100 * d.switch_ports.used) / d.switch_ports.total) : 0;
+  const rows = [];
+  if (d.switch_ports.total > 0) rows.push(['Switch ports', `${d.switch_ports.used} / ${d.switch_ports.total} in use (${pct}\u00a0%)`, false]);
+  if (d.outlets.total > 0) rows.push(['Wall outlets', `${d.outlets.in_use} in use · ${d.outlets.free} free`, false]);
+  if (d.telephone.total > 0) rows.push(['Telephone', `${n(d.telephone.total, 'line', 'lines')} (${d.telephone.in_use} in use)`, false]);
+  if (d.fibre.trunks > 0) rows.push(['Fibre', `${d.fibre.used} / ${d.fibre.strands} strands in use${d.fibre.nearly_full.length ? ` · ${d.fibre.nearly_full.join(', ')} nearly full` : ''}`, d.fibre.nearly_full.length > 0]);
+  const warnings = [
+    w.incomplete > 0 && [`${n(w.incomplete, 'patch-panel port misses', 'patch-panel ports miss')} office/outlet`, '/cabling/reports?tab=gaps'],
+    w.no_place > 0 && [`${n(w.no_place, 'device has', 'devices have')} no place`, '/cabling/reports?tab=other'],
+    w.no_position > 0 && [`${n(w.no_position, 'device in a rack has', 'devices in a rack have')} no unit`, '/cabling/reports?tab=other'],
+  ].filter(Boolean);
+  return (
+    <div className="cab-dash">
+      <p className="muted">{n(d.counts.rooms, 'room', 'rooms')} · {n(d.counts.racks, 'rack', 'racks')} · {n(d.counts.devices, 'device', 'devices')}</p>
+      {rows.length > 0 && (
+        <dl className="cab-dash-rows">
+          {rows.map(([label, value, warn]) => <Fragment key={label}><dt>{label}</dt><dd className={warn ? 'cab-dash-warn' : ''}>{value}</dd></Fragment>)}
+        </dl>
+      )}
+      {warnings.length === 0
+        ? <p className="cab-dash-ok">✓ Nothing missing</p>
+        : warnings.map(([text, to]) => <p key={text} className="cab-dash-warn"><Link to={to}>⚠ {text}</Link></p>)}
     </div>
   );
 }

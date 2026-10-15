@@ -208,7 +208,9 @@ switch, so restrict it in your reverse proxy if it should not be public.
 - **Authentication** — httpOnly session cookie, account lockout after repeated failures, revocable sessions,
   optional two-factor authentication (TOTP), API keys
 - **Roles** — `superadmin`, `admin`, `operator`, `viewer` (see [Roles](#roles))
-- **Dashboard** — drag-and-reorder widgets, per user
+- **Dashboard** — drag-and-reorder widgets, per user. The **Cabling** card shows how many rooms, racks and devices are documented, switch ports in use, wall outlets in use and free, telephone lines, fibre strands
+  in use (a trunk that is nearly full is flagged) and what is unfinished (patch-panel ports without an office or outlet label, devices with no place or no unit — each opens the list behind it); it appears only where the
+  Cabling module is switched on and can be used from the caller's network
 - **Audit log** — filterable, CSV export
 - **Backup** — scheduled or on-demand ZIP (database + encrypted copy of `.env`), with retention
 - **In-app updates** — check GitHub, update and restart from the UI

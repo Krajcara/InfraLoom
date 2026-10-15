@@ -3,6 +3,7 @@
 const express = require('express');
 const db = require('../db/database');
 const { requireAuth } = require('../middleware/auth');
+const cablingAccess = require('../services/cabling/access');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -25,7 +26,11 @@ const DEFAULT_WIDGETS = [
   { id: 'netscan', title: 'Network Devices', phase: 12 },
   { id: 'patches', title: 'Pending Patches', phase: 13 },
   { id: 'ups', title: 'UPS', phase: 14 },
+  { id: 'cabling', title: 'Cabling', phase: 15 },
 ];
+
+// The Cabling card is only offered where the module can be used: it is switched on, and the caller is inside the allowed networks.
+const offered = (req, id) => id !== 'cabling' || (cablingAccess.isEnabled() && cablingAccess.isAllowed(req));
 
 function defaultLayout() {
   return DEFAULT_WIDGETS.map((w) => ({ id: w.id, visible: true }));
@@ -50,7 +55,7 @@ function widgetMeta(id) {
 // GET /api/dashboard/layout
 router.get('/layout', (req, res) => {
   const row = db.prepare('SELECT layout FROM dashboard_layouts WHERE user_id = ?').get(req.user.id);
-  const layout = row ? reconcile(JSON.parse(row.layout)) : defaultLayout();
+  const layout = (row ? reconcile(JSON.parse(row.layout)) : defaultLayout()).filter((entry) => offered(req, entry.id));
   res.json({
     layout: layout.map((entry) => ({ ...entry, ...widgetMeta(entry.id) })),
   });
@@ -65,6 +70,10 @@ router.put('/layout', (req, res) => {
   const clean = layout
     .filter((entry) => entry && known.has(entry.id))
     .map((entry) => ({ id: entry.id, visible: !!entry.visible }));
+
+  // a card that is not offered right now (the module is off) is not in what the page sent; keep the user's choice for it
+  const stored = db.prepare('SELECT layout FROM dashboard_layouts WHERE user_id = ?').get(req.user.id);
+  for (const entry of stored ? JSON.parse(stored.layout) : []) if (!offered(req, entry.id) && !clean.some((c) => c.id === entry.id)) clean.push(entry);
 
   db.prepare(
     `INSERT INTO dashboard_layouts (user_id, layout, updated_at) VALUES (?, ?, datetime('now'))

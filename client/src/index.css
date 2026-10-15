@@ -2991,3 +2991,12 @@ a.cab-btn:hover { background: #1f57d6; }
 .cab-outlet-sum { margin: 2px 0 8px; }
 .cab-outlet-filter { margin-bottom: 10px; }
 .cab-outlet-filter button { padding: 5px 11px; font-size: 13px; }
+
+/* ── Dashboard: the Cabling card ───────────────────────────────────────── */
+.cab-dash { font-size: 13px; }
+.cab-dash p { margin: 0 0 6px; font-size: 13px; }
+.cab-dash-rows { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 6px 0 10px; }
+.cab-dash-rows dt { color: #8b93a3; white-space: nowrap; }
+.cab-dash-rows dd { margin: 0; }
+.cab-dash-warn, .cab-dash-warn a { color: #e0b020; }
+.cab-dash-ok { color: #4cc38a; }
