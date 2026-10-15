@@ -219,13 +219,45 @@ router.delete('/racks/:id', canDelete, h((req, res) => {
 
 // ── offices ────────────────────────────────────────────────────────────────
 
+const natural = (a, b) => String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true, sensitivity: 'base' });
+
+/** Every wall outlet (a patch-panel port with an office or an outlet label) with what is known about it:
+ * in_use  = patched on the panel (a live connection), free = recorded but not patched;
+ * at_outlet = the device plugged into the outlet, if one is recorded; kind = 'lan' or 'voice' (a telephone socket or line). */
+function outletRows(g, officeId = null) {
+  const rows = [];
+  for (const p of g.P.values()) {
+    const d = g.D.get(p.device_id);
+    if (!d || d.device_type !== 'patch_panel' || !(p.office_id || p.outlet_label)) continue;
+    if (officeId && p.office_id !== officeId) continue;
+    const c = engine.connections(g, p.id);
+    const status = engine.classify(g, p.id);
+    rows.push({
+      port_id: p.id, port_name: p.name, outlet_label: p.outlet_label || null, office_id: p.office_id || null, office_name: p.office_name || null, service: p.service || 'data',
+      device_id: d.id, device_name: d.name, room_id: d.room_id, room_name: d.room_name, rack_name: d.rack_name,
+      in_use: !!c.front,
+      patched_to: c.front ? { device_id: c.front.other_device_id, device_name: c.front.other_device_name, port_name: c.front.other_port_name } : null,
+      at_outlet: c.rear ? { device_id: c.rear.other_device_id, device_name: c.rear.other_device_name, port_name: c.rear.other_port_name } : null,
+      kind: p.service === 'voice' || status === 'voice' ? 'voice' : 'lan', status, gaps: engine.gapsOf(g, p.id),
+    });
+  }
+  // by label, the way a person counts (K-2 before K-10); an outlet that has no label yet goes last
+  return rows.sort((a, b) => (!a.outlet_label - !b.outlet_label) || natural(a.outlet_label, b.outlet_label) || natural(a.device_name, b.device_name) || a.port_id - b.port_id);
+}
+
+const outletSummary = (rows) => ({
+  total: rows.length, in_use: rows.filter((r) => r.in_use).length, free: rows.filter((r) => !r.in_use).length,
+  lan: rows.filter((r) => r.kind === 'lan').length, voice: rows.filter((r) => r.kind === 'voice').length,
+  voice_in_use: rows.filter((r) => r.kind === 'voice' && r.in_use).length, lan_in_use: rows.filter((r) => r.kind === 'lan' && r.in_use).length,
+});
+
 router.get('/offices', (req, res) => {
-  res.json({
-    offices: db.prepare(`SELECT o.*,
+  const offices = db.prepare(`SELECT o.*,
       (SELECT COUNT(*) FROM cab_devices d WHERE d.office_id = o.id) AS devices,
       (SELECT COUNT(*) FROM cab_ports p WHERE p.office_id = o.id) AS outlets
-      FROM cab_offices o ORDER BY o.name`).all(),
-  });
+      FROM cab_offices o ORDER BY o.name`).all();
+  const rows = outletRows(engine.loadGraph(db));
+  res.json({ offices: offices.map((o) => { const s = outletSummary(rows.filter((r) => r.office_id === o.id)); return { ...o, outlets_in_use: s.in_use, outlets_free: s.free, outlets_lan: s.lan, outlets_voice: s.voice }; }) });
 });
 
 router.post('/offices', canEdit, h((req, res) => {
@@ -238,10 +270,8 @@ router.post('/offices', canEdit, h((req, res) => {
 router.get('/offices/:id', h((req, res) => {
   const office = need(db.prepare('SELECT * FROM cab_offices WHERE id = ?').get(req.params.id), 'Office');
   const devices = attachPorts(db.prepare(`${DEVICE_SELECT} WHERE d.office_id = ? ORDER BY d.name`).all(office.id));
-  const outlets = db.prepare(`SELECT p.id AS port_id, p.name AS port_name, p.outlet_label, p.service, d.id AS device_id, d.name AS device_name, r.id AS room_id, r.name AS room_name, k.name AS rack_name
-    FROM cab_ports p JOIN cab_devices d ON d.id = p.device_id LEFT JOIN cab_rooms r ON r.id = d.room_id LEFT JOIN cab_racks k ON k.id = d.rack_id
-    WHERE p.office_id = ? ORDER BY p.outlet_label, d.name, p.sort_order`).all(office.id);
-  res.json({ office, devices, outlets });
+  const outlets = outletRows(engine.loadGraph(db), office.id);
+  res.json({ office, devices, outlets, summary: outletSummary(outlets) });
 }));
 
 router.put('/offices/:id', canEdit, h((req, res) => {
@@ -946,6 +976,13 @@ router.get('/reports/ports', h((req, res) => {
       total: real.length, used: used.length, free: free.length, console_ports: all.length - real.length, used_ports: used, free_ports: free };
   });
   res.json({ devices: out, totals: { devices: out.length, ports: out.reduce((a, d) => a + d.total, 0), used: out.reduce((a, d) => a + d.used, 0), free: out.reduce((a, d) => a + d.free, 0) } });
+}));
+
+// All wall outlets of all (or one) office: in use or free, LAN or telephone, what is patched to them and what is plugged in.
+router.get('/reports/outlets', h((req, res) => {
+  const office = req.query.office_id ? Number(req.query.office_id) : null;
+  const outlets = outletRows(engine.loadGraph(db), office);
+  res.json({ outlets, summary: outletSummary(outlets) });
 }));
 
 // Things that are probably a mistake or an unfinished entry: patch-panel ports that are patched but miss their office or outlet label

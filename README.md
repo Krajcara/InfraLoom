@@ -92,7 +92,9 @@ patch panel, fibre panel, desktop, notebook, printer, access point), and the **p
 - **Room view.** Racks with their devices from the top unit down, each device's faceplate with its ports (switches in two rows like the real thing, panels in one),
   a panel with the selected port's details, and a table of the other devices in the room.
 - **Wall outlets.** On a patch-panel port, record the office and the outlet label its rear side runs to, and the permanent cable (type, length) between the port and the outlet;
-  every office lists its outlets with the panel, port, room and rack.
+  every office (a corridor or a hall works as well) lists its outlets with their **state** — *in use* when patched on the panel, *free* when not — the **type** (LAN or telephone), what is patched to
+  them, the device recorded at the outlet if any (flagged *not patched* when a device is recorded but the outlet is not patched), and the panel, port, room and rack. The list filters by in use, free, LAN
+  and telephone, shows the counts per office, and downloads as a CSV of all outlets.
 - **Links and trace.** Connect one side of a port to a free side of another (**Connect…** in the port panel, or **New link**). A device port has one side; a patch-panel or fibre-panel
   port has two: *front* (patch cords in the room) and *rear* (the permanent installation). Select any port and the **trace** shows where it goes — switch → patch cord → panel →
   permanent cable → wall outlet → patch cord → desktop — with the cable type, length and colour of every step, and it reads the same from either end. Ports are coloured by where they

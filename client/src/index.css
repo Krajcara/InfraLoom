@@ -2985,3 +2985,9 @@ a.cab-btn:hover { background: #1f57d6; }
 @media (max-width: 1000px) { .cab-ports-detail { grid-template-columns: minmax(0, 1fr); } }
 
 .myip-widget-src { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+
+/* ── Cabling: outlets of an office ─────────────────────────────────────── */
+.cab-tag--lan { background: rgba(59, 120, 231, 0.18); color: #8fb4ff; }
+.cab-outlet-sum { margin: 2px 0 8px; }
+.cab-outlet-filter { margin-bottom: 10px; }
+.cab-outlet-filter button { padding: 5px 11px; font-size: 13px; }

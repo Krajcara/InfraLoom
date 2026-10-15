@@ -1,28 +1,54 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../../api';
+import { downloadCsv } from '../../components/cabling/csv';
 import { LiveBadge, errText, labelOf, useCablingRights, useCatalog } from '../../components/cabling/common';
+
+const FILTERS = [['all', 'All'], ['in_use', 'In use'], ['free', 'Free'], ['lan', 'LAN'], ['voice', 'Telephone']];
+const matches = (o, f) => f === 'all' || (f === 'in_use' && o.in_use) || (f === 'free' && !o.in_use) || o.kind === f;
 
 function OfficeDetail({ id, catalog }) {
   const [d, setD] = useState(null);
-  useEffect(() => { api.get(`/cabling/offices/${id}`).then(setD).catch(() => setD({ devices: [], outlets: [] })); }, [id]);
+  const [filter, setFilter] = useState('all');
+  useEffect(() => { api.get(`/cabling/offices/${id}`).then(setD).catch(() => setD({ devices: [], outlets: [], summary: { total: 0, in_use: 0, free: 0, lan: 0, voice: 0 } })); }, [id]);
+  const shown = useMemo(() => (d ? d.outlets.filter((o) => matches(o, filter)) : []), [d, filter]);
   if (!d) return <p className="muted">Loading...</p>;
+  const s = d.summary;
+  const count = (f) => (f === 'all' ? s.total : f === 'in_use' ? s.in_use : f === 'free' ? s.free : s[f]);
   return (
     <div className="cab-office-detail">
-      <h3>Wall outlets ({d.outlets.length})</h3>
-      {d.outlets.length === 0 ? <p className="muted">No outlet is assigned to this office yet. Set the office and outlet label on a patch-panel port in the room view.</p> : (
-        <table className="table">
-          <thead><tr><th>Outlet</th><th>Patch panel</th><th>Port</th><th>Room / rack</th></tr></thead>
-          <tbody>
-            {d.outlets.map((o) => (
-              <tr key={o.port_id}>
-                <td className="mono"><strong>{o.outlet_label || '—'}</strong>{o.service === 'voice' && <span className="cab-tag cab-tag--voice" style={{ marginLeft: 6 }}>telephone</span>}</td>
-                <td className="mono">{o.device_name}</td><td className="mono">{o.port_name}</td>
-                <td>{o.room_id ? <Link to={`/cabling/rooms/${o.room_id}?port=${o.port_id}`}>{o.room_name}{o.rack_name ? ` · ${o.rack_name}` : ''}</Link> : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <h3>Wall outlets ({s.total})</h3>
+      {s.total === 0 ? <p className="muted">No outlet is assigned to this office yet. Set the office and outlet label on a patch-panel port in the room view.</p> : (
+        <>
+          <p className="muted cab-outlet-sum">
+            <strong>{s.in_use}</strong> in use · <strong>{s.free}</strong> free · {s.lan} LAN · {s.voice} telephone
+          </p>
+          <div className="cab-seg cab-outlet-filter" role="group" aria-label="Outlet filter">
+            {FILTERS.map(([v, l]) => <button type="button" key={v} className={filter === v ? 'on' : ''} onClick={() => setFilter(v)}>{l} ({count(v)})</button>)}
+          </div>
+          <table className="table">
+            <thead><tr><th>Outlet</th><th>Type</th><th>State</th><th>Patched to</th><th>Device at the outlet</th><th>Patch panel</th><th>Port</th><th>Room / rack</th></tr></thead>
+            <tbody>
+              {shown.map((o) => (
+                <tr key={o.port_id}>
+                  <td className="mono"><strong>{o.outlet_label || '—'}</strong></td>
+                  <td><span className={`cab-tag ${o.kind === 'voice' ? 'cab-tag--voice' : 'cab-tag--lan'}`}>{o.kind === 'voice' ? 'telephone' : 'LAN'}</span></td>
+                  <td>
+                    <span className={`status-badge ${o.in_use ? 'status-up' : ''}`}>{o.in_use ? 'in use' : 'free'}</span>
+                    {o.gaps.length > 0 && <>{' '}<span className="cab-tag cab-tag--gap" style={{ marginLeft: 6 }} title={`Missing: ${o.gaps.join(' and ')}`}>incomplete</span></>}
+                  </td>
+                  <td className="mono">{o.patched_to ? `${o.patched_to.device_name} · ${o.patched_to.port_name}` : <span className="muted">—</span>}</td>
+                  <td className="mono">
+                    {o.at_outlet ? <>{o.at_outlet.device_name} · {o.at_outlet.port_name}{!o.in_use && <>{' '}<span className="cab-tag cab-tag--gap" style={{ marginLeft: 6 }} title="A device is recorded at this outlet, but the outlet is not patched on the panel">not patched</span></>}</> : <span className="muted">—</span>}
+                  </td>
+                  <td className="mono">{o.device_name}</td><td className="mono">{o.port_name}</td>
+                  <td>{o.room_id ? <Link to={`/cabling/rooms/${o.room_id}?port=${o.port_id}`}>{o.room_name}{o.rack_name ? ` · ${o.rack_name}` : ''}</Link> : '—'}</td>
+                </tr>
+              ))}
+              {shown.length === 0 && <tr><td colSpan={8} className="muted">No outlet matches this filter.</td></tr>}
+            </tbody>
+          </table>
+        </>
       )}
       <h3>Devices in this office ({d.devices.length})</h3>
       {d.devices.length === 0 ? <p className="muted">None.</p> : (
@@ -60,14 +86,24 @@ export default function CablingOfficesPage() {
     if (!confirm(`Delete office ${o.name}? Its devices stay in the inventory, and outlet labels on patch panels are kept.`)) return;
     try { await api.del(`/cabling/offices/${o.id}`); if (open === o.id) setOpen(null); load(); } catch (err) { setError(errText(err)); }
   }
+  async function exportOutlets() {
+    try {
+      const { outlets } = await api.get('/cabling/reports/outlets');
+      downloadCsv('wall-outlets.csv', [['Office', 'Outlet', 'Type', 'State', 'Patched to', 'Device at the outlet', 'Patch panel', 'Port', 'Room', 'Rack'],
+        ...outlets.map((o) => [o.office_name, o.outlet_label, o.kind === 'voice' ? 'telephone' : 'LAN', o.in_use ? 'in use' : 'free', o.patched_to ? `${o.patched_to.device_name} ${o.patched_to.port_name}` : '', o.at_outlet ? `${o.at_outlet.device_name} ${o.at_outlet.port_name}` : '', o.device_name, o.port_name, o.room_name, o.rack_name])]);
+    } catch (err) { setError(errText(err)); }
+  }
 
   return (
     <div className="page cab-page">
       <div className="cab-head">
         <h1>Offices</h1>
-        <div className="cab-head-tools">{rights.canEdit && <button type="button" onClick={() => setForm(form ? null : { name: '', floor: '', notes: '' })}>New office</button>}</div>
+        <div className="cab-head-tools">
+          <button type="button" className="cab-btn-ghost" onClick={exportOutlets}>Download outlets CSV</button>
+          {rights.canEdit && <button type="button" onClick={() => setForm(form ? null : { name: '', floor: '', notes: '' })}>New office</button>}
+        </div>
       </div>
-      <p className="muted">Offices are where the wall outlets are. A patch-panel port records which office and outlet its rear side runs to.</p>
+      <p className="muted">Offices are where the wall outlets are (a corridor or a hall works as well). A patch-panel port records which office and outlet its rear side runs to; an outlet is <strong>in use</strong> when it is patched on the panel and <strong>free</strong> when it is not.</p>
       {error && <p className="error">{error}</p>}
       {form && (
         <form className="card cab-wide" onSubmit={save} autoComplete="off">
@@ -83,19 +119,21 @@ export default function CablingOfficesPage() {
       {!offices ? <p className="muted">Loading...</p> : offices.length === 0 ? <div className="card"><p className="muted">No offices yet.</p></div> : (
         <div className="card cab-wide">
           <table className="table">
-            <thead><tr><th>Office</th><th>Floor</th><th>Wall outlets</th><th>Devices</th><th /></tr></thead>
+            <thead><tr><th>Office</th><th>Floor</th><th>Wall outlets</th><th>In use</th><th>Free</th><th>Telephone</th><th>Devices</th><th /></tr></thead>
             <tbody>
               {offices.map((o) => (
                 <Fragment key={o.id}>
                   <tr>
                     <td><button type="button" className="btn-link" onClick={() => setOpen(open === o.id ? null : o.id)}>{open === o.id ? '▾' : '▸'} <strong className="mono">{o.name}</strong></button></td>
-                    <td>{o.floor || '—'}</td><td className="mono">{o.outlets}</td><td className="mono">{o.devices}</td>
+                    <td>{o.floor || '—'}</td><td className="mono">{o.outlets}</td>
+                    <td className="mono">{o.outlets_in_use}</td><td className="mono"><strong>{o.outlets_free}</strong></td><td className="mono">{o.outlets_voice}</td>
+                    <td className="mono">{o.devices}</td>
                     <td className="actions">
                       {rights.canEdit && <button type="button" className="btn-link" onClick={() => setForm({ id: o.id, name: o.name, floor: o.floor || '', notes: o.notes || '' })}>Edit</button>}
                       {rights.canDelete && <button type="button" className="btn-link danger" onClick={() => remove(o)}>Delete</button>}
                     </td>
                   </tr>
-                  {open === o.id && <tr><td colSpan={5}><OfficeDetail id={o.id} catalog={catalog} /></td></tr>}
+                  {open === o.id && <tr><td colSpan={8}><OfficeDetail id={o.id} catalog={catalog} /></td></tr>}
                 </Fragment>
               ))}
             </tbody>
