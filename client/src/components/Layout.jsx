@@ -29,6 +29,7 @@ const NAV_GROUPS = [
       { to: '/ups', label: 'UPS' },
       { to: '/dns', label: 'DNS' },
       { to: '/dns-analytics', label: 'DNS Analytics' },
+      { to: '/dmarc', label: 'DMARC', module: 'dmarc' },
       { to: '/netspeed', label: 'Net Speed' },
       { to: '/myip', label: 'MyIP' },
     ],
@@ -82,9 +83,11 @@ export default function Layout() {
   const location = useLocation();
   const [openGroup, setOpenGroup] = useState(null);
   const [cablingOn, setCablingOn] = useState(false);
+  const [dmarcOn, setDmarcOn] = useState(false);
 
   useEffect(() => {
     api.get('/cabling/status').then((s) => setCablingOn(!!(s.enabled && s.allowed))).catch(() => setCablingOn(false));
+    api.get('/dmarc/status').then((st) => setDmarcOn(!!st.enabled)).catch(() => setDmarcOn(false));
   }, []);
 
   // Auto-open the group containing the active route; dashboard has none.
@@ -117,7 +120,7 @@ export default function Layout() {
           </NavLink>
 
           {NAV_GROUPS.map((group) => {
-            const visibleItems = group.items.filter((item) => !item.roles || item.roles.includes(user?.role));
+            const visibleItems = group.items.filter((item) => (!item.roles || item.roles.includes(user?.role)) && (item.module !== 'dmarc' || dmarcOn));
             if (visibleItems.length === 0) return null;
             if (group.roles && !group.roles.includes(user?.role)) return null;
             if (group.module === 'cabling' && !cablingOn) return null;

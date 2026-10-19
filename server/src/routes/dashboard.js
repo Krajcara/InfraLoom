@@ -4,6 +4,7 @@ const express = require('express');
 const db = require('../db/database');
 const { requireAuth } = require('../middleware/auth');
 const cablingAccess = require('../services/cabling/access');
+const dmarcConfig = require('../services/dmarc/config');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -27,10 +28,15 @@ const DEFAULT_WIDGETS = [
   { id: 'patches', title: 'Pending Patches', phase: 13 },
   { id: 'ups', title: 'UPS', phase: 14 },
   { id: 'cabling', title: 'Cabling', phase: 15 },
+  { id: 'dmarc', title: 'DMARC', phase: 16 },
 ];
 
 // The Cabling card is only offered where the module can be used: it is switched on, and the caller is inside the allowed networks.
-const offered = (req, id) => id !== 'cabling' || (cablingAccess.isEnabled() && cablingAccess.isAllowed(req));
+const offered = (req, id) => {
+  if (id === 'cabling') return cablingAccess.isEnabled() && cablingAccess.isAllowed(req);
+  if (id === 'dmarc') return dmarcConfig.isEnabled(); // the DMARC card is offered once the module is switched on
+  return true;
+};
 
 function defaultLayout() {
   return DEFAULT_WIDGETS.map((w) => ({ id: w.id, visible: true }));

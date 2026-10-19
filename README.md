@@ -37,6 +37,7 @@ on your network.
 | **UPS** | SNMP (v1, v2c, v3) via the standard UPS-MIB, with an APC PowerNet fallback: battery charge and runtime, load, input/output voltage, history charts, and alerts for power loss, low battery, power restored and unreachable UPS |
 | **DNS / DNS Analytics** | Health of local DNS servers (Technitium, Pi-hole, AdGuard Home), SPF/DKIM/DMARC/MX domain checks, Cloudflare zone integration, Technitium query statistics |
 | **Net Speed** | Scheduled internet speed tests (Cloudflare, Ookla CLI, LibreSpeed CLI) with history and retention |
+| **DMARC** | Reads the DMARC aggregate reports that mail receivers send to a dedicated Microsoft 365 mailbox and shows who sends mail in the name of your domains, with alerts for unapproved senders — see [DMARC reports](#dmarc-reports) |
 | **MyIP** | Public IP lookup from several sources (the dashboard card shows the location from ip.sb, in full), IP query, DNS resolver check (UDP and DoH) |
 | **Hypervisors** | Proxmox VE, Hyper-V and VMware ESXi (7.0+) in one view: node and guest drill-down, usage history, connection health alerts, [usage thresholds](#hypervisor-usage-thresholds) (storage, RAM, CPU, disk, offline nodes), power actions, SSH web terminal |
 | **Network Scanner** | `arp-scan` device inventory, on-demand `nmap` deep scan, Wake-on-LAN, new/offline device alerts |
@@ -133,6 +134,44 @@ patch panel, fibre panel, desktop, notebook, printer, access point), and the **p
 
 `npm test` runs the module's tests: validation, port generation, the trace engine (loops, long chains, outlets, fibre paths), triggers, the network matcher, and the whole API with roles on a throw-away database.
 
+### DMARC reports
+
+Mail receivers (Google, Microsoft, Yahoo, ...) send a daily *aggregate report* for every domain that publishes a DMARC record, to the address in its `rua=` tag. InfraLoom reads those reports from a dedicated Microsoft 365 mailbox through Microsoft Graph (read-only, and limited to that one mailbox), keeps them, and shows **who sends mail in the name of your domains**: which senders pass DMARC and which fail, grouped by provider (Microsoft 365, Google, Amazon SES, ...; without a PTR record, by network prefix).
+
+- **Network → DMARC** shows the totals, a chart per day, and three tabs: **Senders** (approve a whole provider with one click; open it to see the addresses, who reported them and how DKIM and SPF did), **Reports** (one report in a side panel, with a link to the original XML) and **Mailbox** (what was read, and what was not a report). It filters by domain and by period (7 days to a year).
+- **Import files** takes `.xml`, `.zip` and `.gz` reports by hand, so the page is useful before the mailbox is set up, or without Microsoft 365 at all.
+- **Alerts**, through the usual [notification channels](#notifications) (each can be switched off per channel): a DMARC failure from a sender that is not approved (once a day per sender, not with every report), a new sender, an SPF permerror for your domain, failures the receiver let through anyway (forwarding, mailing lists — off by default), the mailbox that cannot be read (after three failed reads in a row), and the client secret that is about to expire (30 days, 7 days, and when it has). A failure in a report older than three days is history and raises nothing; the first read of the mailbox is a quiet backfill that does not announce new senders.
+- **Approving** is by group or by single address. Groups named in *Trusted senders* (default *Microsoft 365*) are approved the first time they are seen.
+- The **Dashboard** card (offered once the module is on) shows the pass rate for the last 30 days, the failures, and whether any sender still needs a decision or the mailbox cannot be read.
+- **Operators** can approve senders, import files and read the mailbox; **admins** change the settings; viewers read.
+- Reports are kept 400 days and the original XML 90 days (both set in **Settings → DMARC**), and so is the log of processed mail.
+
+The module is **off until you switch it on** in **Settings → DMARC**, where you also enter the mailbox and the Microsoft 365 application's details. The client secret is stored in the encrypted database in a table of the module's own, and neither the settings screen nor any API ever returns it again.
+
+#### Microsoft 365 setup
+
+You need a mailbox that receives the reports, an *app registration* that may read **only that mailbox**, and then the DNS record.
+
+1. **The mailbox.** A *shared mailbox* is enough (no licence, nobody signs in), e.g. `dmarc@example.com`. It must accept mail from outside.
+2. **App registration** (Entra admin centre → *Identity → Applications → App registrations → New registration*): name `InfraLoom DMARC`, *single tenant*, no redirect URI. Note the **Application (client) ID** and the **Directory (tenant) ID**. Under *Certificates & secrets* create a **client secret** and copy its value at once (it is shown once); note when it expires. **Do not add any API permission** and do not grant admin consent: a permission given in Entra applies to *every* mailbox of the tenant, and the secret sits on the InfraLoom server.
+3. **Limit it to one mailbox** (Exchange Online PowerShell, as an Exchange administrator; *RBAC for Applications* has no screen in the admin centre). The object ID below is the one of the **Enterprise application** with the same name (open it from the app registration's *Managed application in local directory* link), **not** the one of the app registration:
+
+   ```powershell
+   Connect-ExchangeOnline -UserPrincipalName admin@example.com
+   New-ServicePrincipal -AppId <CLIENT_ID> -ObjectId <ENTERPRISE_APP_OBJECT_ID> -DisplayName "InfraLoom DMARC"
+   New-ManagementScope -Name "DMARC mailbox" -RecipientRestrictionFilter "PrimarySmtpAddress -eq 'dmarc@example.com'"
+   New-ManagementRoleAssignment -App <CLIENT_ID> -Role "Application Mail.Read" -CustomResourceScope "DMARC mailbox"
+   # check: InScope must be True for the DMARC mailbox and False for any other
+   Test-ServicePrincipalAuthorization -Identity <CLIENT_ID> -Resource dmarc@example.com
+   Test-ServicePrincipalAuthorization -Identity <CLIENT_ID> -Resource somebody.else@example.com
+   ```
+
+   The assignment can take from a few minutes up to two hours to reach Graph; until then a read answers `403 ErrorAccessDenied`.
+4. **In InfraLoom**: *Settings → DMARC* — tenant ID, client ID, client secret, the secret's expiry date (for the reminder) and the mailbox; **Save**, then **Test connection**.
+5. **DNS**: only when the page shows that the mailbox can be read, change `rua` in the `_dmarc` TXT record of each domain, for a while to both the old and the new address, e.g. `rua=mailto:dmarc@example.com,mailto:old@example.com`. Reports for a domain *other than* the mailbox's own need a record at the receiving side: `other-domain.example._report._dmarc.example.com TXT "v=DMARC1"`.
+
+The module only ever reads: it does not delete, move or mark mail as read, and the access it has cannot do more. A report, an archive or a mail that is not what it should be is recorded and skipped; archives are unpacked with limits (30 MB per file, 20 files), and XML that defines entities is refused. `DMARC_PTR_LOOKUP=false` in `.env` turns off the reverse-DNS lookup of sender addresses.
+
 ### Hypervisor usage thresholds
 
 **Infrastructure → Hypervisors → Usage thresholds** alerts when something gets too full or too busy — before it becomes an outage:
@@ -186,7 +225,7 @@ back, and an amber banner on every page reminds you that alerts are muted.
 
 In-app bell with live toasts, plus Telegram, Slack, Discord, ntfy, Pushover and e-mail. Every event type
 (monitor down/up, SSL/licence/Entra expiry, new or offline network device, hypervisor unreachable, UPS on battery,
-low battery, power restored, UPS offline/online, network device health and restarts, hypervisor usage above warning/critical level and back to normal, patch run failed, machine needs a restart after patching) can be switched per channel, with quiet hours, and muted per target by a
+low battery, power restored, UPS offline/online, network device health and restarts, hypervisor usage above warning/critical level and back to normal, DMARC failures, new senders, SPF permerror, an unreadable DMARC mailbox and an expiring DMARC secret, patch run failed, machine needs a restart after patching) can be switched per channel, with quiet hours, and muted per target by a
 [maintenance window](#maintenance-windows).
 
 ### Status pages
@@ -259,6 +298,7 @@ All settings are environment variables in `/opt/infraloom/.env` (see [`.env.exam
 | `BACKUP_ENCRYPTION_PASSWORD` | Encrypts the `.env` copy inside backups (see [Backup and restore](#backup-and-restore)) |
 | `COOKIE_SECURE` | `true` once served over HTTPS |
 | `API_RATE_LIMIT` | Optional; requests per minute allowed from one address to the API (default `300`) |
+| `DMARC_PTR_LOOKUP` | Optional; `false` turns off the reverse-DNS lookup of the addresses in DMARC reports (they are then grouped by network) |
 | `GITHUB_TOKEN` | Optional; only needed if the repository is private |
 
 Notification channels, SMTP, quiet hours, TV pages and schedules are configured in the UI under **Settings**.
@@ -291,7 +331,7 @@ sudo journalctl -u infraloom -f
 | Role | Can do | Cannot do |
 |---|---|---|
 | **Viewer** | View everything | Create, edit, run or delete anything; user management |
-| **Operator** | Viewer + add devices, monitors and UPS units, start network scans and patch runs, schedule maintenance windows, edit the cabling documentation, renew licences, reveal stored passwords | Delete things, manage connections and credentials, change Settings, user management |
+| **Operator** | Viewer + add devices, monitors and UPS units, start network scans and patch runs, schedule maintenance windows, edit the cabling documentation, approve DMARC senders, import DMARC reports and read the DMARC mailbox, renew licences, reveal stored passwords | Delete things, manage connections and credentials, change Settings, user management |
 | **Admin** | Operator + delete, manage all connections and credentials, change Settings, manage Operator/Viewer accounts | Run system updates, manage Admin/Superadmin accounts |
 | **Superadmin** | Everything | — |
 
@@ -426,7 +466,8 @@ Backups run on a configurable daily schedule with configurable retention, or on 
   frontend and API are always served from the same origin.
 - The [Cabling](#cabling-technical-rooms) data is a map of your network (rooms, racks, patch panels, outlets). An administrator can switch
   the module off, or limit it to your own networks, in **Settings → Cabling module**.
-- CSV exports neutralise formula-injection payloads (values starting with `=`, `+`, `-` or `@`).
+- CSV exports (the audit log, and the cabling lists) neutralise formula-injection payloads (values starting with `=`, `+`, `-` or `@`).
+- The DMARC client secret is stored only in the module's own table of the encrypted database and is never returned by any API; the application it belongs to should be limited to the one mailbox, as described in [Microsoft 365 setup](#microsoft-365-setup). The mailbox receives mail from anyone, so attachments are unpacked with size limits.
 - Credentials with broad reach — the Proxmox host SSH login used for LXC patching, Hyper-V per-guest credentials, and
   the FortiGate API token — should only be configured where you actually need them. Prefer read-only profiles.
 - Serve InfraLoom over HTTPS and set `COOKIE_SECURE=true` (see [HTTPS](#https)).

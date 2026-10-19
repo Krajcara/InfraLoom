@@ -1,0 +1,137 @@
+/* DMARC module: styles are limited to .dmarc and use the app's own (dark) palette. */
+.dmarc {
+  --d-pass: #4cc382;
+  --d-fail: #f07070;
+  --d-warn: #e6b13d;
+  --d-line: #2a2e38;
+  --d-soft: rgba(255, 255, 255, 0.04);
+  --d-muted: #8b8f99;
+  --d-radius: 8px;
+  --dmarc-drawer-bg: #1a1d24;
+  display: grid;
+  gap: 1.25rem;
+  max-width: 1200px;
+}
+
+.dmarc h1 { margin: 0; font-size: 1.5rem; }
+.dmarc h2 { margin: 0; font-size: 1.1rem; }
+.dmarc code { font-size: .9em; }
+.dmarc-sub, .dmarc-syncline { margin: .25rem 0 0; color: var(--d-muted); }
+.dmarc-syncline { margin: 0; font-size: .875rem; }
+.dmarc-syncline.is-error { color: var(--d-fail); }
+.dmarc-muted { color: var(--d-muted); }
+.txt-bad { color: var(--d-fail); font-weight: 600; }
+.txt-warn { color: var(--d-warn); font-weight: 600; }
+
+.dmarc-head { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: flex-end; }
+.dmarc-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.dmarc-actions select { background: #1a1d24; }
+.dmarc-actions select,
+.dmarc-actions button {
+  font: inherit; color: inherit; background: transparent; margin: 0;
+  border: 1px solid var(--d-line); border-radius: var(--d-radius);
+  padding: .45rem .8rem; cursor: pointer;
+}
+.dmarc-actions button:hover:not(:disabled) { background: var(--d-soft); }
+.dmarc-actions .dmarc-primary { background: #2b6cff; border-color: #2b6cff; color: #fff; }
+.dmarc-actions .dmarc-primary:hover:not(:disabled) { background: #1f57d6; }
+.dmarc-actions button:disabled { opacity: .55; cursor: default; }
+.dmarc-actions .dmarc-primary { font-weight: 600; }
+.dmarc :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+.dmarc-notice {
+  display: flex; justify-content: space-between; gap: 1rem; align-items: start;
+  padding: .7rem .9rem; border-radius: var(--d-radius); border-left: 4px solid var(--d-pass); background: var(--d-soft);
+}
+.dmarc-notice.is-error { border-left-color: var(--d-fail); }
+.dmarc-notice.is-info { border-left-color: var(--d-line); }
+.dmarc-notice button { font: inherit; font-size: 1.2rem; line-height: 1; background: none; border: 0; color: inherit; cursor: pointer; }
+
+.dmarc-empty { padding: 2rem 0; color: var(--d-muted); }
+.dmarc-empty p { margin: .25rem 0; }
+
+/* Sažetak: jedna traka, brojevi poravnati levo, bez kartica */
+.dmarc-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  border-top: 1px solid var(--d-line); border-bottom: 1px solid var(--d-line);
+}
+.dmarc-stat { display: grid; gap: .15rem; padding: .9rem 1rem .9rem 0; }
+.dmarc-stat + .dmarc-stat { padding-left: 1rem; border-left: 1px solid var(--d-line); }
+.dmarc-stat-value { font-size: 1.6rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.dmarc-stat-label { font-size: .85rem; color: var(--d-muted); }
+.dmarc-stat.is-ok .dmarc-stat-value { color: var(--d-pass); }
+.dmarc-stat.is-bad .dmarc-stat-value { color: var(--d-fail); }
+.dmarc-stat.is-warn .dmarc-stat-value { color: var(--d-warn); }
+
+.dmarc-chart { margin: 0; }
+.dmarc-bars { display: flex; align-items: flex-end; gap: 2px; height: 110px; }
+.dmarc-bar { flex: 1; min-width: 3px; height: 100%; display: flex; flex-direction: column-reverse; }
+.dmarc-bar span { display: block; }
+.dmarc-bar .is-pass { background: var(--d-pass); opacity: .75; border-radius: 2px 2px 0 0; }
+.dmarc-bar .is-fail { background: var(--d-fail); }
+.dmarc-chart figcaption { display: flex; justify-content: space-between; font-size: .8rem; color: var(--d-muted); margin-top: .35rem; }
+.dmarc .dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; margin: 0 .2rem 0 .6rem; vertical-align: -1px; }
+.dmarc .dot.is-pass { background: var(--d-pass); }
+.dmarc .dot.is-fail { background: var(--d-fail); }
+
+.dmarc-tabs { display: flex; gap: 1.25rem; border-bottom: 1px solid var(--d-line); }
+.dmarc-tabs button {
+  font: inherit; color: var(--d-muted); background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: .5rem 0; margin-bottom: -1px; cursor: pointer;
+}
+.dmarc-tabs button.is-active { color: inherit; border-bottom-color: currentColor; font-weight: 600; }
+
+.dmarc-tablewrap { overflow-x: auto; }
+.dmarc-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.dmarc-table th { text-align: left; font-weight: 600; color: var(--d-muted); padding: .5rem .6rem; border-bottom: 1px solid var(--d-line); white-space: nowrap; }
+.dmarc-table td { padding: .5rem .6rem; border-bottom: 1px solid var(--d-line); vertical-align: top; }
+.dmarc-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.dmarc-table tr.is-group td { font-weight: 550; }
+.dmarc-table tr.is-alert td:first-child { box-shadow: inset 3px 0 0 var(--d-fail); }
+.dmarc-table tr.is-ip td { background: var(--d-soft); font-weight: 400; }
+.dmarc-table tr.is-ip td:first-child { padding-left: 2rem; }
+.dmarc-table.is-clickable tbody tr { cursor: pointer; }
+.dmarc-table.is-clickable tbody tr:hover td { background: var(--d-soft); }
+.dmarc-clip { max-width: 28rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dmarc-expand { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.dmarc-reporters { display: block; font-size: .75rem; color: var(--d-muted); }
+.dmarc-ptr { display: block; font-size: .8rem; color: var(--d-muted); word-break: break-all; }
+.dmarc-mini { display: block; font-size: .75rem; color: var(--d-muted); }
+.dmarc label.dmarc-switch { display: inline-flex; flex-direction: row; align-items: center; gap: .35rem; cursor: pointer; font-size: inherit; color: inherit; white-space: nowrap; }
+.dmarc .dmarc-switch input { width: auto; margin: 0; padding: 0; }
+
+.dmarc-overlay { position: fixed; inset: 0; background: color-mix(in srgb, #000 35%, transparent); z-index: 1000; display: flex; justify-content: flex-end; }
+.dmarc-drawer {
+  width: min(640px, 100%); height: 100%; overflow-y: auto; padding: 1.25rem 1.5rem;
+  background: var(--dmarc-drawer-bg); color: inherit;
+  box-shadow: -8px 0 24px color-mix(in srgb, #000 20%, transparent);
+}
+.dmarc-drawer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.dmarc-drawer-head button { font: inherit; font-size: 1.5rem; background: none; border: 0; color: inherit; cursor: pointer; }
+.dmarc-meta { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1rem; margin: 0 0 .75rem; font-size: .9rem; }
+.dmarc-meta dt { color: var(--d-muted); }
+.dmarc-meta dd { margin: 0; display: flex; flex-wrap: wrap; gap: .25rem .75rem; word-break: break-word; }
+.dmarc-meta.is-compact { font-size: .85rem; margin: .5rem 0 0; }
+.dmarc-link { display: inline-block; margin-bottom: 1rem; color: #6ea8fe; }
+.dmarc-records { display: grid; gap: .75rem; }
+.dmarc-record { border: 1px solid var(--d-line); border-radius: var(--d-radius); padding: .75rem .9rem; }
+.dmarc-record.is-fail { border-color: color-mix(in srgb, var(--d-fail) 55%, transparent); }
+.dmarc-record header { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+.dmarc-badge { font-size: .78rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px; }
+.dmarc-badge.is-pass { color: var(--d-pass); background: color-mix(in srgb, var(--d-pass) 14%, transparent); }
+.dmarc-badge.is-fail { color: var(--d-fail); background: color-mix(in srgb, var(--d-fail) 14%, transparent); }
+.dmarc .res.is-pass { color: var(--d-pass); }
+.dmarc .res.is-fail, .dmarc .res.is-softfail { color: var(--d-fail); }
+.dmarc .res.is-permerror, .dmarc .res.is-temperror { color: var(--d-warn); }
+.dmarc-hint { flex-basis: 100%; margin: .25rem 0 0; font-size: .8rem; color: var(--d-muted); }
+
+@media (max-width: 640px) {
+  .dmarc-stat + .dmarc-stat { border-left: 0; padding-left: 0; }
+  .dmarc-stat { border-bottom: 1px solid var(--d-line); }
+}
+
+/* the small bits the app's global rules would otherwise change */
+.dmarc button { margin: 0; }
+.dmarc-tabs button, .dmarc-expand, .dmarc-notice button, .dmarc-drawer-head button { background: none; padding-left: 0; padding-right: 0; }
+.dmarc-tabs button:hover, .dmarc-expand:hover, .dmarc-notice button:hover, .dmarc-drawer-head button:hover { background: none; }
+.dmarc-sub strong { color: #e6e6e6; }

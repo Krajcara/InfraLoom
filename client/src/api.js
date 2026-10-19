@@ -31,4 +31,7 @@ export const api = {
   post: (path, data) => request(path, { method: 'POST', body: data ? JSON.stringify(data) : undefined }),
   put: (path, data) => request(path, { method: 'PUT', body: data ? JSON.stringify(data) : undefined }),
   del: (path) => request(path, { method: 'DELETE' }),
+  patch: (path, data) => request(path, { method: 'PATCH', body: data ? JSON.stringify(data) : undefined }),
+  // a file as the body of the request; its name goes in X-Filename
+  upload: (path, file) => request(path, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name) }, body: file }),
 };

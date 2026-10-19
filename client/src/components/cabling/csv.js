@@ -2,7 +2,9 @@
  * European) Excel, whose list separator is a semicolon, splits the columns instead of showing one. */
 export function downloadCsv(filename, rows) {
   const esc = (v) => {
-    const s = v === null || v === undefined ? '' : String(v);
+    let s = v === null || v === undefined ? '' : String(v);
+    // formula injection: Excel and Sheets run a cell that starts with = + - @ (or a tab / return); a leading quote makes it plain text
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
     return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const text = `\ufeffsep=;\r\n${rows.map((r) => r.map(esc).join(';')).join('\r\n')}\r\n`;

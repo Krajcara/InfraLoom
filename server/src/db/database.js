@@ -743,4 +743,7 @@ for (const [key, value] of Object.entries(defaultSettings)) {
 // Cabling module (technical rooms, devices, ports, patch panels): numbered SQL migrations of its own.
 require('./cabling').migrate(db);
 
+// DMARC module (aggregate reports from a dedicated mailbox): numbered SQL migrations of its own.
+require('./dmarc').migrate(db);
+
 module.exports = db;

@@ -101,6 +101,7 @@ app.use('/api/ups', require('./routes/ups'));
 app.use('/api/maintenance', require('./routes/maintenance'));
 app.use('/api/device-health', require('./routes/deviceHealth'));
 app.use('/api/cabling', require('./routes/cabling'));
+app.use('/api/dmarc', require('./routes/dmarc'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
@@ -149,6 +150,7 @@ require('./services/fortigateSyncService').initScheduler();
 require('./services/upsService').initScheduler();
 require('./services/maintenanceService').initScheduler();
 require('./services/deviceHealthService').initScheduler();
+require('./services/dmarc/service').initScheduler();
 setTimeout(() => require('./services/sslChecker').checkAllSSL(false), 5000);
 
 process.on('SIGTERM', () => {

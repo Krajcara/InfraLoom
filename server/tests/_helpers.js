@@ -27,9 +27,10 @@ function tempEnv(dir) {
   return { ...process.env, NODE_ENV: 'test', API_RATE_LIMIT: '1000000', DB_PATH: path.join(dir, 'infraloom.db'), DB_ENCRYPTION_KEY: hex(), APP_SECRET: hex(), BACKUP_ENCRYPTION_PASSWORD: hex() };
 }
 
-async function startServer() {
+/** extraEnv: more environment variables for the server (e.g. the address of a fake Microsoft Graph). */
+async function startServer(extraEnv = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'infraloom-test-'));
-  const env = tempEnv(dir);
+  const env = { ...tempEnv(dir), DMARC_PTR_LOOKUP: 'false', ...extraEnv };
   const port = await freePort();
   env.APP_PORT = String(port);
   const seed = spawnSync('node', ['src/db/seed.js'], { cwd: SERVER_DIR, env, encoding: 'utf8' });
@@ -62,6 +63,7 @@ class Client {
   get(u) { return this.request('GET', u); }
   post(u, b) { return this.request('POST', u, b ?? {}); }
   put(u, b) { return this.request('PUT', u, b ?? {}); }
+  patch(u, b) { return this.request('PATCH', u, b ?? {}); }
   del(u) { return this.request('DELETE', u); }
   async login(username, password) { const r = await this.post('/api/auth/login', { username, password }); if (r.status !== 200) throw new Error(`login failed for ${username}: ${r.status}`); return this; }
 }

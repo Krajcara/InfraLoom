@@ -129,6 +129,7 @@ const WIDGET_LINKS = {
   patches: '/patch-management',
   ups: '/ups',
   cabling: '/cabling',
+  dmarc: '/dmarc',
 };
 
 function SortableWidget({ widget, onHide }) {
@@ -197,6 +198,8 @@ function SortableWidget({ widget, onHide }) {
           <UpsWidgetBody />
         ) : widget.id === 'cabling' ? (
           <CablingWidgetBody />
+        ) : widget.id === 'dmarc' ? (
+          <DmarcWidgetBody />
         ) : (
           <p className="muted">Coming in Phase {widget.phase}.</p>
         )}
@@ -241,6 +244,49 @@ function CablingWidgetBody() {
       {warnings.length === 0
         ? <p className="cab-dash-ok">✓ Nothing missing</p>
         : warnings.map(([text, to]) => <p key={text} className="cab-dash-warn"><Link to={to}>⚠ {text}</Link></p>)}
+    </div>
+  );
+}
+
+// DMARC: how much of the mail sent in the name of your domains passes, and what needs a look.
+function DmarcWidgetBody() {
+  const [state, setState] = useState({ loading: true, error: null, data: null });
+  useEffect(() => {
+    api.get('/dmarc/dashboard')
+      .then((data) => setState({ loading: false, error: null, data }))
+      .catch((err) => setState({ loading: false, error: errText(err), data: null }));
+  }, []);
+  if (state.loading) return <p className="muted">Loading...</p>;
+  if (state.error) return <p className="widget-bad">{state.error}</p>;
+  const d = state.data;
+  const n = (v, one, many) => `${v} ${v === 1 ? one : many}`;
+  const broken = d.last_error ? <p className="cab-dash-warn"><Link to="/dmarc">⚠ The mailbox cannot be read: {d.last_error}</Link></p> : null;
+  if (!d.reports) {
+    return (
+      <div className="cab-dash">
+        <p className="muted">No reports in the last 30 days. {d.sync_enabled ? 'Waiting for the first ones to arrive.' : <><Link to="/dmarc">Import some</Link>, or set up the mailbox in Settings.</>}</p>
+        {broken}
+      </div>
+    );
+  }
+  const pct = d.total ? ((100 * d.pass) / d.total).toFixed(1) : '—';
+  const rows = [
+    ['Passed DMARC', `${pct}\u00a0% of ${d.total.toLocaleString()} messages`, false],
+    ['Failed', d.fail.toLocaleString(), d.fail > 0],
+    ['Reports', `${d.reports}, latest ${d.last_report ? new Date(d.last_report * 1000).toLocaleDateString() : '—'}`, false],
+  ];
+  return (
+    <div className="cab-dash">
+      <p className="muted">Last 30 days</p>
+      <dl className="cab-dash-rows">
+        {rows.map(([label, value, warn]) => <Fragment key={label}><dt>{label}</dt><dd className={warn ? 'cab-dash-warn' : ''}>{value}</dd></Fragment>)}
+      </dl>
+      {broken}
+      {d.unapproved_failing > 0
+        ? <p className="cab-dash-warn"><Link to="/dmarc">⚠ {n(d.unapproved_failing, 'sender fails', 'senders fail')} DMARC and {d.unapproved_failing === 1 ? 'is' : 'are'} not approved</Link></p>
+        : d.unapproved > 0
+          ? <p className="cab-dash-warn"><Link to="/dmarc">⚠ {n(d.unapproved, 'sender is', 'senders are')} not approved yet</Link></p>
+          : !broken && <p className="cab-dash-ok">✓ All senders approved</p>}
     </div>
   );
 }
