@@ -35,7 +35,7 @@ const mkIngestor = (over = {}) => {
 const upload = async (ing, xml, opts = {}) => { const r = await ing.ingestor.ingestBuffer(Buffer.from(xml), 'r.xml', { origin: 'upload' }, opts); await ing.ingestor.dispatch(r.alerts); return r; };
 
 test('the tables are made by a numbered migration', () => {
-  assert.deepEqual(db.prepare('SELECT version FROM dmarc_migrations').all().map((r) => r.version), ['001_dmarc', '002_domains']);
+  assert.deepEqual(db.prepare('SELECT version FROM dmarc_migrations').all().map((r) => r.version), ['001_dmarc', '002_domains', '003_retry_no_report']);
   const names = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'dmarc_%'").all().map((r) => r.name);
   for (const t of ['dmarc_config', 'dmarc_reports', 'dmarc_records', 'dmarc_sources', 'dmarc_groups', 'dmarc_messages', 'dmarc_state', 'dmarc_migrations', 'dmarc_domains']) assert.ok(names.includes(t), t);
 });
@@ -216,4 +216,15 @@ test('the client-secret reminder: 30 days, 7 days and expired, each once', async
 
 test('how often the mailbox is read becomes a cron expression', () => {
   for (const [m, e] of [[5, '*/5 * * * *'], [30, '*/30 * * * *'], [59, '*/59 * * * *'], [60, '0 */1 * * *'], [90, '0 */2 * * *'], [720, '0 */12 * * *'], [1440, '0 0 * * *']]) assert.equal(service.syncExpression(m), e, String(m));
+});
+
+test('mail that was filed as "no report" before attached messages could be read is read again, once; what was processed stays', () => {
+  const sql = fs.readFileSync(path.join(__dirname, '../src/db/dmarc/003_retry_no_report.sql'), 'utf8');
+  db.prepare("INSERT OR REPLACE INTO dmarc_messages (graph_id, status, subject) VALUES ('mig-ok', 'ok', 'a report'), ('mig-no', 'no-report', 'Report domain: x'), ('mig-err', 'error', 'broken')").run();
+  db.prepare("INSERT OR REPLACE INTO dmarc_state (key, value) VALUES ('graph_cursor', '2026-10-20T12:00:00Z'), ('last_sync', 'x')").run();
+  db.exec(sql);
+  const left = Object.fromEntries(db.prepare("SELECT graph_id, status FROM dmarc_messages WHERE graph_id LIKE 'mig-%'").all().map((r) => [r.graph_id, r.status]));
+  assert.deepEqual(left, { 'mig-ok': 'ok', 'mig-err': 'error' }, 'only the "no report" rows are forgotten');
+  assert.equal(db.prepare("SELECT value FROM dmarc_state WHERE key = 'graph_cursor'").get(), undefined, 'so the next read starts from the beginning of the first-read period');
+  assert.equal(db.prepare("SELECT value FROM dmarc_state WHERE key = 'last_sync'").get().value, 'x', 'and nothing else of the state is touched');
 });

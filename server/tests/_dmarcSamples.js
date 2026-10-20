@@ -26,4 +26,24 @@ function reportXml({ org = 'google.com', email = 'noreply-dmarc-support@google.c
 const zipOf = (files) => { const z = new AdmZip(); for (const [name, data] of Object.entries(files)) z.addFile(name, Buffer.isBuffer(data) ? data : Buffer.from(data)); return z.toBuffer(); };
 const gzipOf = (xml) => zlib.gzipSync(Buffer.from(xml));
 
-module.exports = { reportXml, zipOf, gzipOf, hour };
+
+/** The source of a message: multipart/mixed with the given parts. A part is { name, type, content } (a file, base64) or { message: Buffer } (an attached message). */
+function mimeMessage({ subject = 'Report domain: comdata.rs Submitter: google.com Report-ID: 1', from = 'noreply-dmarc-support@google.com', parts = [] } = {}) {
+  const b = `=_b${Math.random().toString(16).slice(2)}`;
+  const lines = [`From: ${from}`, 'To: dmarc@comdata.rs', `Subject: ${subject}`, 'MIME-Version: 1.0', `Content-Type: multipart/mixed; boundary="${b}"`, '', `--${b}`, 'Content-Type: text/plain; charset=utf-8', '', 'This is an aggregate report.', ''];
+  for (const p of parts) {
+    if (p.message) {
+      lines.push(`--${b}`, 'Content-Type: message/rfc822', 'Content-Disposition: attachment; filename="report.eml"', '', p.message.toString('latin1'), '');
+    } else {
+      const data = Buffer.isBuffer(p.content) ? p.content : Buffer.from(p.content);
+      lines.push(`--${b}`, `Content-Type: ${p.type || 'application/zip'}; name="${p.name}"`, `Content-Disposition: attachment; filename="${p.name}"`, 'Content-Transfer-Encoding: base64', '');
+      const b64 = data.toString('base64');
+      for (let i = 0; i < b64.length; i += 76) lines.push(b64.slice(i, i + 76)); // a loop: a spread of a big file overflows the stack
+      lines.push('');
+    }
+  }
+  lines.push(`--${b}--`, '');
+  return Buffer.from(lines.join('\r\n'), 'latin1');
+}
+
+module.exports = { reportXml, zipOf, gzipOf, hour, mimeMessage };

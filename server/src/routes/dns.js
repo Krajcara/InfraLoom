@@ -7,6 +7,7 @@ const https = require('https');
 const db = require('../db/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
+const domainResolver = require('../lib/domainResolver');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -164,13 +165,15 @@ router.delete('/domains/:id', requireRole('superadmin', 'admin', 'operator'), (r
 
 async function checkDomain(domain) {
   const result = { domain, spf: null, dkim: null, dmarc: null, mx: [], a: [], ns: [], checked_at: new Date().toISOString() };
+  // asked of the DNS servers chosen in Settings (a public resolver unless told otherwise), so that the answer is what the world sees
+  const R = domainResolver.getResolver();
   try {
     const [mx, a, txt, ns, dmarc] = await Promise.allSettled([
-      dnsLib.resolveMx(domain),
-      dnsLib.resolve4(domain),
-      dnsLib.resolveTxt(domain),
-      dnsLib.resolveNs(domain),
-      dnsLib.resolveTxt(`_dmarc.${domain}`),
+      R.resolveMx(domain),
+      R.resolve4(domain),
+      R.resolveTxt(domain),
+      R.resolveNs(domain),
+      R.resolveTxt(`_dmarc.${domain}`),
     ]);
     result.mx = mx.status === 'fulfilled' ? mx.value.sort((x, y) => x.priority - y.priority) : [];
     result.a = a.status === 'fulfilled' ? a.value : [];
@@ -181,7 +184,7 @@ async function checkDomain(domain) {
 
     for (const sel of ['default', 'selector1', 'selector2', 'google', 'k1', 'dkim', 'mail']) {
       try {
-        const d = await dnsLib.resolveTxt(`${sel}._domainkey.${domain}`);
+        const d = await R.resolveTxt(`${sel}._domainkey.${domain}`);
         const val = d.flat().join('');
         if (val.includes('v=DKIM1')) {
           result.dkim = { selector: sel, value: val };
@@ -198,6 +201,18 @@ async function checkDomain(domain) {
   }
   return result;
 }
+
+// GET/PUT /api/dns/check-settings — which DNS servers the checks of a domain ask
+router.get('/check-settings', (req, res) => {
+  const c = domainResolver.config();
+  res.json({ mode: c.mode, servers: c.custom, effective: c.servers || 'system', public_servers: domainResolver.PUBLIC_SERVERS });
+});
+router.put('/check-settings', requireRole('superadmin', 'admin'), (req, res) => {
+  try { domainResolver.save({ mode: req.body?.mode, servers: req.body?.servers }); } catch (e) { return res.status(400).json({ error: e.message }); }
+  writeAuditLog({ user_id: req.user.id, username: req.user.username, action: 'dns.check_settings', module: 'dns', details: { mode: req.body.mode, servers: req.body.servers || null }, ip_address: req.ip });
+  const c = domainResolver.config();
+  res.json({ mode: c.mode, servers: c.custom, effective: c.servers || 'system', public_servers: domainResolver.PUBLIC_SERVERS });
+});
 
 // POST /api/dns/check — { domain }
 router.post('/check', async (req, res) => {

@@ -3,10 +3,37 @@
 // A minimal Microsoft Graph client: client-credentials sign-in, read-only access to one mailbox.
 // No SDK; Node 18+ has fetch. The addresses can be overridden for tests (a fake Graph).
 
+const PostalMime = require('postal-mime');
+
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const LOGIN = 'https://login.microsoftonline.com';
 const TIMEOUT_MS = 30_000;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // a report is a few hundred KB; bigger attachments are skipped
+const MAX_MESSAGE_BYTES = 25 * 1024 * 1024;    // the source of a message that is read to find the files inside an attached message
+const MAX_NESTING = 3;                         // messages inside messages
+
+/**
+ * The files in the source (MIME) of a message, including those inside messages attached to it (a message in a message in...).
+ * Returns { files: [{ name, contentType, buffer }], notes: [text] }.
+ */
+async function filesFromMime(source, depth = 0) {
+  const out = { files: [], notes: [] };
+  const mail = await new PostalMime().parse(source);
+  for (const a of mail.attachments || []) {
+    const buffer = Buffer.from(a.content instanceof ArrayBuffer ? new Uint8Array(a.content) : a.content);
+    const name = a.filename || (a.mimeType === 'message/rfc822' ? 'attached message' : 'attachment');
+    if (a.mimeType === 'message/rfc822') {
+      if (depth >= MAX_NESTING) { out.notes.push(`${name}: messages are nested too deep`); continue; }
+      const inner = await filesFromMime(buffer, depth + 1);
+      out.files.push(...inner.files); out.notes.push(...inner.notes);
+    } else if (buffer.length > MAX_ATTACHMENT_BYTES) {
+      out.notes.push(`${name}: ${Math.round(buffer.length / 1048576)} MB, too large`);
+    } else {
+      out.files.push({ name, contentType: a.mimeType, buffer });
+    }
+  }
+  return out;
+}
 
 function createGraphClient({ tenantId, clientId, clientSecret, mailbox, baseUrl = process.env.DMARC_GRAPH_BASE_URL || GRAPH, loginUrl = process.env.DMARC_LOGIN_BASE_URL || LOGIN, logger = console }) {
   if (!tenantId || !clientId || !clientSecret || !mailbox) throw new Error('Graph: tenant ID, client ID, client secret and mailbox are all needed');
@@ -69,23 +96,51 @@ function createGraphClient({ tenantId, clientId, clientSecret, mailbox, baseUrl 
       return out;
     },
 
-    /** File attachments of a message as { name, contentType, buffer }; oversized ones are left out. */
-    async getAttachments(messageId) {
-      const data = await (await request(`/users/${mb}/messages/${encodeURIComponent(messageId)}/attachments`)).json();
-      const files = [];
+    /**
+     * Everything attached to a message that could hold a report: { files: [{ name, contentType, buffer }], notes: [text] }.
+     * File attachments are read as they are. Some senders (Google) attach the report as a *message* that has the archive inside:
+     * for those the source of the message is read (one call, GET .../messages/{id}/$value) and unpacked, however deep the
+     * messages are nested. Oversized files are left out, and `notes` says what was skipped or could not be read.
+     * `subject` lets a message that looks like a report ("Report domain: ...") be read from its source even when Graph lists no attachment.
+     */
+    async getAttachments(messageId, { subject = '' } = {}) {
+      const id = encodeURIComponent(messageId);
+      const data = await (await request(`/users/${mb}/messages/${id}/attachments`)).json();
+      const files = []; const notes = [];
+      let attachedMessage = false;
       for (const a of data.value || []) {
-        if (a['@odata.type'] !== '#microsoft.graph.fileAttachment') continue;
-        if (a.size > MAX_ATTACHMENT_BYTES) { logger.warn?.(`[dmarc] skipping ${a.name}: ${a.size} bytes`); continue; }
+        const type = a['@odata.type'];
+        if (type === '#microsoft.graph.itemAttachment') { attachedMessage = true; continue; }
+        if (type === '#microsoft.graph.referenceAttachment') { notes.push(`${a.name}: a link, not a file`); continue; }
+        if (type !== '#microsoft.graph.fileAttachment') continue;
+        if (a.size > MAX_ATTACHMENT_BYTES) { logger.warn?.(`[dmarc] skipping ${a.name}: ${a.size} bytes`); notes.push(`${a.name}: ${Math.round(a.size / 1048576)} MB, too large`); continue; }
         let buffer;
         if (a.contentBytes) {
           buffer = Buffer.from(a.contentBytes, 'base64');
         } else {
-          const raw = await request(`/users/${mb}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(a.id)}/$value`);
+          const raw = await request(`/users/${mb}/messages/${id}/attachments/${encodeURIComponent(a.id)}/$value`);
           buffer = Buffer.from(await raw.arrayBuffer());
         }
         files.push({ name: a.name, contentType: a.contentType, buffer });
       }
-      return files;
+      if (attachedMessage || (!files.length && /report\s+domain:/i.test(subject))) {
+        try {
+          const raw = await request(`/users/${mb}/messages/${id}/$value`);
+          const source = Buffer.from(await raw.arrayBuffer());
+          if (source.length > MAX_MESSAGE_BYTES) {
+            notes.push(`the message is ${Math.round(source.length / 1048576)} MB, too large to unpack`);
+          } else {
+            const inner = await filesFromMime(source);
+            const have = new Set(files.map((f) => `${f.name}:${f.buffer.length}`));
+            for (const f of inner.files) if (!have.has(`${f.name}:${f.buffer.length}`)) files.push(f);
+            notes.push(...inner.notes);
+            if (attachedMessage && !inner.files.length) notes.push('an attached message was read, with no file in it');
+          }
+        } catch (e) {
+          notes.push(`the message source could not be read (${e.message})`);
+        }
+      }
+      return { files, notes };
     },
 
     /** Checks the settings: sign-in plus reading one message from the mailbox. */
@@ -97,4 +152,4 @@ function createGraphClient({ tenantId, clientId, clientSecret, mailbox, baseUrl 
   };
 }
 
-module.exports = { createGraphClient, MAX_ATTACHMENT_BYTES };
+module.exports = { createGraphClient, filesFromMime, MAX_ATTACHMENT_BYTES, MAX_MESSAGE_BYTES };

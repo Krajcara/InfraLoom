@@ -479,7 +479,7 @@ function MessagesTable({ messages }) {
             <tr key={m.graph_id}>
               <td>{fmtDateTime(m.received_at)}</td><td>{m.from_addr}</td>
               <td className="dmarc-clip" title={m.subject}>{m.subject}</td>
-              <td className={m.status === 'error' ? 'txt-bad' : ''} title={m.error || undefined}>{label[m.status] || m.status}{m.error ? `: ${m.error}` : ''}</td>
+              <td className={m.status === 'error' ? 'txt-bad' : m.error ? 'dmarc-muted' : ''} title={m.error || undefined}>{label[m.status] || m.status}{m.error ? `: ${m.error}` : ''}</td>
             </tr>
           ))}
         </tbody>

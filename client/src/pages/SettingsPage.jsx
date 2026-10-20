@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import CablingSettingsCard from '../components/cabling/CablingSettingsCard';
 import DmarcSettingsCard from '../components/dmarc/DmarcSettingsCard';
+import DomainCheckSettingsCard from '../components/DomainCheckSettingsCard';
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -14,6 +15,7 @@ export default function SettingsPage() {
       {canEdit && <GeneralSection />}
       {canEdit && <TvPagesSection />}
       {canEdit && <CablingSettingsCard />}
+      {canEdit && <DomainCheckSettingsCard />}
       {canEdit && <DmarcSettingsCard />}
       {canEdit && <SmtpSection />}
       {canEdit && <NotificationsSection />}

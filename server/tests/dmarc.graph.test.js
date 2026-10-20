@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { startServer, clientsFor } = require('./_helpers');
-const { reportXml, zipOf, gzipOf } = require('./_dmarcSamples');
+const { reportXml, zipOf, gzipOf, mimeMessage } = require('./_dmarcSamples');
 
 const TENANT = '6f9e3d4c-e6e8-41a7-92a4-27a229ac2459';
 const CLIENT = '6b84056d-2b1d-4880-8017-0132ee391d64';
@@ -16,7 +16,7 @@ const SECRET = 'fake-secret-1';
 const D = '/api/dmarc';
 
 function fakeGraph() {
-  const log = []; const filters = []; const state = { throttleOnce: true, throttled: 0 };
+  const log = []; const filters = []; const sources = {}; const state = { throttleOnce: true, throttled: 0 };
   const iso = (m) => new Date(Date.now() - m * 60_000).toISOString();
   const att = (id, name, buf, extra = {}) => ({ '@odata.type': '#microsoft.graph.fileAttachment', id, name, contentType: 'application/octet-stream', size: buf.length, ...extra, _buf: buf });
   const msgs = [
@@ -61,13 +61,18 @@ function fakeGraph() {
       if (!url.searchParams.get('page')) { const next = new URL(url); next.searchParams.set('page', '2'); return json(200, { value: all.slice(0, 2), '@odata.nextLink': next.toString().replace('http://x', `http://${req.headers.host}`) }); }
       return json(200, { value: all.slice(2) });
     }
+    const src = /^\/messages\/([^/]+)\/\$value$/.exec(rest);
+    if (src) {
+      if (state.failSource === src[1] || !sources[src[1]]) return json(404, { error: { code: 'ErrorItemNotFound', message: 'The specified object was not found in the store.' } });
+      res.writeHead(200, { 'Content-Type': 'message/rfc822' }); return res.end(sources[src[1]]);
+    }
     let mm = /^\/messages\/([^/]+)\/attachments$/.exec(rest);
     if (mm) return json(200, { value: (files[mm[1]] || []).map(({ _buf, ...a }) => ({ ...a, ...(a.contentBytes ? { contentBytes: _buf.toString('base64') } : {}) })) });
     mm = /^\/messages\/([^/]+)\/attachments\/([^/]+)\/\$value$/.exec(rest);
     if (mm) { const a = (files[mm[1]] || []).find((x) => x.id === mm[2]); res.writeHead(200, { 'Content-Type': 'application/octet-stream' }); return res.end(a._buf); }
     return json(404, { error: { code: 'NotFound', message: path } });
   });
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ url: `http://127.0.0.1:${server.address().port}`, log, filters, state, close: () => server.close() })));
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ url: `http://127.0.0.1:${server.address().port}`, log, filters, state, close: () => server.close(), msgs, files, sources, iso })));
 }
 
 let fake; let srv; let c;
@@ -133,4 +138,36 @@ test('when reading fails the page can say why', async () => {
   const s = (await c.viewer.get(`${D}/summary`)).body; assert.match(s.sync.lastError, /invalid_client/);
   await configure({ client_secret: SECRET });
   assert.equal((await c.operator.post(`${D}/sync`)).status, 200); assert.equal((await c.viewer.get(`${D}/summary`)).body.sync.lastError, null);
+});
+
+test('Google: a report that arrives as an attached message, with the archive inside it', async () => {
+  const name = 'google.com!comdata.rs!1760918400!1761004799.zip';
+  const zip = (id, ip) => zipOf({ 'g.xml': reportXml({ id, records: [{ ip, count: 12, dkim: 'fail', spf: 'fail' }, { ip: '40.107.22.78', count: 60 }] }) });
+  const inner = (id, ip) => mimeMessage({ subject: `Report domain: comdata.rs Submitter: google.com Report-ID: ${id}`, parts: [{ name, content: zip(id, ip) }] });
+  const subject = (n) => `Report domain: comdata.rs Submitter: google.com Report-ID: ${n}`;
+  const item = (id) => [{ '@odata.type': '#microsoft.graph.itemAttachment', id, name: 'Report', size: 4000 }];
+  const add = (id, o, files, source) => { fake.msgs.push({ id, from: 'noreply-dmarc-support@google.com', has: true, ...o }); fake.files[id] = files; if (source) fake.sources[id] = source; };
+  // M6: Graph lists an attached message, not a file: the archive is in the source of the message
+  add('M6', { subject: subject('g6'), received: fake.iso(30) }, item('A6'), mimeMessage({ parts: [{ message: inner('g6', '198.18.9.9') }] }));
+  // M7: Graph says there is no attachment at all, but the subject is a report's and the source has one
+  add('M7', { subject: subject('g7'), received: fake.iso(20), has: false }, [], mimeMessage({ parts: [{ message: inner('g7', '198.18.9.10') }] }));
+  // M8: an attached message whose source cannot be read
+  add('M8', { subject: subject('g8'), received: fake.iso(10) }, item('A8'), null); fake.state.failSource = 'M8';
+  // M9: an ordinary mail: its source is none of our business
+  add('M9', { subject: 'Lunch?', from: 'someone@gmail.com', received: fake.iso(5), has: false }, [], mimeMessage({ parts: [] }));
+  const r = await c.operator.post(`${D}/sync`);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual([r.body.messages, r.body.reports, r.body.errors], [4, 2, 0]);
+  const by = Object.fromEntries((await c.viewer.get(`${D}/messages`)).body.map((m) => [m.subject, m]));
+  assert.equal(by[subject('g6')].status, 'ok'); assert.equal(by[subject('g7')].status, 'ok', 'found although Graph listed no attachment');
+  assert.equal(by[subject('g8')].status, 'no-report'); assert.match(by[subject('g8')].error, /^no attachments; the message source could not be read \(Graph 404 ErrorItemNotFound: The specified object was not found in the store\.\)$/);
+  assert.equal(by['Lunch?'].status, 'no-report'); assert.equal(by['Lunch?'].error, 'no attachments');
+  assert.match(by['A very large attachment'].error, /huge\.zip: 11 MB, too large/, 'the reason says what was skipped');
+  const reads = fake.log.filter((l) => /\/messages\/M\d\/\$value$/.test(l)); // the source of a whole message (not of one attachment)
+  assert.deepEqual(reads.map((l) => /messages\/(M\d)/.exec(l)[1]).filter((v, i, a) => a.indexOf(v) === i).sort(), ['M6', 'M7', 'M8'], 'the source of an ordinary mail is not read');
+  const s = (await c.viewer.get(`${D}/summary`)).body;
+  assert.ok(s.sources.some((x) => x.ip === '198.18.9.9' && x.fail === 12) && s.sources.some((x) => x.ip === '198.18.9.10'), 'both reports are in');
+  assert.match(JSON.stringify((await c.admin.get('/api/notifications')).body), /12 messages from 198\.18\.9\.9/);
+  const other = fake.log.filter((l) => !l.startsWith('GET ')); assert.ok(other.every((l) => l === `POST /${TENANT}/oauth2/v2.0/token`), 'still only reads');
+  fake.state.failSource = null;
 });

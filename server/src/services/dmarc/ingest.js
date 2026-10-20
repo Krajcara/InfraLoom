@@ -11,6 +11,14 @@ const RECENT_SECONDS = 3 * 86400;   // a failure in a report older than this is 
 const MAX_ALERTS_PER_RUN = 10;
 const FAIL_STREAK_ALERT = 3;        // consecutive failed reads of the mailbox before an alert
 
+const kb = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+
+/** Why a message gave no report, in a line the Mailbox tab can show. */
+function noReportReason(files, notes) {
+  const seen = files.length ? `${files.slice(0, 3).map((f) => `${f.name} (${kb(f.buffer.length)})`).join(', ')}${files.length > 3 ? ` and ${files.length - 3} more` : ''}: no DMARC report in it` : 'no attachments';
+  return [seen, ...notes].join('; ').slice(0, 450);
+}
+
 /**
  * @param {object} deps
  * @param {object} deps.store    from createStore()
@@ -135,15 +143,18 @@ function createIngestor({ store, graph, config, notify, logger = console, revers
 
         const base = { graph_id: m.id, received_at: m.receivedDateTime, subject: m.subject?.slice(0, 300) ?? null, from_addr: m.from?.emailAddress?.address ?? null };
         try {
-          if (!m.hasAttachments) { store.logMessage({ ...base, status: 'no-report' }); continue; }
+          // the attachments are looked at whatever Graph's hasAttachments says: for a message with an attached message it is not reliable
+          const got = await graph.getAttachments(m.id, { subject: m.subject });
+          const files = Array.isArray(got) ? got : got.files;
+          const notes = Array.isArray(got) ? [] : got.notes;
           let found = 0;
-          for (const f of await graph.getAttachments(m.id)) {
+          for (const f of files) {
             const r = await ingestBuffer(f.buffer, f.name, { origin: 'graph', messageId: m.id }, { quiet });
             found += r.reports + r.duplicates;
             stats.reports += r.reports; stats.duplicates += r.duplicates; stats.records += r.records;
             alerts.push(...r.alerts);
           }
-          store.logMessage({ ...base, status: found ? 'ok' : 'no-report' });
+          store.logMessage({ ...base, status: found ? 'ok' : 'no-report', error: found ? null : noReportReason(files, notes) });
         } catch (e) {
           stats.errors++;
           logger.error?.(`[dmarc] message "${m.subject}" — ${e.message}`);
@@ -178,4 +189,4 @@ function createIngestor({ store, graph, config, notify, logger = console, revers
   return { syncMailbox, ingestBuffer, dispatch, isRunning: () => running };
 }
 
-module.exports = { createIngestor, BENIGN_OVERRIDES, FAIL_STREAK_ALERT, MAX_ALERTS_PER_RUN };
+module.exports = { createIngestor, noReportReason, BENIGN_OVERRIDES, FAIL_STREAK_ALERT, MAX_ALERTS_PER_RUN };

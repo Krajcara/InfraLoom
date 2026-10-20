@@ -3,7 +3,7 @@
 // Domains: the DMARC record of each (from Cloudflare, or from public DNS for a domain added by hand), what it means,
 // and the alert when a record gets worse. Pure functions first, then the refresh.
 
-const dns = require('node:dns/promises');
+const { getResolver } = require('../../lib/domainResolver');
 
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/;
 const normalizeDomain = (s) => String(s ?? '').trim().toLowerCase().replace(/\.$/, '');
@@ -77,7 +77,7 @@ function buildTable({ registry, stats, policies, mailbox }) {
 
 const defaultResolveTxt = async (name) => {
   if (/^(0|false|no|off)$/i.test(process.env.DMARC_DNS_LOOKUP || '')) throw Object.assign(new Error('DNS lookups are switched off'), { code: 'OFF' });
-  const rows = await dns.resolveTxt(name);
+  const rows = await getResolver().resolveTxt(name); // the DNS servers chosen in Settings (public by default)
   return rows.map((chunks) => chunks.join(''));
 };
 
