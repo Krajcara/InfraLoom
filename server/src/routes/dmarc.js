@@ -5,6 +5,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
 const config = require('../services/dmarc/config');
 const service = require('../services/dmarc/service');
+const domainsLib = require('../services/dmarc/domains');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -49,9 +50,13 @@ router.use((req, res, next) => {
 
 router.get('/summary', h((req, res) => {
   const st = service.getStore();
+  const cfg = service.state().cfg;
   res.json({
     days: days(req),
     ...st.summary(since(req), domain(req)),
+    // one row per domain (all of them, whatever the domain filter): the stats of the period and what its DMARC record says
+    domainTable: domainsLib.buildTable({ registry: st.listRegistry(), stats: st.domainStats(since(req)), policies: st.policyByDomain(since(req)), mailbox: cfg.mailbox }),
+    cloudflare: { enabled: !!service.cloudflare(), checkRecords: cfg.cfCheckRecords, lastRefresh: st.getState('domains_refreshed'), lastError: st.getState('domains_error') || null, refreshing: service.domains().isRunning() },
     sync: {
       enabled: !!service.graph(),
       mailbox: service.graph()?.mailbox ?? null,
@@ -67,7 +72,8 @@ router.get('/summary', h((req, res) => {
 // the dashboard card: the last 30 days
 router.get('/dashboard', h((req, res) => {
   const st = service.getStore();
-  res.json({ ...st.dashboard(Math.floor(Date.now() / 1000) - 30 * 86400), sync_enabled: !!service.graph(), last_error: st.getState('last_sync_error') || null, last_sync: st.getState('last_sync') });
+  const mailbox = service.state().cfg.mailbox;
+  res.json({ ...st.dashboard(Math.floor(Date.now() / 1000) - 30 * 86400), domain_issues: st.listRegistry().filter((r) => domainsLib.hasIssue(r, mailbox)).length, sync_enabled: !!service.graph(), last_error: st.getState('last_sync_error') || null, last_sync: st.getState('last_sync') });
 }));
 
 router.get('/reports', h((req, res) => {
@@ -127,6 +133,53 @@ router.post('/upload', canEdit, express.raw({ type: () => true, limit: '20mb' })
   await service.ingestor().dispatch(r.alerts);
   audit(req, 'upload', 'dmarc', null, { file: name, reports: r.reports, duplicates: r.duplicates });
   res.json({ file: name, reports: r.reports, duplicates: r.duplicates, records: r.records, alerts: r.alerts.length });
+}));
+
+// ── domains ──
+
+router.post('/domains/refresh', canEdit, h(async (req, res) => {
+  let r;
+  try { r = await service.domains().refresh(); } catch (e) { throw bad(e.message, 502); }
+  audit(req, 'domains.refresh', 'dmarc', null, r);
+  res.json(r);
+}));
+
+router.post('/domains', canEdit, h(async (req, res) => {
+  const st = service.getStore();
+  const name = domainsLib.normalizeDomain(req.body?.name);
+  if (!domainsLib.isDomain(name)) throw bad('That is not a domain name (like example.com)');
+  const have = st.getRegistry(name);
+  if (have) throw bad(have.source === 'cloudflare' ? 'This domain is already listed (it comes from Cloudflare)' : 'This domain is already listed');
+  st.addManual(name);
+  try { await service.domains().checkOne(st.getRegistry(name)); } catch { /* it shows as not checked */ }
+  audit(req, 'domain.add', 'dmarc_domain', null, { name });
+  res.status(201).json(st.getRegistry(name));
+}));
+
+router.patch('/domains', canEdit, h((req, res) => {
+  const st = service.getStore();
+  const name = domainsLib.normalizeDomain(req.body?.name);
+  if (typeof req.body?.ignored !== 'boolean') throw bad('ignored must be true or false');
+  if (!st.setIgnored(name, req.body.ignored)) throw bad('Domain not found', 404);
+  audit(req, 'domain.update', 'dmarc_domain', null, { name, ignored: req.body.ignored });
+  res.json(st.getRegistry(name));
+}));
+
+router.post('/domains/remove', canEdit, h((req, res) => {
+  const st = service.getStore();
+  const name = domainsLib.normalizeDomain(req.body?.name);
+  const have = st.getRegistry(name);
+  if (!have) throw bad('Domain not found', 404);
+  if (have.source === 'cloudflare') throw bad('A domain from Cloudflare cannot be removed here: it goes when it leaves Cloudflare. Mute it to stop its alerts.');
+  st.removeManual(name);
+  audit(req, 'domain.remove', 'dmarc_domain', null, { name });
+  res.json({ removed: name });
+}));
+
+router.post('/test-cloudflare', canAdmin, h(async (req, res) => {
+  const cf = service.cloudflare();
+  if (!cf) throw bad('No Cloudflare API token is saved');
+  try { res.json(await cf.test()); } catch (e) { throw bad(e.message, 502); }
 }));
 
 router.post('/test-graph', canAdmin, h(async (req, res) => {

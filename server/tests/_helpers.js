@@ -30,7 +30,7 @@ function tempEnv(dir) {
 /** extraEnv: more environment variables for the server (e.g. the address of a fake Microsoft Graph). */
 async function startServer(extraEnv = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'infraloom-test-'));
-  const env = { ...tempEnv(dir), DMARC_PTR_LOOKUP: 'false', ...extraEnv };
+  const env = { ...tempEnv(dir), DMARC_PTR_LOOKUP: 'false', DMARC_DNS_LOOKUP: 'false', ...extraEnv };
   const port = await freePort();
   env.APP_PORT = String(port);
   const seed = spawnSync('node', ['src/db/seed.js'], { cwd: SERVER_DIR, env, encoding: 'utf8' });

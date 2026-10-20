@@ -35,9 +35,9 @@ const mkIngestor = (over = {}) => {
 const upload = async (ing, xml, opts = {}) => { const r = await ing.ingestor.ingestBuffer(Buffer.from(xml), 'r.xml', { origin: 'upload' }, opts); await ing.ingestor.dispatch(r.alerts); return r; };
 
 test('the tables are made by a numbered migration', () => {
-  assert.deepEqual(db.prepare('SELECT version FROM dmarc_migrations').all().map((r) => r.version), ['001_dmarc']);
+  assert.deepEqual(db.prepare('SELECT version FROM dmarc_migrations').all().map((r) => r.version), ['001_dmarc', '002_domains']);
   const names = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'dmarc_%'").all().map((r) => r.name);
-  for (const t of ['dmarc_config', 'dmarc_reports', 'dmarc_records', 'dmarc_sources', 'dmarc_groups', 'dmarc_messages', 'dmarc_state', 'dmarc_migrations']) assert.ok(names.includes(t), t);
+  for (const t of ['dmarc_config', 'dmarc_reports', 'dmarc_records', 'dmarc_sources', 'dmarc_groups', 'dmarc_messages', 'dmarc_state', 'dmarc_migrations', 'dmarc_domains']) assert.ok(names.includes(t), t);
 });
 
 test('settings: defaults, validation, and a secret that is never given back', () => {

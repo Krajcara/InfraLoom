@@ -138,15 +138,16 @@ patch panel, fibre panel, desktop, notebook, printer, access point), and the **p
 
 Mail receivers (Google, Microsoft, Yahoo, ...) send a daily *aggregate report* for every domain that publishes a DMARC record, to the address in its `rua=` tag. InfraLoom reads those reports from a dedicated Microsoft 365 mailbox through Microsoft Graph (read-only, and limited to that one mailbox), keeps them, and shows **who sends mail in the name of your domains**: which senders pass DMARC and which fail, grouped by provider (Microsoft 365, Google, Amazon SES, ...; without a PTR record, by network prefix).
 
-- **Network → DMARC** shows the totals, a chart per day, and three tabs: **Senders** (approve a whole provider with one click; open it to see the addresses, who reported them and how DKIM and SPF did), **Reports** (one report in a side panel, with a link to the original XML) and **Mailbox** (what was read, and what was not a report). It filters by domain and by period (7 days to a year).
+- **Network → DMARC** shows a **table of your domains** (the DMARC record of each, the volume, the share that is DMARC compliant as a donut, and DKIM and SPF each split into *aligned*, *passed but not aligned with the From domain* and *failed*; click a domain to look at it alone), an **authentication overview** (a pair of bars per day — compliant and invalid, as messages or as percent — and SPF, DKIM and DMARC as a whole), the totals, and three tabs: **Senders** (approve a whole provider with one click; open it to see the addresses, who reported them and how DKIM and SPF did), **Reports** (one report in a side panel, with a link to the original XML) and **Mailbox** (what was read, and what was not a report). It filters by domain and by period (7 days to a year).
+- **Domains.** The list can be read from **Cloudflare** (an API token with *Zone → Zone → Read* and *Zone → DNS → Read*, both read-only, limited to the zones you want; **Settings → DMARC → Test Cloudflare**), so that every domain you own is on the page — including those that never sent a report — and the page shows what the `_dmarc` record of each says: *Protected* (quarantine or reject for all mail), *Partly enforced* (pct below 100), *Monitoring only* (p=none), *No DMARC record*, *Several records* (receivers ignore them all), *Invalid record*, and whether `rua` points to your mailbox. Domains outside Cloudflare are added by hand (their record is looked up in public DNS). A domain that is not mail-sending can be **muted**. The list is refreshed every night and with **Refresh from Cloudflare**; without a token nothing is read from Cloudflare.
 - **Import files** takes `.xml`, `.zip` and `.gz` reports by hand, so the page is useful before the mailbox is set up, or without Microsoft 365 at all.
-- **Alerts**, through the usual [notification channels](#notifications) (each can be switched off per channel): a DMARC failure from a sender that is not approved (once a day per sender, not with every report), a new sender, an SPF permerror for your domain, failures the receiver let through anyway (forwarding, mailing lists — off by default), the mailbox that cannot be read (after three failed reads in a row), and the client secret that is about to expire (30 days, 7 days, and when it has). A failure in a report older than three days is history and raises nothing; the first read of the mailbox is a quiet backfill that does not announce new senders.
+- **Alerts**, through the usual [notification channels](#notifications) (each can be switched off per channel): a DMARC failure from a sender that is not approved (once a day per sender, not with every report), a new sender, an SPF permerror for your domain, failures the receiver let through anyway (forwarding, mailing lists — off by default), a domain whose DMARC record got worse (gone, weaker, invalid, doubled, or `rua` no longer pointing to your mailbox; the first look at a domain is only a starting point, and muted domains are left alone), the mailbox that cannot be read (after three failed reads in a row), and the client secret that is about to expire (30 days, 7 days, and when it has). A failure in a report older than three days is history and raises nothing; the first read of the mailbox is a quiet backfill that does not announce new senders.
 - **Approving** is by group or by single address. Groups named in *Trusted senders* (default *Microsoft 365*) are approved the first time they are seen.
-- The **Dashboard** card (offered once the module is on) shows the pass rate for the last 30 days, the failures, and whether any sender still needs a decision or the mailbox cannot be read.
+- The **Dashboard** card (offered once the module is on) shows the pass rate for the last 30 days, the failures, and whether any sender still needs a decision, a domain's record needs a look, or the mailbox cannot be read.
 - **Operators** can approve senders, import files and read the mailbox; **admins** change the settings; viewers read.
 - Reports are kept 400 days and the original XML 90 days (both set in **Settings → DMARC**), and so is the log of processed mail.
 
-The module is **off until you switch it on** in **Settings → DMARC**, where you also enter the mailbox and the Microsoft 365 application's details. The client secret is stored in the encrypted database in a table of the module's own, and neither the settings screen nor any API ever returns it again.
+The module is **off until you switch it on** in **Settings → DMARC**, where you also enter the mailbox and the Microsoft 365 application's details. The client secret (and the Cloudflare token, if you use one) is stored in the encrypted database in a table of the module's own, and neither the settings screen nor any API ever returns it again.
 
 #### Microsoft 365 setup
 
@@ -170,7 +171,7 @@ You need a mailbox that receives the reports, an *app registration* that may rea
 4. **In InfraLoom**: *Settings → DMARC* — tenant ID, client ID, client secret, the secret's expiry date (for the reminder) and the mailbox; **Save**, then **Test connection**.
 5. **DNS**: only when the page shows that the mailbox can be read, change `rua` in the `_dmarc` TXT record of each domain, for a while to both the old and the new address, e.g. `rua=mailto:dmarc@example.com,mailto:old@example.com`. Reports for a domain *other than* the mailbox's own need a record at the receiving side: `other-domain.example._report._dmarc.example.com TXT "v=DMARC1"`.
 
-The module only ever reads: it does not delete, move or mark mail as read, and the access it has cannot do more. A report, an archive or a mail that is not what it should be is recorded and skipped; archives are unpacked with limits (30 MB per file, 20 files), and XML that defines entities is refused. `DMARC_PTR_LOOKUP=false` in `.env` turns off the reverse-DNS lookup of sender addresses.
+The module only ever reads: it does not delete, move or mark mail as read, and the access it has cannot do more. A report, an archive or a mail that is not what it should be is recorded and skipped; archives are unpacked with limits (30 MB per file, 20 files), and XML that defines entities is refused. `DMARC_PTR_LOOKUP=false` in `.env` turns off the reverse-DNS lookup of sender addresses, and `DMARC_DNS_LOOKUP=false` the public-DNS lookup of the records of domains added by hand. The Cloudflare token is only ever used to read zones and DNS records; make it read-only and limit it to the zones you want.
 
 ### Hypervisor usage thresholds
 
@@ -225,7 +226,7 @@ back, and an amber banner on every page reminds you that alerts are muted.
 
 In-app bell with live toasts, plus Telegram, Slack, Discord, ntfy, Pushover and e-mail. Every event type
 (monitor down/up, SSL/licence/Entra expiry, new or offline network device, hypervisor unreachable, UPS on battery,
-low battery, power restored, UPS offline/online, network device health and restarts, hypervisor usage above warning/critical level and back to normal, DMARC failures, new senders, SPF permerror, an unreadable DMARC mailbox and an expiring DMARC secret, patch run failed, machine needs a restart after patching) can be switched per channel, with quiet hours, and muted per target by a
+low battery, power restored, UPS offline/online, network device health and restarts, hypervisor usage above warning/critical level and back to normal, DMARC failures, new senders, SPF permerror, an unreadable DMARC mailbox, an expiring DMARC secret and a DMARC record that got worse, patch run failed, machine needs a restart after patching) can be switched per channel, with quiet hours, and muted per target by a
 [maintenance window](#maintenance-windows).
 
 ### Status pages
@@ -299,6 +300,7 @@ All settings are environment variables in `/opt/infraloom/.env` (see [`.env.exam
 | `COOKIE_SECURE` | `true` once served over HTTPS |
 | `API_RATE_LIMIT` | Optional; requests per minute allowed from one address to the API (default `300`) |
 | `DMARC_PTR_LOOKUP` | Optional; `false` turns off the reverse-DNS lookup of the addresses in DMARC reports (they are then grouped by network) |
+| `DMARC_DNS_LOOKUP` | Optional; `false` turns off the public-DNS lookup of the DMARC record of domains added by hand |
 | `GITHUB_TOKEN` | Optional; only needed if the repository is private |
 
 Notification channels, SMTP, quiet hours, TV pages and schedules are configured in the UI under **Settings**.
@@ -467,7 +469,7 @@ Backups run on a configurable daily schedule with configurable retention, or on 
 - The [Cabling](#cabling-technical-rooms) data is a map of your network (rooms, racks, patch panels, outlets). An administrator can switch
   the module off, or limit it to your own networks, in **Settings → Cabling module**.
 - CSV exports (the audit log, and the cabling lists) neutralise formula-injection payloads (values starting with `=`, `+`, `-` or `@`).
-- The DMARC client secret is stored only in the module's own table of the encrypted database and is never returned by any API; the application it belongs to should be limited to the one mailbox, as described in [Microsoft 365 setup](#microsoft-365-setup). The mailbox receives mail from anyone, so attachments are unpacked with size limits.
+- The DMARC client secret and the Cloudflare API token are stored only in the module's own table of the encrypted database and are never returned by any API; the application it belongs to should be limited to the one mailbox, as described in [Microsoft 365 setup](#microsoft-365-setup). The mailbox receives mail from anyone, so attachments are unpacked with size limits.
 - Credentials with broad reach — the Proxmox host SSH login used for LXC patching, Hyper-V per-guest credentials, and
   the FortiGate API token — should only be configured where you actually need them. Prefer read-only profiles.
 - Serve InfraLoom over HTTPS and set `COOKIE_SECURE=true` (see [HTTPS](#https)).

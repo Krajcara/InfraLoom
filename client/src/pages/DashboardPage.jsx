@@ -261,11 +261,13 @@ function DmarcWidgetBody() {
   const d = state.data;
   const n = (v, one, many) => `${v} ${v === 1 ? one : many}`;
   const broken = d.last_error ? <p className="cab-dash-warn"><Link to="/dmarc">⚠ The mailbox cannot be read: {d.last_error}</Link></p> : null;
+  const domainsWarn = d.domain_issues > 0 ? <p className="cab-dash-warn"><Link to="/dmarc">⚠ {n(d.domain_issues, 'domain needs', 'domains need')} a look (DMARC record)</Link></p> : null;
   if (!d.reports) {
     return (
       <div className="cab-dash">
         <p className="muted">No reports in the last 30 days. {d.sync_enabled ? 'Waiting for the first ones to arrive.' : <><Link to="/dmarc">Import some</Link>, or set up the mailbox in Settings.</>}</p>
         {broken}
+        {domainsWarn}
       </div>
     );
   }
@@ -282,11 +284,12 @@ function DmarcWidgetBody() {
         {rows.map(([label, value, warn]) => <Fragment key={label}><dt>{label}</dt><dd className={warn ? 'cab-dash-warn' : ''}>{value}</dd></Fragment>)}
       </dl>
       {broken}
+      {domainsWarn}
       {d.unapproved_failing > 0
         ? <p className="cab-dash-warn"><Link to="/dmarc">⚠ {n(d.unapproved_failing, 'sender fails', 'senders fail')} DMARC and {d.unapproved_failing === 1 ? 'is' : 'are'} not approved</Link></p>
         : d.unapproved > 0
           ? <p className="cab-dash-warn"><Link to="/dmarc">⚠ {n(d.unapproved, 'sender is', 'senders are')} not approved yet</Link></p>
-          : !broken && <p className="cab-dash-ok">✓ All senders approved</p>}
+          : !broken && !domainsWarn && <p className="cab-dash-ok">✓ All senders approved</p>}
     </div>
   );
 }

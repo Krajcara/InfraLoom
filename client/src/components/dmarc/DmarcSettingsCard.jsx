@@ -5,6 +5,8 @@ import { api } from '../../api';
 export default function DmarcSettingsCard() {
   const [s, setS] = useState(null);
   const [secret, setSecret] = useState('');
+  const [cfToken, setCfToken] = useState('');
+  const [cfTest, setCfTest] = useState(null);
   const [msg, setMsg] = useState(null);
   const [test, setTest] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -15,13 +17,14 @@ export default function DmarcSettingsCard() {
   const set = (k, v) => { setS({ ...s, [k]: v }); setDirty(true); setMsg(null); setTest(null); };
 
   async function save() {
-    setSaving(true); setMsg(null); setTest(null);
+    setSaving(true); setMsg(null); setTest(null); setCfTest(null);
     try {
       const body = { ...s };
-      delete body.client_secret_set; delete body.graph_configured;
+      delete body.client_secret_set; delete body.graph_configured; delete body.cf_token_set; delete body.cf_configured;
       if (secret) body.client_secret = secret;
+      if (cfToken) body.cf_token = cfToken;
       const d = await api.put('/dmarc/settings', body);
-      setS(d); setSecret(''); setDirty(false);
+      setS(d); setSecret(''); setCfToken(''); setDirty(false);
       setMsg({ type: 'success', text: 'Saved. The menu and the dashboard card update after you reload the page.' });
     } catch (err) { setMsg({ type: 'error', text: err.message }); } finally { setSaving(false); }
   }
@@ -32,6 +35,19 @@ export default function DmarcSettingsCard() {
       const r = await api.post('/dmarc/test-graph');
       setTest({ ok: true, text: r.sample ? `Connected. The newest message in the mailbox: “${r.sample.subject}”.` : 'Connected. The mailbox is empty so far.' });
     } catch (err) { setTest({ ok: false, text: err.message }); }
+  }
+
+  async function runCfTest() {
+    setCfTest({ busy: true });
+    try {
+      const r = await api.post('/dmarc/test-cloudflare');
+      setCfTest({ ok: true, text: `Connected. ${r.zones} zone${r.zones === 1 ? '' : 's'} can be read.` });
+    } catch (err) { setCfTest({ ok: false, text: err.message }); }
+  }
+
+  async function removeCfToken() {
+    if (!window.confirm('Remove the Cloudflare API token? The domains already listed stay, but they are no longer refreshed from Cloudflare.')) return;
+    try { const d = await api.put('/dmarc/settings', { clear_cf_token: true }); setS(d); setCfTest(null); setMsg({ type: 'success', text: 'The Cloudflare token was removed.' }); } catch (err) { setMsg({ type: 'error', text: err.message }); }
   }
 
   return (
@@ -65,12 +81,23 @@ export default function DmarcSettingsCard() {
       <label className="checkbox-row"><input type="checkbox" checked={s.store_raw_xml} onChange={(e) => set('store_raw_xml', e.target.checked)} /><span>Keep the original XML of each report</span></label>
       <label className="checkbox-row"><input type="checkbox" checked={s.alert_new_sources} onChange={(e) => set('alert_new_sources', e.target.checked)} /><span>Notify about a new sender</span></label>
       <label className="checkbox-row"><input type="checkbox" checked={s.alert_overrides} onChange={(e) => set('alert_overrides', e.target.checked)} /><span>Also notify about failures the receiver let through (forwarding, mailing lists)</span></label>
+      <h3 className="cab-h3">Domains from Cloudflare (optional)</h3>
+      <p className="muted">The list of your domains, and the DMARC record of each, can be read from Cloudflare. Create an <strong>API token</strong> (My Profile → API Tokens) with <strong>Zone → Zone → Read</strong> and <strong>Zone → DNS → Read</strong> — read-only — limited to the zones you want. Without a token, domains are added by hand on the DMARC page and their records are looked up in public DNS.</p>
+      <div className="form-row">
+        <label>Cloudflare API token
+          <input type="password" value={cfToken} onChange={(e) => { setCfToken(e.target.value); setDirty(true); setMsg(null); setCfTest(null); }} placeholder={s.cf_token_set ? '•••••••• saved — leave empty to keep it' : 'the token'} autoComplete="new-password" aria-label="Cloudflare API token" />
+        </label>
+        {s.cf_token_set && <button type="button" className="cab-btn-ghost" onClick={removeCfToken}>Remove the token</button>}
+      </div>
+      <label className="checkbox-row"><input type="checkbox" checked={s.cf_check_records} onChange={(e) => set('cf_check_records', e.target.checked)} /><span>Read the DMARC record of each zone through the Cloudflare API (needs Zone → DNS → Read)</span></label>
       <div className="form-row">
         <button onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
         <button type="button" className="cab-btn-ghost" onClick={runTest} disabled={dirty || !s.graph_configured || test?.busy} title={dirty ? 'Save first' : !s.graph_configured ? 'Fill in tenant, client, secret and mailbox first' : ''}>{test?.busy ? 'Testing…' : 'Test connection'}</button>
+        <button type="button" className="cab-btn-ghost" onClick={runCfTest} disabled={dirty || !s.cf_configured || cfTest?.busy} title={dirty ? 'Save first' : !s.cf_configured ? 'Save a Cloudflare API token first' : ''}>{cfTest?.busy ? 'Testing…' : 'Test Cloudflare'}</button>
       </div>
       {msg && <p className={msg.type === 'error' ? 'error' : 'success'}>{msg.text}</p>}
       {test && !test.busy && <p className={test.ok ? 'success' : 'error'}>{test.text}</p>}
+      {cfTest && !cfTest.busy && <p className={cfTest.ok ? 'success' : 'error'}>{cfTest.text}</p>}
     </section>
   );
 }

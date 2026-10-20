@@ -8,11 +8,14 @@ const config = require('./config');
 const { createStore } = require('./store');
 const { createGraphClient } = require('./graph');
 const { createIngestor } = require('./ingest');
+const { createCloudflareClient } = require('./cloudflare');
+const { createDomainService } = require('./domains');
 
 let store = null;
 let current = null; // { cfg, graph, ingestor }
 let tasks = [];
 let initialTimer = null;
+let domainsTimer = null;
 
 const getStore = () => store || (store = createStore());
 
@@ -22,13 +25,20 @@ function build() {
   const cfg = config.get();
   let graph = null;
   if (cfg.tenantId && cfg.clientId && cfg.clientSecret && cfg.mailbox) graph = createGraphClient({ ...cfg, logger: console });
-  current = { cfg, graph, ingestor: createIngestor({ store: getStore(), graph, config: cfg, notify, logger: console }) };
+  const cloudflare = cfg.cfToken ? createCloudflareClient({ token: cfg.cfToken, logger: console }) : null;
+  current = {
+    cfg, graph, cloudflare,
+    ingestor: createIngestor({ store: getStore(), graph, config: cfg, notify, logger: console }),
+    domains: createDomainService({ store: getStore(), cloudflare, config: cfg, notify, logger: console }),
+  };
   return current;
 }
 
 const state = () => current || build();
 const ingestor = () => state().ingestor;
 const graph = () => state().graph;
+const cloudflare = () => state().cloudflare;
+const domains = () => state().domains;
 
 /** Cron expression for "every N minutes" (up to 59), or every N/60 hours. */
 function syncExpression(minutes) {
@@ -64,11 +74,12 @@ function stopTasks() {
   tasks.forEach((t) => t.stop());
   tasks = [];
   if (initialTimer) { clearTimeout(initialTimer); initialTimer = null; }
+  if (domainsTimer) { clearTimeout(domainsTimer); domainsTimer = null; }
 }
 
 function schedule() {
   stopTasks();
-  const { cfg, graph: g, ingestor: ing } = state();
+  const { cfg, graph: g, ingestor: ing, cloudflare: cf, domains: dom } = state();
   if (!cfg.enabled) return;
   if (g) {
     const run = () => ing.syncMailbox().catch(() => {});
@@ -77,6 +88,10 @@ function schedule() {
     initialTimer.unref?.();
   }
   tasks.push(cron.schedule('17 3 * * *', () => daily()));
+  // the domains (Cloudflare zones, and the DMARC record of each): once a night, and a little after the start
+  const refreshDomains = () => dom.refresh().catch(() => {});
+  tasks.push(cron.schedule('40 3 * * *', refreshDomains));
+  if (cf || getStore().listRegistry().length) { domainsTimer = setTimeout(refreshDomains, 45_000); domainsTimer.unref?.(); }
 }
 
 /** Called once from the server start. */
@@ -91,4 +106,4 @@ function reload() {
   schedule();
 }
 
-module.exports = { initScheduler, reload, ingestor, graph, getStore, syncExpression, checkSecretExpiry, daily, state };
+module.exports = { initScheduler, reload, ingestor, graph, cloudflare, domains, getStore, syncExpression, checkSecretExpiry, daily, state };

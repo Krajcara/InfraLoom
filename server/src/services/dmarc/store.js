@@ -104,6 +104,44 @@ function createStore(db = require('../../db/database')) {
       return { reportsDeleted, rawCleared, messagesDeleted };
     },
 
+    // ---------- domains: the registry and the stats ----------
+
+    listRegistry: () => db.prepare('SELECT * FROM dmarc_domains ORDER BY name').all(),
+    getRegistry: (name) => db.prepare('SELECT * FROM dmarc_domains WHERE name = ?').get(name),
+    upsertRegistry: ({ name, source, zone_id: zoneId }) => db.prepare(`
+      INSERT INTO dmarc_domains (name, source, zone_id) VALUES (?, ?, ?)
+      ON CONFLICT(name) DO UPDATE SET source = excluded.source, zone_id = excluded.zone_id`).run(name, source, zoneId ?? null),
+    saveCheck: (name, c) => db.prepare(`
+      UPDATE dmarc_domains SET record_raw = @record_raw, record_count = @record_count, p = @p, sp = @sp, pct = @pct, adkim = @adkim, aspf = @aspf,
+        rua = @rua, health = @health, record_error = @record_error, checked_at = strftime('%s','now') WHERE name = @name`)
+      .run({ record_raw: null, record_count: null, p: null, sp: null, pct: null, adkim: null, aspf: null, rua: '', record_error: null, ...c, name }),
+    setIgnored: (name, ignored) => db.prepare('UPDATE dmarc_domains SET ignored = ? WHERE name = ?').run(ignored ? 1 : 0, name).changes > 0,
+    addManual: (name) => db.prepare("INSERT OR IGNORE INTO dmarc_domains (name, source) VALUES (?, 'manual')").run(name).changes > 0,
+    removeManual: (name) => db.prepare("DELETE FROM dmarc_domains WHERE name = ? AND source = 'manual'").run(name).changes > 0,
+    pruneCloudflare: (keep) => (keep.length
+      ? db.prepare(`DELETE FROM dmarc_domains WHERE source = 'cloudflare' AND name NOT IN (${keep.map(() => '?').join(',')})`).run(...keep).changes
+      : db.prepare("DELETE FROM dmarc_domains WHERE source = 'cloudflare'").run().changes),
+
+    // per domain: messages, DMARC pass, and for DKIM and SPF how many were aligned (the check that counts for DMARC) and how many
+    // passed their own check without being aligned with the From domain; the rest failed
+    domainStats: (sinceTs, domain) => db.prepare(`
+      SELECT rp.domain AS domain, COUNT(DISTINCT rp.id) AS reports, SUM(r.count) AS total,
+             SUM(CASE WHEN r.dmarc_pass = 1 THEN r.count ELSE 0 END) AS pass,
+             SUM(CASE WHEN r.dkim_eval = 'pass' THEN r.count ELSE 0 END) AS dkim_aligned,
+             SUM(CASE WHEN COALESCE(r.dkim_eval,'') != 'pass' AND EXISTS (SELECT 1 FROM json_each(r.dkim_results) j WHERE json_extract(j.value, '$.result') = 'pass') THEN r.count ELSE 0 END) AS dkim_unaligned_pass,
+             SUM(CASE WHEN r.spf_eval = 'pass' THEN r.count ELSE 0 END) AS spf_aligned,
+             SUM(CASE WHEN COALESCE(r.spf_eval,'') != 'pass' AND EXISTS (SELECT 1 FROM json_each(r.spf_results) j WHERE json_extract(j.value, '$.result') = 'pass') THEN r.count ELSE 0 END) AS spf_unaligned_pass
+      FROM dmarc_records r JOIN dmarc_reports rp ON rp.id = r.report_id
+      WHERE rp.date_end >= @since ${domain ? 'AND rp.domain = @domain' : ''}
+      GROUP BY rp.domain`).all({ since: sinceTs, domain }),
+
+    // the policy each domain published, as of its newest report
+    policyByDomain: (sinceTs) => {
+      const m = new Map();
+      for (const r of db.prepare('SELECT domain, policy_p, policy_sp, policy_pct FROM dmarc_reports WHERE date_end >= ? ORDER BY date_end DESC, id DESC').all(sinceTs)) if (!m.has(r.domain)) m.set(r.domain, r);
+      return m;
+    },
+
     // ---------- queries for the screens ----------
 
     summary: (sinceTs, domain) => {
@@ -176,7 +214,16 @@ function createStore(db = require('../../db/database')) {
         GROUP BY COALESCE(s.provider, '${UNKNOWN}')
         ORDER BY fail DESC, total DESC`).all(p);
 
-      return { totals, daily, groups, sources, reporters, domains, latestPolicy };
+      const ds = db.prepare(`
+        SELECT SUM(r.count) AS total, SUM(CASE WHEN r.dkim_eval = 'pass' THEN r.count ELSE 0 END) AS dkim_aligned,
+               SUM(CASE WHEN COALESCE(r.dkim_eval,'') != 'pass' AND EXISTS (SELECT 1 FROM json_each(r.dkim_results) j WHERE json_extract(j.value, '$.result') = 'pass') THEN r.count ELSE 0 END) AS dkim_unaligned_pass,
+               SUM(CASE WHEN r.spf_eval = 'pass' THEN r.count ELSE 0 END) AS spf_aligned,
+               SUM(CASE WHEN COALESCE(r.spf_eval,'') != 'pass' AND EXISTS (SELECT 1 FROM json_each(r.spf_results) j WHERE json_extract(j.value, '$.result') = 'pass') THEN r.count ELSE 0 END) AS spf_unaligned_pass
+        FROM dmarc_records r JOIN dmarc_reports rp ON rp.id = r.report_id WHERE rp.date_end >= @since ${dom}`).get(p);
+      const split = (aligned, unaligned) => ({ aligned: aligned ?? 0, notAligned: unaligned ?? 0, failed: Math.max(0, (ds.total ?? 0) - (aligned ?? 0) - (unaligned ?? 0)) });
+      const auth = { total: ds.total ?? 0, dmarc: { pass: totals.pass, fail: totals.fail }, dkim: split(ds.dkim_aligned, ds.dkim_unaligned_pass), spf: split(ds.spf_aligned, ds.spf_unaligned_pass) };
+
+      return { totals, auth, daily, groups, sources, reporters, domains, latestPolicy };
     },
 
     // the numbers on the dashboard card

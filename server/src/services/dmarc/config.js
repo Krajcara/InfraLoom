@@ -22,6 +22,8 @@ const DEFAULTS = {
   trusted_groups: 'Microsoft 365',
   alert_new_sources: 'true',
   alert_overrides: 'false',
+  cf_token: '',                 // Cloudflare API token (Zone → Zone → Read, and Zone → DNS → Read for the records); write-only
+  cf_check_records: 'true',     // read the DMARC record of each zone through the Cloudflare API
 };
 
 const rawAll = () => ({ ...DEFAULTS, ...Object.fromEntries(db.prepare('SELECT key, value FROM dmarc_config').all().map((r) => [r.key, r.value])) });
@@ -40,6 +42,7 @@ function get() {
     retentionDays: n(r.retention_days, 400), rawXmlDays: n(r.raw_xml_days, 90), storeRawXml: bool(r.store_raw_xml),
     trustedGroups: r.trusted_groups.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
     alertOnNewSources: bool(r.alert_new_sources), alertOnOverrides: bool(r.alert_overrides),
+    cfToken: r.cf_token, cfCheckRecords: bool(r.cf_check_records),
   };
 }
 
@@ -53,6 +56,7 @@ function publicConfig() {
     poll_minutes: Number(r.poll_minutes), initial_lookback_days: Number(r.initial_lookback_days), retention_days: Number(r.retention_days), raw_xml_days: Number(r.raw_xml_days),
     store_raw_xml: bool(r.store_raw_xml), trusted_groups: r.trusted_groups, alert_new_sources: bool(r.alert_new_sources), alert_overrides: bool(r.alert_overrides),
     graph_configured: !!(r.tenant_id && r.client_id && r.client_secret && r.mailbox),
+    cf_token_set: !!r.cf_token, cf_check_records: bool(r.cf_check_records), cf_configured: !!r.cf_token,
   };
 }
 
@@ -94,7 +98,12 @@ function update(body = {}) {
   if (body.initial_lookback_days !== undefined) out.initial_lookback_days = intIn(body.initial_lookback_days, 'First read goes back (days)', 1, 365);
   if (body.retention_days !== undefined) out.retention_days = intIn(body.retention_days, 'Keep reports (days)', 30, 3650);
   if (body.raw_xml_days !== undefined) out.raw_xml_days = intIn(body.raw_xml_days, 'Keep original XML (days, 0 = as long as the report)', 0, 3650);
-  for (const k of ['store_raw_xml', 'alert_new_sources', 'alert_overrides']) if (body[k] !== undefined) out[k] = body[k] ? 'true' : 'false';
+  if (body.clear_cf_token) out.cf_token = '';
+  else if (typeof body.cf_token === 'string' && body.cf_token.trim()) {
+    if (!/^[A-Za-z0-9_-]{20,120}$/.test(body.cf_token.trim())) throw new ConfigError('The Cloudflare API token looks wrong: it is 40 or so letters, digits, - and _');
+    out.cf_token = body.cf_token.trim();
+  }
+  for (const k of ['store_raw_xml', 'alert_new_sources', 'alert_overrides', 'cf_check_records']) if (body[k] !== undefined) out[k] = body[k] ? 'true' : 'false';
   const tg = text('trusted_groups', 'Trusted senders', 500);
   if (tg !== null) out.trusted_groups = tg;
 

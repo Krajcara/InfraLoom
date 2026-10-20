@@ -25,6 +25,10 @@ const dmarcApi = {
   setGroup: (name, data) => api.patch('/dmarc/groups', { name, ...data }),
   setSource: (ip, data) => api.patch('/dmarc/sources', { ip, ...data }),
   upload: (file) => api.upload('/dmarc/upload', file),
+  refreshDomains: () => api.post('/dmarc/domains/refresh'),
+  addDomain: (name) => api.post('/dmarc/domains', { name }),
+  muteDomain: (name, ignored) => api.patch('/dmarc/domains', { name, ignored }),
+  removeDomain: (name) => api.post('/dmarc/domains/remove', { name }),
 };
 
 export default function DmarcPage() {
@@ -41,6 +45,7 @@ export default function DmarcPage() {
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState(null);
   const fileRef = useRef(null);
+  const [newDomain, setNewDomain] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -84,6 +89,29 @@ export default function DmarcPage() {
     load();
   }
 
+  async function handleRefreshDomains() {
+    setBusy('domains'); setNotice(null);
+    try {
+      const r = await dmarcApi.refreshDomains();
+      setNotice(r.skipped ? { type: 'info', text: 'The domains are already being refreshed.' }
+        : { type: 'ok', text: `${r.zones != null ? `${r.zones} zone${r.zones === 1 ? '' : 's'} from Cloudflare, ` : ''}${r.checked} domain${r.checked === 1 ? '' : 's'} checked${r.problems ? `, ${r.problems} to look at` : ''}.` });
+    } catch (e) { setNotice({ type: 'error', text: `Refreshing the domains failed: ${errText(e)}` }); }
+    setBusy(''); load();
+  }
+  async function handleAddDomain(e) {
+    e.preventDefault();
+    if (!newDomain.trim()) return;
+    setBusy('domains'); setNotice(null);
+    try { await dmarcApi.addDomain(newDomain.trim()); setNewDomain(''); } catch (err) { setNotice({ type: 'error', text: errText(err) }); }
+    setBusy(''); load();
+  }
+  async function handleMute(d) { try { await dmarcApi.muteDomain(d.name, !d.ignored); } catch (e) { setNotice({ type: 'error', text: errText(e) }); } load(); }
+  async function handleRemove(d) {
+    if (!window.confirm(`Remove ${d.name} from the list? Its reports stay.`)) return;
+    try { await dmarcApi.removeDomain(d.name); if (domain === d.name) setDomain(''); } catch (e) { setNotice({ type: 'error', text: errText(e) }); }
+    load();
+  }
+
   async function toggleGroup(g) { try { await dmarcApi.setGroup(g.name, { approved: !g.approved }); } catch (e) { setNotice({ type: 'error', text: errText(e) }); } load(); }
   async function toggleIp(s) { try { await dmarcApi.setSource(s.ip, { approved: !s.ip_approved }); } catch (e) { setNotice({ type: 'error', text: errText(e) }); } load(); }
 
@@ -97,14 +125,14 @@ export default function DmarcPage() {
         <div>
           <h1>DMARC reports</h1>
           <p className="dmarc-sub">
-            {pol ? (
+            {pol && !(data.domainTable.length > 1 && !domain) ? (
               <>
                 <strong>{pol.domain}</strong> — policy p={pol.policy_p}
                 {pol.policy_sp && `, sp=${pol.policy_sp}`}
                 {pol.policy_pct !== 100 && `, pct=${pol.policy_pct}`}
                 , DKIM alignment {pol.policy_adkim === 's' ? 'strict' : 'relaxed'}, SPF {pol.policy_aspf === 's' ? 'strict' : 'relaxed'}
               </>
-            ) : 'No reports yet.'}
+            ) : data?.domainTable?.length > 1 && !domain ? `${data.domainTable.length} domains — click one to look at it alone. The policy of each is in the table.` : 'No reports yet.'}
           </p>
         </div>
 
@@ -150,12 +178,18 @@ export default function DmarcPage() {
         </div>
       )}
 
-      {loading && !data ? <p className="dmarc-empty">Loading…</p> : t?.total === 0 ? (
-        <div className="dmarc-empty">
-          <p>No reports in the selected period.</p>
-          <p>{sync?.enabled && canEdit ? 'Check the mailbox, or ' : ''}{canEdit ? 'import XML, ZIP or GZ reports by hand.' : 'Reports show up here once they arrive.'}</p>
-        </div>
-      ) : t && (
+      {loading && !data ? <p className="dmarc-empty">Loading…</p> : data && (
+        <>
+          {(data.domainTable.length > 0 || canEdit) && (
+            <DomainsPanel rows={data.domainTable} selected={domain} onSelect={(n) => setDomain((cur) => (cur === n ? '' : n))} canEdit={canEdit} cloudflare={data.cloudflare}
+              busy={busy === 'domains'} onRefresh={handleRefreshDomains} onAdd={handleAddDomain} onMute={handleMute} onRemove={handleRemove} newDomain={newDomain} setNewDomain={setNewDomain} />
+          )}
+          {t.total === 0 ? (
+            <div className="dmarc-empty">
+              <p>No reports in the selected period.</p>
+              <p>{sync?.enabled && canEdit ? 'Check the mailbox, or ' : ''}{canEdit ? 'import XML, ZIP or GZ reports by hand.' : 'Reports show up here once they arrive.'}</p>
+            </div>
+          ) : (
         <>
           <section className="dmarc-stats" aria-label="Summary">
             <Stat label="Messages in reports" value={fmtNum(t.total)} />
@@ -165,7 +199,7 @@ export default function DmarcPage() {
             <Stat label={`reports from ${t.reporters} receiver${t.reporters === 1 ? '' : 's'}`} value={fmtNum(t.reports)} />
           </section>
 
-          <DailyChart daily={data.daily} />
+          <AuthOverview daily={data.daily} auth={data.auth} />
 
           <nav className="dmarc-tabs" role="tablist">
             {[['sources', 'Senders'], ['reports', 'Reports'], ['messages', 'Mailbox']].map(([k, l]) => (
@@ -176,6 +210,8 @@ export default function DmarcPage() {
           {tab === 'sources' && <SourcesTable groups={data.groups} sources={data.sources} canEdit={canEdit} onToggleGroup={toggleGroup} onToggleIp={toggleIp} />}
           {tab === 'reports' && <ReportsTable reports={reports} onOpen={setOpenReport} />}
           {tab === 'messages' && <MessagesTable messages={messages} />}
+        </>
+          )}
         </>
       )}
 
@@ -193,25 +229,159 @@ function Stat({ label, value, tone, hint }) {
   );
 }
 
-function DailyChart({ daily }) {
-  const max = Math.max(1, ...daily.map((d) => d.pass + d.fail));
-  if (daily.length < 2) return null;
+const HEALTH = {
+  protected: ['Protected', 'ok', 'Quarantine or reject for all mail'],
+  partial: ['Partly enforced', 'warn', 'The policy is enforced for only a part of the mail (pct below 100)'],
+  monitor: ['Monitoring only', 'warn', 'p=none: failing mail is still delivered'],
+  no_record: ['No DMARC record', 'bad', 'There is no DMARC record at _dmarc for this domain'],
+  multiple: ['Several records', 'bad', 'More than one DMARC record: receivers ignore all of them'],
+  invalid: ['Invalid record', 'bad', 'The DMARC record cannot be read'],
+  unchecked: ['Not checked', 'muted', 'The record has not been read'],
+};
+const pctOf = (part, total) => (total ? (100 * part) / total : 0);
+const pct1 = (part, total) => `${pctOf(part, total).toFixed(1)}%`;
+
+function Donut({ pass, total }) {
+  const r = 16; const c = 2 * Math.PI * r; const share = total ? pass / total : 0;
   return (
-    <figure className="dmarc-chart" aria-label="Messages per day">
-      <div className="dmarc-bars">
-        {daily.map((d) => (
-          <div key={d.day} className="dmarc-bar" title={`${d.day}: ${d.pass} passed, ${d.fail} failed`}>
-            <span className="is-fail" style={{ height: `${(d.fail / max) * 100}%` }} />
-            <span className="is-pass" style={{ height: `${(d.pass / max) * 100}%` }} />
-          </div>
-        ))}
+    <svg className="dmarc-donut" viewBox="0 0 44 44" width="44" height="44" role="img" aria-label={total ? `${pct1(pass, total)} compliant` : 'no data'}>
+      <circle cx="22" cy="22" r={r} fill="none" strokeWidth="6" className={total ? 'is-fail' : 'is-none'} />
+      {total > 0 && <circle cx="22" cy="22" r={r} fill="none" strokeWidth="6" className="is-pass" strokeDasharray={`${c * share} ${c}`} transform="rotate(-90 22 22)" />}
+    </svg>
+  );
+}
+
+function StackBar({ split, total, label }) {
+  if (!total) return <span className="dmarc-muted">—</span>;
+  const parts = [['aligned', 'is-pass', split.aligned], ['not aligned, pass', 'is-warn', split.notAligned], ['failed', 'is-fail', split.failed]];
+  return (
+    <div className="dmarc-stack" aria-label={label}>
+      <div className="dmarc-stack-bar" role="img" aria-label={parts.map(([n, , v]) => `${n} ${pct1(v, total)}`).join(', ')}>
+        {parts.map(([n, cls, v]) => v > 0 && <span key={n} className={cls} style={{ width: `${pctOf(v, total)}%` }} title={`${n}: ${v.toLocaleString()} (${pct1(v, total)})`} />)}
       </div>
-      <figcaption>
-        <span>{daily[0].day}</span>
-        <span><i className="dot is-pass" /> passed <i className="dot is-fail" /> failed</span>
-        <span>{daily[daily.length - 1].day}</span>
-      </figcaption>
-    </figure>
+      <div className="dmarc-stack-nums">{parts.map(([n, cls, v]) => <span key={n} className={cls}>{pct1(v, total)}</span>)}</div>
+    </div>
+  );
+}
+
+function DomainsPanel({ rows, selected, onSelect, canEdit, cloudflare, busy, onRefresh, onAdd, onMute, onRemove, newDomain, setNewDomain }) {
+  return (
+    <section className="dmarc-domains" aria-label="Domains">
+      {rows.length > 0 && (
+        <div className="dmarc-tablewrap">
+          <table className="dmarc-table dmarc-domain-table">
+            <thead>
+              <tr>
+                <th>Domain</th><th>DMARC record</th><th className="num">Volume</th><th>% DMARC compliance</th>
+                <th>DKIM verification<span className="dmarc-legend"><i className="is-pass">aligned</i><i className="is-warn">not aligned, pass</i><i className="is-fail">failed</i></span></th>
+                <th>SPF verification<span className="dmarc-legend"><i className="is-pass">aligned</i><i className="is-warn">not aligned, pass</i><i className="is-fail">failed</i></span></th>
+                {canEdit && <th />}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((d) => {
+                const h = d.record ? HEALTH[d.record.health] || HEALTH.unchecked : null;
+                return (
+                  <tr key={d.name} className={`dmarc-domain-row ${selected === d.name ? 'is-selected' : ''} ${d.ignored ? 'is-muted' : ''}`} onClick={() => onSelect(d.name)} tabIndex={0} aria-selected={selected === d.name}
+                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onSelect(d.name))}>
+                    <td><strong>{d.name}</strong>{d.source === 'manual' && <span className="dmarc-tag">added by hand</span>}{d.source === 'reports' && <span className="dmarc-tag" title="It sent reports, but it is not in the list of domains">only in reports</span>}{d.ignored && <span className="dmarc-tag">muted</span>}</td>
+                    <td>
+                      {h ? <span className={`dmarc-health is-${h[1]}`} title={d.record.error || h[2]}>{h[0]}</span> : <span className="dmarc-muted">—</span>}
+                      {d.record?.rua_missing && <span className="dmarc-health is-warn dmarc-health-note" title={`rua is: ${d.record.rua.join(', ') || 'not set'}`}>reports go elsewhere</span>}
+                    </td>
+                    <td className="num">{d.total ? d.total.toLocaleString() : <span className="dmarc-muted">{d.record ? 'no reports' : '—'}</span>}</td>
+                    <td>
+                      <div className="dmarc-compliance">
+                        <Donut pass={d.pass} total={d.total} />
+                        <div><strong>{d.total ? pct1(d.pass, d.total) : '—'}</strong>{d.policy && <span className="dmarc-mini">{d.policy.pct}% {d.policy.p}{d.policy.from === 'dns' ? ' (record)' : ''}</span>}</div>
+                      </div>
+                    </td>
+                    <td><StackBar split={d.dkim} total={d.total} label={`DKIM, ${d.name}`} /></td>
+                    <td><StackBar split={d.spf} total={d.total} label={`SPF, ${d.name}`} /></td>
+                    {canEdit && (
+                      <td className="dmarc-row-actions" onClick={(e) => e.stopPropagation()}>
+                        {d.record && <button type="button" className="dmarc-linkbtn" onClick={() => onMute(d)} aria-label={`${d.ignored ? 'Unmute' : 'Mute'} ${d.name}`}>{d.ignored ? 'Unmute' : 'Mute'}</button>}
+                        {d.source === 'manual' && <button type="button" className="dmarc-linkbtn" onClick={() => onRemove(d)} aria-label={`Remove ${d.name}`}>Remove</button>}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="dmarc-domain-tools">
+        {canEdit && (
+          <form onSubmit={onAdd} className="dmarc-adddomain">
+            <input value={newDomain} onChange={(e) => setNewDomain(e.target.value)} placeholder="Add a domain, e.g. example.com" aria-label="Domain to add" autoComplete="off" />
+            <button type="submit" disabled={busy || !newDomain.trim()}>Add</button>
+          </form>
+        )}
+        {canEdit && (cloudflare?.enabled || rows.some((r) => r.record)) && <button type="button" onClick={onRefresh} disabled={busy}>{busy ? 'Working…' : cloudflare?.enabled ? 'Refresh from Cloudflare' : 'Check the records again'}</button>}
+        <span className={`dmarc-muted dmarc-domain-note ${cloudflare?.lastError ? 'txt-bad' : ''}`}>
+          {cloudflare?.lastError ? `Cloudflare: ${cloudflare.lastError}` : cloudflare?.enabled ? `Domains from Cloudflare${cloudflare.lastRefresh ? `, refreshed ${fmtDateTime(cloudflare.lastRefresh)}` : ', not read yet'}.` : rows.length ? 'Click a domain to look at it alone.' : ''}
+        </span>
+      </div>
+    </section>
+  );
+}
+
+// Per day: how much of the mail was DMARC compliant and how much was not, as numbers or as percent; and SPF, DKIM and DMARC as a whole.
+function AuthOverview({ daily, auth }) {
+  const [mode, setMode] = useState('count');
+  const W = 640; const H = 250; const L = 44; const R = 8; const T = 10; const B = 56;
+  const days = daily.length;
+  const maxCount = Math.max(1, ...daily.flatMap((d) => [d.pass, d.fail]));
+  const nice = (m) => { const p = 10 ** Math.floor(Math.log10(m)); const n = m / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; };
+  const top = mode === 'percent' ? 100 : nice(maxCount);
+  const y = (v) => T + (H - T - B) * (1 - v / top);
+  const slot = days ? (W - L - R) / days : 1;
+  const bw = Math.max(2, Math.min(26, slot * 0.34));
+  const every = Math.ceil(days / 12);
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(top * f * 10) / 10);
+  const val = (d, k) => (mode === 'percent' ? pctOf(d[k], d.pass + d.fail) : d[k]);
+  const passed = (s) => s.aligned + s.notAligned;
+  const row = (label, part, total, text) => (
+    <div className="dmarc-ao-row" key={label}>
+      <span className="dmarc-ao-label">{label}</span>
+      <div className="dmarc-stack-bar" role="img" aria-label={`${label}: ${pct1(part, total)} ${text}`}><span className="is-pass" style={{ width: `${pctOf(part, total)}%` }} /><span className="is-fail" style={{ width: `${100 - pctOf(part, total)}%` }} /></div>
+      <span className="dmarc-ao-value">{pct1(part, total)} {text}</span>
+    </div>
+  );
+  if (days < 1) return null;
+  return (
+    <section className="dmarc-overview" aria-label="Authentication overview">
+      <figure className="dmarc-chart2">
+        <div className="dmarc-chart2-head">
+          <h2>Authentication overview</h2>
+          <div className="dmarc-seg" role="group" aria-label="Chart unit">
+            <button type="button" className={mode === 'count' ? 'is-active' : ''} onClick={() => setMode('count')}>Messages</button>
+            <button type="button" className={mode === 'percent' ? 'is-active' : ''} onClick={() => setMode('percent')}>Percent</button>
+          </div>
+        </div>
+        <svg viewBox={`0 0 ${W} ${H}`} className="dmarc-svg" role="img" aria-label="Messages per day: DMARC compliant and invalid">
+          {ticks.map((t) => (<g key={t}><line x1={L} x2={W - R} y1={y(t)} y2={y(t)} className="dmarc-grid" /><text x={L - 6} y={y(t) + 4} textAnchor="end" className="dmarc-axis">{mode === 'percent' ? `${t}%` : t.toLocaleString()}</text></g>))}
+          {daily.map((d, i) => {
+            const cx = L + slot * i + slot / 2;
+            return (
+              <g key={d.day} className="dmarc-day">
+                <title>{`${d.day}: ${d.pass.toLocaleString()} compliant, ${d.fail.toLocaleString()} invalid`}</title>
+                <rect x={cx - bw - 1} y={y(val(d, 'pass'))} width={bw} height={Math.max(0, y(0) - y(val(d, 'pass')))} className="is-pass" />
+                <rect x={cx + 1} y={y(val(d, 'fail'))} width={bw} height={Math.max(0, y(0) - y(val(d, 'fail')))} className="is-fail" />
+                {i % every === 0 && <text x={cx} y={H - B + 14} textAnchor="end" transform={`rotate(-40 ${cx} ${H - B + 14})`} className="dmarc-axis">{d.day}</text>}
+              </g>
+            );
+          })}
+        </svg>
+        <figcaption><i className="dot is-pass" /> DMARC compliant messages <i className="dot is-fail" /> Invalid messages</figcaption>
+      </figure>
+      <div className="dmarc-ao-side">
+        {row('SPF', passed(auth.spf), auth.total, 'passed')}
+        {row('DKIM', passed(auth.dkim), auth.total, 'passed')}
+        {row('DMARC', auth.dmarc.pass, auth.total, 'compliant')}
+      </div>
+    </section>
   );
 }
 
