@@ -38,6 +38,7 @@ on your network.
 | **DNS / DNS Analytics** | Health of local DNS servers (Technitium, Pi-hole, AdGuard Home), SPF/DKIM/DMARC/MX domain checks (asked of public DNS servers by default — see *Domain checks* in Settings), Cloudflare zone integration, Technitium query statistics |
 | **Net Speed** | Scheduled internet speed tests (Cloudflare, Ookla CLI, LibreSpeed CLI) with history and retention |
 | **DMARC** | Reads the DMARC aggregate reports that mail receivers send to a dedicated Microsoft 365 mailbox and shows who sends mail in the name of your domains, with alerts for unapproved senders — see [DMARC reports](#dmarc-reports) |
+| **Diagnostics** and **Capture helper** | Ping, traceroute, DNS (several servers side by side), TCP ports, TLS certificate, an HTTP request with timings and the path MTU, run from the server; and a library of packet-capture filters with the commands for tcpdump, tshark, Wireshark and the FortiGate and MikroTik sniffers — see [Diagnostics and Capture helper](#diagnostics-and-capture-helper) |
 | **MyIP** | Public IP lookup from several sources (the dashboard card shows the location from ip.sb, in full), IP query, DNS resolver check (UDP and DoH) |
 | **Hypervisors** | Proxmox VE, Hyper-V and VMware ESXi (7.0+) in one view: node and guest drill-down, usage history, connection health alerts, [usage thresholds](#hypervisor-usage-thresholds) (storage, RAM, CPU, disk, offline nodes), power actions, SSH web terminal |
 | **Network Scanner** | `arp-scan` device inventory, on-demand `nmap` deep scan, Wake-on-LAN, new/offline device alerts |
@@ -174,6 +175,20 @@ You need a mailbox that receives the reports, an *app registration* that may rea
 5. **DNS**: only when the page shows that the mailbox can be read, change `rua` in the `_dmarc` TXT record of each domain, for a while to both the old and the new address, e.g. `rua=mailto:dmarc@example.com,mailto:old@example.com`. Reports for a domain *other than* the mailbox's own need a record at the receiving side: `other-domain.example._report._dmarc.example.com TXT "v=DMARC1"`.
 
 The module only ever reads: it does not delete, move or mark mail as read, and the access it has cannot do more. A report, an archive or a mail that is not what it should be is recorded and skipped; archives are unpacked with limits (30 MB per file, 20 files), and XML that defines entities is refused. `DMARC_PTR_LOOKUP=false` in `.env` turns off the reverse-DNS lookup of sender addresses, and `DMARC_DNS_LOOKUP=false` the public-DNS lookup of the records of domains added by hand. The Cloudflare token is only ever used to read zones and DNS records; make it read-only and limit it to the zones you want.
+
+### Diagnostics and Capture helper
+
+**Network → Diagnostics** runs the usual first checks from the InfraLoom server, so you see the network the way the server does:
+
+- **Ping** (with packet size and *don't fragment*), **Traceroute**, **MTU** (the largest packet that passes without fragmentation, found by trying sizes),
+- **DNS** — a name and a record type, asked of up to four servers at once (this server's own DNS, public ones, the local DNS servers of the DNS page, or any address), side by side, with a warning when they do not give the same answer — the quickest way to see a split-horizon zone that lacks records which exist outside,
+- **Ports** — which TCP ports of a host answer: *open*, *closed* (refused) or *no answer* (filtered),
+- **Certificate** — who a TLS certificate is for, the names, who issued it, until when, whether it is trusted and whether the name matches, the protocol and the chain,
+- **HTTP** — a request with the time of DNS, connect, TLS, first byte and total, and the redirects followed.
+
+Only operators and administrators can run them (the server can reach what a viewer's computer cannot), every run is written to the audit log, at most four run at once and each has a time limit. Targets are host names and IP addresses only. `ping` and `traceroute` (or `tracepath`) must be installed on the server: `sudo apt install iputils-ping traceroute`.
+
+**Network → Capture helper** holds about sixty ready-made filters for the usual problems — DNS failures, DHCP (including a second, rogue server), duplicate IP addresses, ARP storms, spanning tree, VLANs, TCP retransmissions and resets, MTU, fragmentation, VPN negotiation, cleartext passwords, scans — each with a **capture filter** (limits what is recorded: tcpdump, dumpcap, `tshark -f`, the FortiGate sniffer) and a **display filter** (Wireshark and `tshark -Y`), fields for the address, port, MAC or VLAN (checked, so nothing odd ends up in a command), and the commands ready to copy: tcpdump, tshark, dumpcap, Wireshark's menus, the FortiGate `diagnose sniffer packet` and the MikroTik `/tool sniffer`. It captures nothing itself. Every filter in the library is checked against the real `tcpdump` and `tshark` by the tests.
 
 ### Hypervisor usage thresholds
 
@@ -470,6 +485,7 @@ Backups run on a configurable daily schedule with configurable retention, or on 
   frontend and API are always served from the same origin.
 - The [Cabling](#cabling-technical-rooms) data is a map of your network (rooms, racks, patch panels, outlets). An administrator can switch
   the module off, or limit it to your own networks, in **Settings → Cabling module**.
+- Diagnostics run commands without a shell, with validated targets, a limit of four at a time and a time limit each, and only for operators and administrators; every run is in the audit log. A capture file holds everything that was not encrypted, so keep it only as long as needed.
 - CSV exports (the audit log, and the cabling lists) neutralise formula-injection payloads (values starting with `=`, `+`, `-` or `@`).
 - The DMARC client secret and the Cloudflare API token are stored only in the module's own table of the encrypted database and are never returned by any API; the application it belongs to should be limited to the one mailbox, as described in [Microsoft 365 setup](#microsoft-365-setup). The mailbox receives mail from anyone, so attachments are unpacked with size limits.
 - Credentials with broad reach — the Proxmox host SSH login used for LXC patching, Hyper-V per-guest credentials, and

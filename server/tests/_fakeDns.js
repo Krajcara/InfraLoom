@@ -4,12 +4,12 @@
 
 const dgram = require('node:dgram');
 
-const TYPES = { A: 1, NS: 2, MX: 15, TXT: 16 };
+const TYPES = { A: 1, NS: 2, PTR: 12, MX: 15, TXT: 16 };
 const name = (s) => Buffer.concat([...s.split('.').filter(Boolean).map((l) => Buffer.concat([Buffer.from([l.length]), Buffer.from(l)])), Buffer.from([0])]);
 
 function rdata(type, v) {
   if (type === 'A') return Buffer.from(v.split('.').map(Number));
-  if (type === 'NS') return name(v);
+  if (type === 'NS' || type === 'PTR') return name(v);
   if (type === 'MX') return Buffer.concat([Buffer.from([v.pref >> 8, v.pref & 255]), name(v.host)]);
   const chunks = String(v).match(/.{1,255}/g) || [''];
   return Buffer.concat(chunks.map((c) => Buffer.concat([Buffer.from([c.length]), Buffer.from(c)])));

@@ -102,6 +102,7 @@ app.use('/api/maintenance', require('./routes/maintenance'));
 app.use('/api/device-health', require('./routes/deviceHealth'));
 app.use('/api/cabling', require('./routes/cabling'));
 app.use('/api/dmarc', require('./routes/dmarc'));
+app.use('/api/diagnostics', require('./routes/diagnostics'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
