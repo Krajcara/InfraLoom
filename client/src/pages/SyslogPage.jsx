@@ -26,7 +26,7 @@ export default function SyslogPage() {
   return (
     <div className="page syslog">
       <h1>Firewall logs</h1>
-      <p className="muted">What a FortiGate says about its traffic and about itself, received as syslog: the traffic summed up by the hour (the logs themselves are not kept), and the security events — failed logins, changes of the configuration, attacks that were stopped, VPN and system events.</p>
+      <p className="muted">What a firewall says about its traffic and about itself: a FortiGate by syslog, a MikroTik by syslog and NetFlow. The traffic is summed up by the hour (the logs themselves are not kept), and the security events — failed logins, changes of the configuration, attacks that were stopped, VPN and system events — are listed and announced.</p>
       {error && <p className="error">{error}</p>}
       {status && <StatusLine s={status} canAdmin={canAdmin} onChanged={loadStatus} goSetup={() => setTab('setup')} />}
       <nav className="diag-tabs" role="tablist">
@@ -45,12 +45,12 @@ function StatusLine({ s, canAdmin, onChanged, goSetup }) {
     await api.put('/syslog/settings', { allowed_sources: list }); onChanged();
   }
   if (!s.enabled) return <div className="card syslog-status is-off"><strong>Not receiving.</strong> <span className="muted">Reception is switched off.</span> <button type="button" className="btn-link" onClick={goSetup}>{canAdmin ? 'Set it up' : 'How it is connected'}</button></div>;
-  const errs = [s.udp.error, s.tcp.error].filter(Boolean);
+  const errs = [s.udp.error, s.tcp.error, s.netflow?.error].filter(Boolean);
   return (
     <div className="card syslog-status">
       <div>
-        <strong>Listening</strong> on {[s.udp.port && `UDP ${s.udp.port}${s.udp.listening ? '' : ' (not yet)'}`, s.tcp.port && `TCP ${s.tcp.port}${s.tcp.listening ? '' : ' (not yet)'}`].filter(Boolean).join(' and ')}
-        <span className="muted"> · {num(s.per_minute)} logs per minute · {num(s.counters.parsed)} read{s.counters.unparsed ? `, ${num(s.counters.unparsed)} not understood` : ''}</span>
+        <strong>Listening</strong> on {[s.udp.port && `UDP ${s.udp.port}${s.udp.listening ? '' : ' (not yet)'}`, s.tcp.port && `TCP ${s.tcp.port}${s.tcp.listening ? '' : ' (not yet)'}`, s.netflow?.port ? `UDP ${s.netflow.port} for NetFlow${s.netflow.listening ? '' : ' (not yet)'}` : null].filter(Boolean).join(' and ')}
+        <span className="muted"> · {num(s.per_minute)} logs per minute · {num(s.counters.parsed)} read{s.counters.unparsed ? `, ${num(s.counters.unparsed)} not understood` : ''}{s.counters.flows ? ` · ${num(s.counters.flows)} flows` : ''}</span>
       </div>
       {errs.map((e) => <p key={e} className="error" role="alert">{e}</p>)}
       <ul className="syslog-devices">
@@ -170,11 +170,23 @@ function Setup({ canAdmin, status, onSaved }) {
     e.preventDefault();
     try {
       const body = { ...f }; for (const k of ['enabled', 'notify_admin_login', 'notify_config_change', 'notify_ips', 'notify_vpn_failed', 'notify_system']) body[k] = !!f[k];
-      for (const k of ['udp_port', 'tcp_port', 'event_days', 'hourly_days', 'fail_count', 'fail_window_minutes', 'silent_minutes']) body[k] = Number(f[k]);
+      for (const k of ['udp_port', 'tcp_port', 'netflow_port', 'event_days', 'hourly_days', 'fail_count', 'fail_window_minutes', 'silent_minutes']) body[k] = Number(f[k]);
       setF(await api.put('/syslog/settings', body)); setMsg({ type: 'success', text: 'Saved.' }); onSaved();
     } catch (err) { setMsg({ type: 'error', text: err.message }); }
   }
   const port = f?.udp_port || status?.udp?.port || 5140;
+  const flowPort = (f ? f.netflow_port : status?.netflow?.port) || 2055;
+  const ros = [
+    `/system logging action add name=infraloom target=remote remote=${host} remote-port=${port} bsd-syslog=yes`,
+    '/system logging add topics=system,info,account action=infraloom',
+    '/system logging add topics=system,error action=infraloom',
+    '/system logging add topics=interface,info action=infraloom',
+    '/system logging add topics=ppp,info,account action=infraloom',
+    '/system logging add topics=firewall action=infraloom',
+    '/ip firewall filter set [find chain=input action=drop comment~"drop all not coming from LAN"] log=yes log-prefix="drop-wan-in "',
+    '/ip traffic-flow set enabled=yes interfaces=all',
+    `/ip traffic-flow target add dst-address=${host} port=${flowPort} version=9`,
+  ].join('\n');
   const cli = `config log syslogd setting\n    set status enable\n    set server "${host}"\n    set mode udp\n    set port ${port}\n    set format default\nend\nconfig log syslogd filter\n    set severity information\n    set forward-traffic enable\n    set local-traffic disable\n    set anomaly enable\nend`;
   return (
     <>
@@ -185,9 +197,16 @@ function Setup({ canAdmin, status, onSaved }) {
             <label className="checkbox-row"><input type="checkbox" checked={!!f.enabled} onChange={(e) => set('enabled', e.target.checked)} /><span>Receive firewall logs</span></label>
             <label>UDP port<input type="number" min="1" max="65535" value={f.udp_port} onChange={(e) => set('udp_port', e.target.value)} className="cab-in-num" aria-label="UDP port" /></label>
             <label>TCP port (0 = off)<input type="number" min="0" max="65535" value={f.tcp_port} onChange={(e) => set('tcp_port', e.target.value)} className="cab-in-num" aria-label="TCP port" /></label>
+            <label>NetFlow, UDP port (0 = off; 2055 is usual)<input type="number" min="0" max="65535" value={f.netflow_port} onChange={(e) => set('netflow_port', e.target.value)} className="cab-in-num" aria-label="NetFlow port" /></label>
           </div>
           <label className="syslog-wide">Addresses that may send, besides the FortiGates of the router list
             <input value={f.allowed_sources} onChange={(e) => set('allowed_sources', e.target.value)} placeholder="the address the firewall sends from, e.g. 10.1.0.1" aria-label="Allowed senders" autoComplete="off" />
+          </label>
+          <label className="syslog-wide">Networks that are “inside” (for NetFlow: a flow belongs to the inside address of it)
+            <input value={f.local_networks} onChange={(e) => set('local_networks', e.target.value)} aria-label="Inside networks" autoComplete="off" />
+          </label>
+          <label className="syslog-wide">MikroTik: a rule whose log prefix contains one of these words is one that drops
+            <input value={f.block_prefix} onChange={(e) => set('block_prefix', e.target.value)} aria-label="Dropping rule words" autoComplete="off" />
           </label>
           <h3 className="cab-h3">What is announced</h3>
           <div className="form-row">
@@ -208,7 +227,7 @@ function Setup({ canAdmin, status, onSaved }) {
         </form>
       )}
       <div className="card">
-        <h2>On the FortiGate</h2>
+        <h2>On a FortiGate</h2>
         <p className="muted">Logs can go to several places at once, so FortiCloud stays as it is. Use the address of this server in place of <span className="mono">{host}</span> if the firewall cannot resolve the name.</p>
         <pre className="diag-raw syslog-cli" aria-label="FortiGate commands">{cli}</pre>
         <ul className="syslog-notes">
@@ -216,6 +235,18 @@ function Setup({ canAdmin, status, onSaved }) {
           <li>Traffic is only in the logs of <strong>policies that log</strong>: <span className="mono">set logtraffic all</span> (or <span className="mono">utm</span>) on the policy. Logging to FortiCloud does not change that.</li>
           <li>The firewall sends from <strong>one of its own addresses</strong>; if “Turned away” shows an address, that is it: allow it. A port above 1023 (like {port}) needs no extra privileges here; if the server has a firewall of its own, open that port for UDP{f?.tcp_port ? ' and TCP' : ''}.</li>
           <li>Security events (logins, configuration, VPN, attacks) come from the <span className="mono">event</span> and <span className="mono">utm</span> logs; the syslog filter above lets them through at severity “information”.</li>
+        </ul>
+      </div>
+      <div className="card">
+        <h2>On a MikroTik</h2>
+        <p className="muted">Syslog tells who logs in, who tries, what is changed, which links go down and what the dropping rules stop. <strong>NetFlow</strong> tells who uses the traffic and where it goes (a MikroTik does not write a log line for every connection). Use the address of this server in place of <span className="mono">{host}</span> if the router cannot resolve the name.</p>
+        <pre className="diag-raw syslog-cli" aria-label="MikroTik commands">{ros}</pre>
+        <ul className="syslog-notes">
+          <li>The firewall line above only <strong>turns logging on</strong> for the final “drop all not coming from LAN” rule of the default configuration; it adds and moves nothing. If your rule has another comment, set <span className="mono">log=yes log-prefix="drop-wan-in "</span> on the rule that drops what comes from the internet (<span className="mono">/ip firewall filter print</span> shows the numbers). Scanners make this a busy log; that is what the summary is for.</li>
+          <li>Only rules with <span className="mono">log=yes</span> are in the log. A rule counts as one that <strong>drops</strong> when its <span className="mono">log-prefix</span> contains one of the words in the settings (“drop”, “block”, “ban”, ...): that is what fills <em>Most blocked</em>.</li>
+          <li>NetFlow carries addresses, ports and bytes: <strong>no application names, countries or users</strong>, and the service is named from the port. Each flow is put with the address that is “inside” (see the networks in the settings), in or out.</li>
+          <li>The router sends from <strong>one of its own addresses</strong>; if “Turned away” shows it, allow it. The router can also be added under Routers (brand MikroTik): it is then allowed and named from that list.</li>
+          <li><strong>Do not send these over the open internet.</strong> They are not encrypted and anyone can send to an open UDP port. If the router and this server are not in the same network, send them through a VPN (for example WireGuard) and keep the list of allowed senders short.</li>
         </ul>
       </div>
     </>

@@ -41,9 +41,9 @@ test('only the firewalls that are known may send', async () => {
   reset();
   assert.equal(await send(traffic(), T0, '10.9.9.9'), 'rejected'); assert.equal(S.status().counters.rejected, 1); assert.deepEqual(S.status().rejected, [{ ip: '10.9.9.9', n: 1 }]);
   assert.equal(await send(traffic()), 'ok'); assert.equal(await send(traffic(), T0, '::ffff:10.1.0.1'), 'ok', 'an IPv4 address that came as IPv6');
-  db.prepare("INSERT INTO routers (name, brand, ip_address, api_token) VALUES ('FG2', 'FortiGate', '10.1.0.2:8443', 'x')").run(); db.prepare("INSERT INTO routers (name, brand, ip_address) VALUES ('MT', 'mikrotik', '10.1.0.3')").run(); S.allowedSources(true);
-  assert.equal(await send(traffic({ dev: 'FG2' }), T0, '10.1.0.2'), 'ok', 'a FortiGate of the router list is allowed without being typed again'); assert.equal(await send(traffic(), T0, '10.1.0.3'), 'rejected', 'another brand is not');
-  assert.equal(await send('hello, this is not a log', T0), 'unparsed'); assert.deepEqual([S.status().counters.received, S.status().counters.parsed, S.status().counters.unparsed], [4, 3, 1]);
+  db.prepare("INSERT INTO routers (name, brand, ip_address, api_token) VALUES ('FG2', 'FortiGate', '10.1.0.2:8443', 'x')").run(); db.prepare("INSERT INTO routers (name, brand, ip_address) VALUES ('MT', 'MikroTik', '10.1.0.3')").run(); db.prepare("INSERT INTO routers (name, brand, ip_address) VALUES ('AP', 'ubiquiti', '10.1.0.4')").run(); S.allowedSources(true);
+  assert.equal(await send(traffic({ dev: 'FG2' }), T0, '10.1.0.2'), 'ok', 'a FortiGate of the router list is allowed without being typed again'); assert.equal(await send(traffic(), T0, '10.1.0.3'), 'ok', 'a MikroTik of the router list is allowed too'); assert.equal(await send(traffic(), T0, '10.1.0.4'), 'rejected', 'another brand is not');
+  assert.equal(await send('hello, this is not a log', T0), 'unparsed'); assert.deepEqual([S.status().counters.received, S.status().counters.parsed, S.status().counters.unparsed], [5, 4, 1]);
 });
 
 test('what is only in memory is written when the service stops', async () => {

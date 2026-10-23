@@ -10,10 +10,16 @@ const db = require('../../db/database');
 const { parseLine, eventSeconds } = require('./parser');
 const { classify, trafficOf } = require('./rules');
 const { Aggregator, toRow, combine, DIMS } = require('./aggregate');
+const { parseRouterOs, classifyRouterOs, serviceOf } = require('./routeros');
+const { decode: decodeFlows } = require('./netflow');
+const { parseNetworks, contains } = require('./cidr');
 
 class ConfigError extends Error {}
-const DEFAULTS = { enabled: 0, udp_port: 5140, tcp_port: 0, allowed_sources: '', event_days: 90, hourly_days: 400, fail_count: 3, fail_window_minutes: 10, silent_minutes: 15, notify_admin_login: 0, notify_config_change: 1, notify_ips: 1, notify_vpn_failed: 1, notify_system: 1 };
-const LIMITS = { udp_port: [1, 65535], tcp_port: [0, 65535], event_days: [7, 365], hourly_days: [30, 1100], fail_count: [2, 50], fail_window_minutes: [1, 60], silent_minutes: [2, 240] };
+const DEFAULT_LOCAL = '10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, fc00::/7, fe80::/10';
+const DEFAULT_BLOCK = 'drop|block|deny|reject|bad|invalid|scan|brute|ban|blacklist';
+const STRINGS = ['allowed_sources', 'local_networks', 'block_prefix'];
+const DEFAULTS = { enabled: 0, udp_port: 5140, tcp_port: 0, netflow_port: 0, local_networks: DEFAULT_LOCAL, block_prefix: DEFAULT_BLOCK, allowed_sources: '', event_days: 90, hourly_days: 400, fail_count: 3, fail_window_minutes: 10, silent_minutes: 15, notify_admin_login: 0, notify_config_change: 1, notify_ips: 1, notify_vpn_failed: 1, notify_system: 1 };
+const LIMITS = { udp_port: [1, 65535], tcp_port: [0, 65535], netflow_port: [0, 65535], event_days: [7, 365], hourly_days: [30, 1100], fail_count: [2, 50], fail_window_minutes: [1, 60], silent_minutes: [2, 240] };
 const FLAGS = ['enabled', 'notify_admin_login', 'notify_config_change', 'notify_ips', 'notify_vpn_failed', 'notify_system'];
 const EVENT_CAP_PER_MIN = 200;   // per kind: a flood of one kind of event does not fill the table
 const LINE_MAX = 16384;
@@ -26,7 +32,7 @@ function getConfig() {
   const out = { ...DEFAULTS };
   for (const r of db.prepare("SELECT key, value FROM syslog_config WHERE key NOT LIKE 'seen:%' AND key NOT LIKE 'silent:%'").all()) {
     if (!(r.key in DEFAULTS)) continue;
-    out[r.key] = r.key === 'allowed_sources' ? r.value : Number(r.value);
+    out[r.key] = STRINGS.includes(r.key) ? r.value : Number(r.value);
   }
   return out;
 }
@@ -46,28 +52,40 @@ function saveConfig(body = {}) {
     if (list.length > 50) throw new ConfigError('At most 50 addresses');
     next.allowed_sources = [...new Set(list)].join(', ');
   }
-  if (next.enabled && next.udp_port === 0 && !next.tcp_port) throw new ConfigError('Give a UDP or a TCP port');
+  if (body.local_networks !== undefined) {
+    try { const list = String(body.local_networks).split(/[\s,;]+/).filter(Boolean); parseNetworks(list.join(',')); if (!list.length) throw new Error('Give at least one network'); if (list.length > 50) throw new Error('At most 50 networks'); next.local_networks = list.join(', '); } catch (e) { throw new ConfigError(e.message); }
+  }
+  if (body.block_prefix !== undefined) {
+    const p = String(body.block_prefix).trim();
+    if (!p || p.length > 100) throw new ConfigError('The words that mark a rule that drops must be 1 to 100 characters');
+    try { new RegExp(p, 'i'); } catch { throw new ConfigError('That is not a valid pattern (use words separated by |)'); }
+    next.block_prefix = p;
+  }
   db.transaction(() => { for (const [k, v] of Object.entries(next)) setKv(k, v); })();
   allowCache.at = 0;
   return next;
 }
 
 /** The addresses that may send: the FortiGates of the router list, and the ones given by hand. */
-let allowCache = { at: 0, set: null };
+let allowCache = { at: 0, set: null, names: new Map(), nets: [], blockRe: null };
+/** The addresses that may send (the FortiGates and MikroTiks of the router list, and the ones given), the names of the routers, and the settings every line needs. */
 function allowedSources(fresh = false) {
   if (!fresh && allowCache.set && Date.now() - allowCache.at < 2000) return allowCache.set;
-  const set = new Set(getConfig().allowed_sources.split(/[\s,;]+/).filter(Boolean));
-  for (const r of db.prepare("SELECT ip_address FROM routers WHERE LOWER(brand) = 'fortigate'").all()) {
-    const h = String(r.ip_address || '').replace(/:\d+$/, '').trim(); if (net.isIP(h)) set.add(h);
+  const cfg = getConfig(); const set = new Set(cfg.allowed_sources.split(/[\s,;]+/).filter(Boolean)); const names = new Map();
+  for (const r of db.prepare("SELECT name, ip_address FROM routers WHERE LOWER(brand) IN ('fortigate', 'mikrotik')").all()) {
+    const h = String(r.ip_address || '').replace(/:\d+$/, '').trim(); if (net.isIP(h)) { set.add(h); names.set(h, r.name); }
   }
-  allowCache = { at: Date.now(), set };
+  let nets = []; try { nets = parseNetworks(cfg.local_networks); } catch { nets = parseNetworks(DEFAULT_LOCAL); }
+  let blockRe; try { blockRe = new RegExp(cfg.block_prefix, 'i'); } catch { blockRe = new RegExp(DEFAULT_BLOCK, 'i'); }
+  allowCache = { at: Date.now(), set, names, nets, blockRe };
   return set;
 }
 
 // ── state ─────────────────────────────────────────────────────────────
 
 const agg = new Aggregator();
-const counters = { received: 0, parsed: 0, unparsed: 0, rejected: 0, events: 0, events_dropped: 0 };
+const counters = { received: 0, parsed: 0, unparsed: 0, rejected: 0, events: 0, events_dropped: 0, flows: 0, flow_packets: 0, flows_skipped: 0, flow_unknown_template: 0 };
+const flowTemplates = new Map();
 const rejectedBy = new Map();
 const seen = new Map();                 // device → { last (ms), ip }
 const silent = new Set();
@@ -130,25 +148,65 @@ async function announce(device, c, f, nowMs, cfg, notifier) {
   if (c.kind === 'system_event' && cfg.notify_system && !throttled(`${device}|sys|${c.summary.slice(0, 60)}`, 10 * 60000, nowMs)) return say('fw_system', `${device}: ${c.summary}`);
 }
 
-/** One log line (or one datagram) from `remoteIp`. Returns what became of it. */
+/** The name of a firewall: what it calls itself, else the name in the router list, else its address. */
+const nameFor = (ip, own = null) => String(own || allowCache.names.get(ip) || ip).slice(0, 60);
+
+/** A line (or a flow) was heard from a firewall: when, and — if it was silent — that it is back. */
+async function heard(device, ip, nowMs, notifier) {
+  const prev = seen.get(device); seen.set(device, { last: nowMs, ip });
+  if (silent.delete(device) || (prev === undefined && kv(`silent:${device}`) === '1')) { db.prepare('DELETE FROM syslog_config WHERE key = ?').run(`silent:${device}`); await announceRaw('fw_log_resumed', `${device} is sending logs again.`, notifier); }
+}
+
+const hitToTraffic = (h) => ({ blocked: true, out: 0, in: 0, src: h.src, srcName: null, dst: h.dst, app: h.service, country: null, service: h.service, policy: h.prefix || h.chain, user: null });
+
+/** One log line (or one datagram) from `remoteIp`: a FortiOS log, or a RouterOS one. Returns what became of it. */
 async function ingest(input, remoteIp, nowMs = Date.now(), { notifier = notifyDefault } = {}) {
   const ip = norm(remoteIp); const sec = Math.floor(nowMs / 1000);
   if (!allowedSources().has(ip)) { counters.rejected += 1; rejectedBy.set(ip, (rejectedBy.get(ip) || 0) + 1); if (rejectedBy.size > 200) rejectedBy.delete(rejectedBy.keys().next().value); return 'rejected'; }
   counters.received += 1;
+  const raw = (Buffer.isBuffer(input) ? input.toString('utf8') : String(input)).trim();
   const p = parseLine(input);
-  if (!p) { counters.unparsed += 1; stat(`ip:${ip}`, sec, 'unparsed'); return 'unparsed'; }
-  counters.parsed += 1;
-  const f = p.fields; const device = String(f.devname || f.devid || ip).slice(0, 60);
-  const prev = seen.get(device); seen.set(device, { last: nowMs, ip });
-  stat(device, sec, 'received');
-  if (silent.delete(device) || (prev === undefined && kv(`silent:${device}`) === '1')) { db.prepare('DELETE FROM syslog_config WHERE key = ?').run(`silent:${device}`); await announceRaw('fw_log_resumed', `${device} is sending logs again.`, notifier); }
-  const ts = eventSeconds(f, sec);
-  const t = trafficOf(f);
-  if (t) agg.add(device, ts, t, loader);
-  const c = classify(f);
-  if (c) {
-    const raw = (Buffer.isBuffer(input) ? input.toString('utf8') : String(input)).trim();
-    if (recordEvent(device, ts, c, raw, nowMs)) await announce(device, c, f, nowMs, getConfig(), notifier);
+  if (p) {
+    counters.parsed += 1;
+    const f = p.fields; const device = nameFor(ip, f.devname || f.devid);
+    stat(device, sec, 'received'); await heard(device, ip, nowMs, notifier);
+    const ts = eventSeconds(f, sec);
+    const t = trafficOf(f);
+    if (t) agg.add(device, ts, t, loader);
+    const c = classify(f);
+    if (c && recordEvent(device, ts, c, raw, nowMs)) await announce(device, c, f, nowMs, getConfig(), notifier);
+    return 'ok';
+  }
+  const r = parseRouterOs(input);
+  if (r) {
+    counters.parsed += 1;
+    const device = nameFor(ip, r.host);
+    stat(device, sec, 'received'); await heard(device, ip, nowMs, notifier);
+    const c = classifyRouterOs(r, allowCache.blockRe || undefined);
+    if (c?.hit) agg.add(device, sec, hitToTraffic(c.hit), loader);
+    else if (c?.finding && recordEvent(device, sec, c.finding, raw, nowMs)) await announce(device, c.finding, {}, nowMs, getConfig(), notifier);
+    return 'ok';
+  }
+  counters.unparsed += 1; stat(`ip:${ip}`, sec, 'unparsed'); return 'unparsed';
+}
+
+/** One NetFlow / IPFIX packet from `remoteIp`: each flow is put with the inside address it belongs to, outbound or inbound. */
+async function ingestFlow(buf, remoteIp, nowMs = Date.now(), { notifier = notifyDefault } = {}) {
+  const ip = norm(remoteIp); const sec = Math.floor(nowMs / 1000);
+  if (!allowedSources().has(ip)) { counters.rejected += 1; rejectedBy.set(ip, (rejectedBy.get(ip) || 0) + 1); return 'rejected'; }
+  const r = decodeFlows(buf, ip, flowTemplates);
+  counters.flow_unknown_template += r.unknownTemplate;
+  if (!r.version) { counters.unparsed += 1; return 'unparsed'; }
+  const device = nameFor(ip); stat(device, sec, 'received'); await heard(device, ip, nowMs, notifier);
+  counters.flow_packets += 1;
+  for (const fl of r.flows) {
+    counters.flows += 1;
+    const srcIn = contains(allowCache.nets, fl.src); const dstIn = contains(allowCache.nets, fl.dst);
+    if (srcIn === dstIn) { counters.flows_skipped += 1; continue; }                       // inside to inside, or outside to outside: not what this is for
+    const svc = serviceOf(fl.proto, fl.sport, fl.dport);
+    agg.add(device, sec, srcIn
+      ? { blocked: false, out: fl.bytes, in: 0, src: fl.src, srcName: null, dst: fl.dst, app: svc, country: null, service: svc, policy: null, user: null }
+      : { blocked: false, out: 0, in: fl.bytes, src: fl.dst, srcName: null, dst: fl.src, app: svc, country: null, service: svc, policy: null, user: null }, loader);
   }
   return 'ok';
 }
@@ -222,7 +280,7 @@ function events({ limit = 100, kind = null, level = null, q = null, before = nul
 
 // ── listening ─────────────────────────────────────────────────────────
 
-const net_ = { udp: null, tcp: null, errors: {}, tcpSockets: new Set() };
+const net_ = { udp: null, tcp: null, flow: null, errors: {}, tcpSockets: new Set() };
 const handleDatagram = (msg, rinfo) => { for (const line of msg.toString('utf8').split('\n')) if (line.trim()) ingest(line, rinfo.address).catch((e) => console.error('[syslog]', e.message)); };
 
 function listen() {
@@ -233,6 +291,12 @@ function listen() {
     s.on('message', handleDatagram);
     s.on('error', (e) => { net_.errors.udp = e.code === 'EADDRINUSE' ? `UDP port ${cfg.udp_port} is in use by another program` : e.code === 'EACCES' ? `UDP port ${cfg.udp_port} needs more privileges than this service has (use a port above 1023)` : e.message; try { s.close(); } catch { /* closed */ } if (net_.udp === s) net_.udp = null; });
     s.bind(cfg.udp_port, '0.0.0.0', () => { net_.udp = s; });
+  }
+  if (cfg.netflow_port) {
+    const s = dgram.createSocket({ type: 'udp4', reuseAddr: false });
+    s.on('message', (msg, rinfo) => { ingestFlow(msg, rinfo.address).catch((e) => console.error('[syslog]', e.message)); });
+    s.on('error', (e) => { net_.errors.flow = e.code === 'EADDRINUSE' ? `UDP port ${cfg.netflow_port} (NetFlow) is in use by another program` : e.code === 'EACCES' ? `UDP port ${cfg.netflow_port} (NetFlow) needs more privileges than this service has (use a port above 1023)` : e.message; try { s.close(); } catch { /* closed */ } if (net_.flow === s) net_.flow = null; });
+    s.bind(cfg.netflow_port, '0.0.0.0', () => { net_.flow = s; });
   }
   if (cfg.tcp_port) {
     const srv = net.createServer((sock) => {
@@ -251,6 +315,7 @@ function listen() {
 function unlisten() {
   if (net_.udp) { try { net_.udp.close(); } catch { /* closed */ } net_.udp = null; }
   if (net_.tcp) { try { net_.tcp.close(); } catch { /* closed */ } net_.tcp = null; }
+  if (net_.flow) { try { net_.flow.close(); } catch { /* closed */ } net_.flow = null; }
   for (const s of net_.tcpSockets) s.destroy(); net_.tcpSockets.clear();
 }
 
@@ -259,6 +324,7 @@ function status() {
   const perMin = rate.length >= 2 ? Math.round((rate[rate.length - 1] - rate[0]) / (rate.length - 1)) : 0;
   return {
     enabled: !!cfg.enabled,
+    netflow: { port: cfg.netflow_port, listening: !!net_.flow, error: net_.errors.flow || null },
     udp: { port: cfg.udp_port, listening: !!net_.udp, error: net_.errors.udp || null }, tcp: { port: cfg.tcp_port, listening: !!net_.tcp, error: net_.errors.tcp || null },
     counters: { ...counters }, per_minute: perMin,
     rejected: [...rejectedBy].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([ip, n]) => ({ ip, n })),
@@ -283,6 +349,6 @@ function start() {
   tasks.push(cron.schedule('20 3 * * *', () => { try { purge(); } catch (e) { console.error('[syslog] purge failed:', e.message); } }));
 }
 const initScheduler = start; const reload = start;
-function resetForTests() { allowCache = { at: 0, set: null }; statMem.clear(); agg.buckets.clear(); for (const m of [rejectedBy, seen, windows, throttle, groups, perMinute, hourlyAlerts]) m.clear(); silent.clear(); Object.assign(counters, { received: 0, parsed: 0, unparsed: 0, rejected: 0, events: 0, events_dropped: 0 }); rate.length = 0; lastMinute = 0; startedAt = Date.now(); }
+function resetForTests() { allowCache = { at: 0, set: null, names: new Map(), nets: [], blockRe: null }; flowTemplates.clear(); statMem.clear(); agg.buckets.clear(); for (const m of [rejectedBy, seen, windows, throttle, groups, perMinute, hourlyAlerts]) m.clear(); silent.clear(); Object.assign(counters, { received: 0, parsed: 0, unparsed: 0, rejected: 0, events: 0, events_dropped: 0, flows: 0, flow_packets: 0, flows_skipped: 0, flow_unknown_template: 0 }); rate.length = 0; lastMinute = 0; startedAt = Date.now(); }
 
-module.exports = { flushNow, getConfig, saveConfig, ingest, tick, purge, summary, events, status, start, stop, reload, initScheduler, allowedSources, resetForTests, ConfigError, DEFAULTS, RANGE, DIMS };
+module.exports = { flushNow, getConfig, saveConfig, ingest, ingestFlow, tick, purge, summary, events, status, start, stop, reload, initScheduler, allowedSources, resetForTests, ConfigError, DEFAULTS, RANGE, DIMS };
