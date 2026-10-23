@@ -749,4 +749,7 @@ require('./dmarc').migrate(db);
 // Traffic history (interface counters, rates, hourly summaries): its own numbered migrations.
 require('./traffic').migrate(db);
 
+// Firewall logs received as syslog (hourly summaries, security events).
+require('./syslog').migrate(db);
+
 module.exports = db;

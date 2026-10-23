@@ -31,6 +31,7 @@ const NAV_GROUPS = [
       { to: '/dns-analytics', label: 'DNS Analytics' },
       { to: '/dmarc', label: 'DMARC', module: 'dmarc' },
       { to: '/traffic', label: 'Traffic' },
+      { to: '/syslog', label: 'Firewall logs', roles: ['superadmin', 'admin', 'operator'] },
       { to: '/diagnostics', label: 'Diagnostics', roles: ['superadmin', 'admin', 'operator'] },
       { to: '/capture-helper', label: 'Capture helper' },
       { to: '/netspeed', label: 'Net Speed' },

@@ -1,0 +1,22 @@
+.syslog-status { margin-bottom: 12px; }
+.syslog-status.is-off { color: #8b8f99; }
+.syslog-devices { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .3rem; }
+.syslog-rejected { margin: .6rem 0 0; font-size: .88rem; color: #e6b13d; }
+.syslog-rej { margin-right: 1rem; } .syslog-rej .btn-link { margin-left: .4rem; }
+.syslog-bar-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.syslog-bar-head .diag-tabs { margin: 0; border-bottom: 0; }
+.syslog-stats { margin: .8rem 0; }
+.syslog-bar { fill: #4a8cff; opacity: .85; } .syslog-bar:hover { opacity: 1; }
+.syslog-bar-blocked { fill: #f07070; }
+.syslog-empty { padding: 2rem 0; text-align: center; }
+.syslog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; margin-top: 12px; }
+.syslog-top { margin: 0; } .syslog-top h3 { margin: 0 0 .4rem; font-size: 1rem; }
+.syslog-key { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.syslog-meter { height: 4px; background: #2a2e38; border-radius: 2px; margin-top: .25rem; overflow: hidden; } .syslog-meter i { display: block; height: 100%; background: #4a8cff; } .syslog-meter i.is-blocked { background: #f07070; }
+.syslog-tag { margin-left: .5rem; font-size: .7rem; padding: .05rem .4rem; border-radius: 999px; border: 1px solid #5a2e2e; color: #f07070; }
+.syslog-event { cursor: pointer; } .syslog-event:hover td { background: rgba(255,255,255,.04); }
+.syslog-raw pre { margin: 0; white-space: pre-wrap; word-break: break-all; max-height: 260px; overflow: auto; }
+.syslog-wide { display: block; margin: .6rem 0; } .syslog-wide input { width: 100%; box-sizing: border-box; }
+.syslog-flags { display: grid; gap: .2rem; margin: .4rem 0; }
+.syslog-cli { white-space: pre; }
+.syslog-notes { color: #b4b8c2; font-size: .9rem; display: grid; gap: .4rem; }
