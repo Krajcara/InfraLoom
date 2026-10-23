@@ -38,6 +38,7 @@ on your network.
 | **DNS / DNS Analytics** | Health of local DNS servers (Technitium, Pi-hole, AdGuard Home), SPF/DKIM/DMARC/MX domain checks (asked of public DNS servers by default — see *Domain checks* in Settings), Cloudflare zone integration, Technitium query statistics |
 | **Net Speed** | Scheduled internet speed tests (Cloudflare, Ookla CLI, LibreSpeed CLI) with history and retention |
 | **DMARC** | Reads the DMARC aggregate reports that mail receivers send to a dedicated Microsoft 365 mailbox and shows who sends mail in the name of your domains, with alerts for unapproved senders — see [DMARC reports](#dmarc-reports) |
+| **Traffic** | The load of the interfaces you choose (the WAN of a FortiGate, uplinks, trunk ports), as a history with charts, the average, peak and 95th percentile, and an alert when one stays loaded — see [Traffic](#traffic) |
 | **Diagnostics** and **Capture helper** | Ping, traceroute, DNS (several servers side by side), TCP ports, TLS certificate, an HTTP request with timings and the path MTU, run from the server; and a library of packet-capture filters with the commands for tcpdump, tshark, Wireshark and the FortiGate and MikroTik sniffers — see [Diagnostics and Capture helper](#diagnostics-and-capture-helper) |
 | **MyIP** | Public IP lookup from several sources (the dashboard card shows the location from ip.sb, in full), IP query, DNS resolver check (UDP and DoH) |
 | **Hypervisors** | Proxmox VE, Hyper-V and VMware ESXi (7.0+) in one view: node and guest drill-down, usage history, connection health alerts, [usage thresholds](#hypervisor-usage-thresholds) (storage, RAM, CPU, disk, offline nodes), power actions, SSH web terminal |
@@ -190,6 +191,16 @@ Only operators and administrators can run them (the server can reach what a view
 
 **Network → Capture helper** holds about sixty ready-made filters for the usual problems — DNS failures, DHCP (including a second, rogue server), duplicate IP addresses, ARP storms, spanning tree, VLANs, TCP retransmissions and resets, MTU, fragmentation, VPN negotiation, cleartext passwords, scans — each with a **capture filter** (limits what is recorded: tcpdump, dumpcap, `tshark -f`, the FortiGate sniffer) and a **display filter** (Wireshark and `tshark -Y`), fields for the address, port, MAC or VLAN (checked, so nothing odd ends up in a command), and the commands ready to copy: tcpdump, tshark, dumpcap, Wireshark's menus, the FortiGate `diagnose sniffer packet` and the MikroTik `/tool sniffer`. It captures nothing itself. Every filter in the library is checked against the real `tcpdump` and `tshark` by the tests.
 
+### Traffic
+
+**Network → Traffic** keeps a history of the load of the interfaces you choose. Nothing is watched until you pick it: **Add interfaces**, choose a device, read its interfaces and tick the ones that matter (the WAN, the uplinks, the trunk ports).
+
+- **Where the numbers come from.** A **FortiGate** with an API token is read through its REST API (`/api/v2/monitor/system/interface`: the byte counters and the speed of each interface); a **router, switch or access point with SNMP settings** through IF-MIB, with the 64-bit counters (`ifHCInOctets`/`ifHCOutOctets`) when the device has them. The rate is the difference of two readings divided by the time between them, so a restart of the device (a counter that goes down) and a counter that is too fast for the link are skipped instead of drawn as a spike. A device that only has 32-bit counters is marked: on a fast link they can wrap between two readings.
+- **The page.** The list shows each interface with its link state and speed, the rate in and out, the load as a percentage of the link, a small chart of the last hour and its state. Click one for the chart — 1 hour, 6 hours, 24 hours, 7 days, 30 days or 1 year, with the numbers of the point under the mouse, and optionally scaled to the link speed — the **average, peak and 95th percentile** of in and out, and the amount **transferred**. The warning and critical levels are drawn on the chart.
+- **Alerts** (three events in Notifications: *traffic high*, *traffic very high*, *back to normal*). The larger of in and out has to stay at or above the level (80% and 90% by default) for a number of minutes (10 by default) before an alert is sent, and below it for a few minutes before it ends, so a short burst is no alarm and a load that hovers around the limit is not announced over and over. The levels can be set for each interface, and need the speed of the link: it comes from the device, and can be given by hand (an interface of a 1 Gbps port that the provider limits to 300 Mbps).
+- **What is kept.** A reading every minute (1 to 10 minutes) for 7 days, and an hourly summary — average, peak, 95th percentile, bytes — for 400 days. Both are set under *Defaults for all interfaces* on the page (administrators).
+- **Who.** Everybody who is signed in sees the history; operators choose and edit the interfaces; administrators change the defaults and see **what the device answered** (a fold-out under the list of interfaces when you add them, `GET /api/traffic/raw/:table/:id`), to find out which field a value comes from when something is off.
+
 ### Hypervisor usage thresholds
 
 **Infrastructure → Hypervisors → Usage thresholds** alerts when something gets too full or too busy — before it becomes an outage:
@@ -243,7 +254,7 @@ back, and an amber banner on every page reminds you that alerts are muted.
 
 In-app bell with live toasts, plus Telegram, Slack, Discord, ntfy, Pushover and e-mail. Every event type
 (monitor down/up, SSL/licence/Entra expiry, new or offline network device, hypervisor unreachable, UPS on battery,
-low battery, power restored, UPS offline/online, network device health and restarts, hypervisor usage above warning/critical level and back to normal, DMARC failures, new senders, SPF permerror, an unreadable DMARC mailbox, an expiring DMARC secret and a DMARC record that got worse, patch run failed, machine needs a restart after patching) can be switched per channel, with quiet hours, and muted per target by a
+low battery, power restored, UPS offline/online, network device health and restarts, hypervisor usage above warning/critical level and back to normal, DMARC failures, new senders, SPF permerror, an unreadable DMARC mailbox, an expiring DMARC secret, a DMARC record that got worse, an interface that stays loaded and is back to normal, patch run failed, machine needs a restart after patching) can be switched per channel, with quiet hours, and muted per target by a
 [maintenance window](#maintenance-windows).
 
 ### Status pages

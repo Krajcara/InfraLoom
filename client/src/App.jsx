@@ -40,6 +40,7 @@ import CablingTrunksPage from './pages/cabling/CablingTrunksPage';
 import CablingReportsPage from './pages/cabling/CablingReportsPage';
 import DmarcPage from './pages/DmarcPage';
 import DiagnosticsPage from './pages/DiagnosticsPage';
+import TrafficPage from './pages/TrafficPage';
 import CaptureHelperPage from './pages/CaptureHelperPage';
 
 export default function App() {
@@ -83,6 +84,7 @@ export default function App() {
           <Route path="/cabling/reports" element={<CablingReportsPage />} />
           <Route path="/dmarc" element={<DmarcPage />} />
           <Route path="/diagnostics" element={<DiagnosticsPage />} />
+          <Route path="/traffic" element={<TrafficPage />} />
           <Route path="/capture-helper" element={<CaptureHelperPage />} />
           <Route path="/network-scanner" element={<NetworkScannerPage />} />
           <Route path="/patch-management" element={<PatchManagementPage />} />

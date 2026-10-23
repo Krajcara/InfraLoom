@@ -299,4 +299,4 @@ async function fetchHealth(router) {
   return { sections };
 }
 
-module.exports = { fetchHealth, fetchManagedHealth, parseResources, parseHa, parseIpsec, parseLicences, parseSdwan, parseSwitchHealth, parseApHealth, ratingLevel, describeError };
+module.exports = { client, fetchHealth, fetchManagedHealth, parseResources, parseHa, parseIpsec, parseLicences, parseSdwan, parseSwitchHealth, parseApHealth, ratingLevel, describeError };

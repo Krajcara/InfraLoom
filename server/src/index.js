@@ -103,6 +103,7 @@ app.use('/api/device-health', require('./routes/deviceHealth'));
 app.use('/api/cabling', require('./routes/cabling'));
 app.use('/api/dmarc', require('./routes/dmarc'));
 app.use('/api/diagnostics', require('./routes/diagnostics'));
+app.use('/api/traffic', require('./routes/traffic'));
 
 // ── Serve built frontend in production ──────────────────────────────────
 const clientDist = path.join(__dirname, '../../client/dist');
@@ -152,6 +153,7 @@ require('./services/upsService').initScheduler();
 require('./services/maintenanceService').initScheduler();
 require('./services/deviceHealthService').initScheduler();
 require('./services/dmarc/service').initScheduler();
+require('./services/traffic/service').initScheduler();
 setTimeout(() => require('./services/sslChecker').checkAllSSL(false), 5000);
 
 process.on('SIGTERM', () => {

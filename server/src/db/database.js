@@ -746,4 +746,7 @@ require('./cabling').migrate(db);
 // DMARC module (aggregate reports from a dedicated mailbox): numbered SQL migrations of its own.
 require('./dmarc').migrate(db);
 
+// Traffic history (interface counters, rates, hourly summaries): its own numbered migrations.
+require('./traffic').migrate(db);
+
 module.exports = db;
