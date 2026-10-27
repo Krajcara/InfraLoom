@@ -9,9 +9,14 @@
 .syslog-bar { fill: #4a8cff; opacity: .85; } .syslog-bar:hover { opacity: 1; }
 .syslog-bar-blocked { fill: #f07070; }
 .syslog-empty { padding: 2rem 0; text-align: center; }
-.syslog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; margin-top: 12px; }
-.syslog-top { margin: 0; } .syslog-top h3 { margin: 0 0 .4rem; font-size: 1rem; }
-.syslog-key { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.syslog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 12px; margin-top: 12px; }
+.syslog-top { margin: 0; min-width: 0; overflow-x: auto; } .syslog-top h3 { margin: 0 0 .4rem; font-size: 1rem; }
+.syslog-top table, .syslog-host table { width: 100%; table-layout: auto; } .syslog-top th, .syslog-host th { white-space: nowrap; } .syslog-top td.num, .syslog-host td.num { white-space: nowrap; }
+.syslog-key { max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.syslog-pick { cursor: pointer; } .syslog-pick:hover td { background: rgba(255,255,255,.05); } .syslog-pick:focus-visible { outline: 2px solid #2b6cff; outline-offset: -2px; }
+.syslog-host { margin-top: 12px; border-color: #2b6cff; }
+.syslog-host-head { display: flex; justify-content: space-between; align-items: center; } .syslog-host-head h3 { margin: 0; }
+.syslog-host-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 12px; } .syslog-host-col { min-width: 0; overflow-x: auto; } .syslog-host-col h4 { margin: .2rem 0 .3rem; }
 .syslog-meter { height: 4px; background: #2a2e38; border-radius: 2px; margin-top: .25rem; overflow: hidden; } .syslog-meter i { display: block; height: 100%; background: #4a8cff; } .syslog-meter i.is-blocked { background: #f07070; }
 .syslog-tag { margin-left: .5rem; font-size: .7rem; padding: .05rem .4rem; border-radius: 999px; border: 1px solid #5a2e2e; color: #f07070; }
 .syslog-event { cursor: pointer; } .syslog-event:hover td { background: rgba(255,255,255,.04); }

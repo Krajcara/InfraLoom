@@ -8,8 +8,8 @@ const net = require('node:net');
 const cron = require('node-cron');
 const db = require('../../db/database');
 const { parseLine, eventSeconds } = require('./parser');
-const { classify, trafficOf } = require('./rules');
-const { Aggregator, toRow, combine, DIMS } = require('./aggregate');
+const { classify, trafficOf, webBlockOf } = require('./rules');
+const { Aggregator, toRow, combine, pairsFor, DIMS } = require('./aggregate');
 const { parseRouterOs, classifyRouterOs, serviceOf } = require('./routeros');
 const { decode: decodeFlows } = require('./netflow');
 const { parseNetworks, contains } = require('./cidr');
@@ -21,7 +21,8 @@ const STRINGS = ['allowed_sources', 'local_networks', 'block_prefix'];
 const DEFAULTS = { enabled: 0, udp_port: 5140, tcp_port: 0, netflow_port: 0, local_networks: DEFAULT_LOCAL, block_prefix: DEFAULT_BLOCK, allowed_sources: '', event_days: 90, hourly_days: 400, fail_count: 3, fail_window_minutes: 10, silent_minutes: 15, notify_admin_login: 0, notify_config_change: 1, notify_ips: 1, notify_vpn_failed: 1, notify_system: 1 };
 const LIMITS = { udp_port: [1, 65535], tcp_port: [0, 65535], netflow_port: [0, 65535], event_days: [7, 365], hourly_days: [30, 1100], fail_count: [2, 50], fail_window_minutes: [1, 60], silent_minutes: [2, 240] };
 const FLAGS = ['enabled', 'notify_admin_login', 'notify_config_change', 'notify_ips', 'notify_vpn_failed', 'notify_system'];
-const EVENT_CAP_PER_MIN = 200;   // per kind: a flood of one kind of event does not fill the table
+const EVENT_CAP_PER_MIN = 60;    // per kind: a flood of one kind of event does not fill the table
+const EVENTS_MAX = 300000;       // and the table itself does not grow past this, whatever the retention says
 const LINE_MAX = 16384;
 
 const norm = (ip) => String(ip || '').replace(/^::ffff:/i, '');
@@ -173,6 +174,8 @@ async function ingest(input, remoteIp, nowMs = Date.now(), { notifier = notifyDe
     const ts = eventSeconds(f, sec);
     const t = trafficOf(f);
     if (t) agg.add(device, ts, t, loader);
+    const w = webBlockOf(f);
+    if (w) agg.addSite(device, ts, w.site, loader);
     const c = classify(f);
     if (c && recordEvent(device, ts, c, raw, nowMs)) await announce(device, c, f, nowMs, getConfig(), notifier);
     return 'ok';
@@ -219,9 +222,16 @@ function persist(rows) {
   db.transaction(() => { for (const r of rows) put.run(r); })();
 }
 
+/** The oldest events go when the table is past its limit (an hourly job; the retention in days is done once a day). */
+function trimEvents(max = EVENTS_MAX) {
+  return db.prepare('DELETE FROM syslog_events WHERE id <= (SELECT MAX(id) - ? FROM syslog_events)').run(max).changes;
+}
+let lastTrimHour = 0;
+
 /** Every few seconds: hours that are over are written, the hour that goes on is written too (so a restart loses little), config changes are said, silence is noticed. */
 async function tick(nowMs = Date.now(), { notifier = notifyDefault } = {}) {
   const sec = Math.floor(nowMs / 1000); const cfg = getConfig();
+  const hourNow = Math.floor(nowMs / 3600_000); if (hourNow !== lastTrimHour) { lastTrimHour = hourNow; trimEvents(); }
   persist(agg.take(sec).map(toRow)); persist(agg.live().map(toRow)); flushStats();
   for (const [key, g] of groups) {
     if (nowMs - g.last < 120_000 && nowMs - g.first < 600_000) continue;
@@ -257,11 +267,24 @@ function purge(nowSec = Math.floor(Date.now() / 1000)) {
 
 const RANGE = { '1h': 3600, '24h': 86400, '7d': 7 * 86400, '30d': 30 * 86400, '1y': 365 * 86400 };
 
-function summary(range = '24h', device = null, nowSec = Math.floor(Date.now() / 1000)) {
+/** The hours of a range: the ones in the database, and the one that is still in memory (not twice). */
+function collect(range, device, nowSec) {
   const span = RANGE[range]; if (!span) throw new ConfigError(`Range must be one of ${Object.keys(RANGE).join(', ')}`);
   const from = nowSec - span; const live = agg.live(device || undefined); const liveKey = new Set(live.map((b) => `${b.device}|${b.hour}`));
   const rows = db.prepare(`SELECT * FROM syslog_hourly WHERE hour + 3600 > ?${device ? ' AND device = ?' : ''} ORDER BY hour`).all(...(device ? [from, device] : [from])).filter((r) => !liveKey.has(`${r.device}|${r.hour}`));
-  const all = [...rows, ...live.filter((b) => b.hour + 3600 > from)];
+  return { span, from, all: [...rows, ...live.filter((b) => b.hour + 3600 > from)] };
+}
+
+/** What one address did in a range: its biggest destinations and services, and what was blocked. */
+function hostDetail(ip, range = '24h', device = null, nowSec = Math.floor(Date.now() / 1000)) {
+  if (!net.isIP(String(ip))) throw new ConfigError('That is not an IP address');
+  const { from, all } = collect(range, device, nowSec);
+  const me = combine(all, 5000).top.src.find((r) => r.key === ip) || { key: ip, name: null, bytes: 0, sessions: 0, blocked: 0 };
+  return { ip, name: me.name, range, from, to: nowSec, device: device || null, bytes: me.bytes, sessions: me.sessions, blocked: me.blocked, destinations: pairsFor(all, 'src_dst', ip, 15), services: pairsFor(all, 'src_service', ip, 15) };
+}
+
+function summary(range = '24h', device = null, nowSec = Math.floor(Date.now() / 1000)) {
+  const { span, from, all } = collect(range, device, nowSec);
   const bucket = span <= 86400 * 2 ? 3600 : 86400; const line = new Map();
   for (const r of all) { const t = Math.floor(r.hour / bucket) * bucket; const e = line.get(t) || { ts: t, bytes: 0, sessions: 0, blocked: 0 }; e.bytes += r.bytes_out + r.bytes_in; e.sessions += r.sessions; e.blocked += r.blocked; line.set(t, e); }
   const events = db.prepare(`SELECT kind, level, COUNT(*) AS n FROM syslog_events WHERE ts >= ?${device ? ' AND device = ?' : ''} GROUP BY kind, level`).all(...(device ? [from, device] : [from]));
@@ -351,4 +374,4 @@ function start() {
 const initScheduler = start; const reload = start;
 function resetForTests() { allowCache = { at: 0, set: null, names: new Map(), nets: [], blockRe: null }; flowTemplates.clear(); statMem.clear(); agg.buckets.clear(); for (const m of [rejectedBy, seen, windows, throttle, groups, perMinute, hourlyAlerts]) m.clear(); silent.clear(); Object.assign(counters, { received: 0, parsed: 0, unparsed: 0, rejected: 0, events: 0, events_dropped: 0, flows: 0, flow_packets: 0, flows_skipped: 0, flow_unknown_template: 0 }); rate.length = 0; lastMinute = 0; startedAt = Date.now(); }
 
-module.exports = { flushNow, getConfig, saveConfig, ingest, ingestFlow, tick, purge, summary, events, status, start, stop, reload, initScheduler, allowedSources, resetForTests, ConfigError, DEFAULTS, RANGE, DIMS };
+module.exports = { flushNow, trimEvents, hostDetail, getConfig, saveConfig, ingest, ingestFlow, tick, purge, summary, events, status, start, stop, reload, initScheduler, allowedSources, resetForTests, ConfigError, DEFAULTS, RANGE, DIMS };

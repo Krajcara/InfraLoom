@@ -40,9 +40,15 @@ function classify(f) {
     if (sub === 'virus' || sub === 'emailfilter' && /virus|malware/.test(d)) {
       return { kind: 'malware', level: /blocked|quarantin|dropped|reset/.test(String(f.action || '').toLowerCase()) ? 'warning' : 'info', user, srcip: src, attack: f.virus || null, summary: `Malware: ${trim(f.virus || f.msg || 'virus', 100)} ${f.dstip ? `${trim(src || '?')} → ${trim(f.dstip)}` : ''}${f.action ? `, ${trim(f.action, 30)}` : ''}`.trim() };
     }
-    if (sub === 'webfilter' && /block/.test(String(f.action || '').toLowerCase())) return { kind: 'web_blocked', level: 'info', user, srcip: src, summary: `Web blocked: ${trim(f.hostname || f.url || '?', 100)}${f.catdesc ? ` (${trim(f.catdesc, 40)})` : ''} for ${trim(user || src || '?')}` };
   }
   return null;
+}
+
+/** A web request that the filter blocked: counted by site (a busy network makes thousands of these an hour, which would bury the events). */
+function webBlockOf(f) {
+  if (String(f.type).toLowerCase() !== 'utm' || String(f.subtype).toLowerCase() !== 'webfilter' || !/block/.test(String(f.action || '').toLowerCase())) return null;
+  const host = String(f.hostname || (/^https?:\/\/([^/]+)/i.exec(f.url || '') || [])[1] || f.dstip || '').trim().slice(0, 80);
+  return host ? { site: `${host}${f.catdesc ? ` (${String(f.catdesc).slice(0, 30)})` : ''}` } : null;
 }
 
 /** The numbers of a traffic log that go into the hourly summary, or null when the line is not a finished session or a block. */
@@ -62,4 +68,4 @@ function trafficOf(f) {
   };
 }
 
-module.exports = { classify, trafficOf };
+module.exports = { classify, trafficOf, webBlockOf };

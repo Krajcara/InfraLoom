@@ -20,6 +20,8 @@ router.get('/status', canSee, h((req, res) => res.json(svc.status())));
 
 router.get('/summary', canSee, h((req, res) => res.json(svc.summary(String(req.query.range || '24h'), req.query.device ? String(req.query.device) : null))));
 
+router.get('/host', canSee, h((req, res) => res.json(svc.hostDetail(String(req.query.ip || ''), String(req.query.range || '24h'), req.query.device ? String(req.query.device) : null))));
+
 router.get('/events', canSee, h((req, res) => {
   const { limit, kind, level, q, before, device } = req.query;
   res.json(svc.events({ limit, kind: kind ? String(kind) : null, level: level ? String(level) : null, q: q ? String(q).slice(0, 80) : null, before, device: device ? String(device) : null }));

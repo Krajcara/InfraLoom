@@ -61,6 +61,15 @@ test('what arrived is summed up, and the events are there', async () => {
   const e = (await c.operator.get(`${S}/events?kind=admin_login_failed`)).body; assert.deepEqual([e.length, e[0].user, e[0].srcip, e[0].device], [1, 'admin', '185.1.2.3', 'FG-100F']); assert.match(e[0].raw, /logdesc="Admin login failed"/);
 });
 
+test('one address: what it reached and with what; for operators; and the address is checked', async () => {
+  const d = (await c.operator.get(`${S}/host?ip=10.1.0.55&range=24h`)).body;
+  assert.deepEqual([d.ip, d.sessions, d.bytes], ['10.1.0.55', 2, 1100]); assert.deepEqual(d.destinations.map((r) => [r.key, r.bytes]), [['142.250.74.46', 1100]]); assert.deepEqual(d.services.map((r) => r.key), ['HTTPS']);
+  const none = (await c.operator.get(`${S}/host?ip=9.9.9.9`)).body; assert.deepEqual([none.sessions, none.destinations], [0, []]);
+  const bad = await c.operator.get(`${S}/host?ip=drop%20table`); assert.equal(bad.status, 400); assert.match(bad.body.error, /not an IP address/); assert.equal((await c.operator.get(`${S}/host?ip=10.1.0.55&range=2w`)).status, 400);
+  assert.equal((await c.viewer.get(`${S}/host?ip=10.1.0.55`)).status, 403); assert.equal((await c.anon.get(`${S}/host?ip=10.1.0.55`)).status, 401);
+  const blocked = (await c.operator.get(`${S}/host?ip=185.1.2.3`)).body; assert.deepEqual([blocked.blocked, blocked.destinations.map((r) => r.key), blocked.services.map((r) => r.key)], [1, ['203.0.113.2'], ['RDP']]);
+});
+
 test('a burst of failed logins is announced once', async () => {
   await udp(adminFail('root')); await udp(adminFail('test'));
   await until(async () => (await c.operator.get(`${S}/events?kind=admin_login_failed`)).body.length >= 3);

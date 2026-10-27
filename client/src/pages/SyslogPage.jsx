@@ -11,7 +11,9 @@ const KIND = {
   ips: 'IPS / anomaly', malware: 'Malware', web_blocked: 'Web blocked', system_event: 'System event',
 };
 const LEVEL = { info: 'status-up', warning: 'is-warn', critical: 'is-bad' };
-const DIM_TITLES = [['src', 'Who uses the most', 'Source'], ['dst', 'Where it goes', 'Destination'], ['app', 'Applications', 'Application'], ['country', 'Countries', 'Country'], ['service', 'Services', 'Service'], ['policy', 'Policies', 'Policy'], ['user', 'Users', 'User'], ['blocked_src', 'Most blocked', 'Source']];
+const DIM_TITLES = [['src', 'Who uses the most', 'Source'], ['dst', 'Where it goes', 'Destination'], ['app', 'Applications', 'Application'], ['country', 'Countries', 'Country'], ['service', 'Services', 'Service'], ['policy', 'Policies', 'Policy'], ['user', 'Users', 'User'], ['site', 'Blocked web sites', 'Site'], ['blocked_src', 'Most blocked', 'Source']];
+const CLICKABLE = new Set(['src', 'blocked_src']);
+const isIp = (k) => /^[0-9a-f:.]+$/i.test(k) && (k.includes('.') || k.includes(':'));
 const num = (n) => Number(n).toLocaleString();
 
 export default function SyslogPage() {
@@ -83,14 +85,14 @@ function Bars({ s }) {
   );
 }
 
-function TopList({ title, label, rows, max, blockedFirst }) {
+function TopList({ title, label, rows, max, blockedFirst, onPick }) {
   return (
     <div className="card syslog-top">
       <h3>{title}</h3>
       {rows.length === 0 ? <p className="muted">Nothing yet.</p> : (
         <table className="table"><thead><tr><th>{label}</th><th className="num">{blockedFirst ? 'Blocked' : 'Traffic'}</th><th className="num">Sessions</th></tr></thead>
           <tbody>{rows.map((r) => (
-            <tr key={r.key}><td className="mono syslog-key" title={r.key}>{r.key}{r.name && <span className="muted"> {r.name}</span>}{!blockedFirst && r.blocked > 0 && <span className="syslog-tag">{num(r.blocked)} blocked</span>}<div className="syslog-meter"><i style={{ width: `${Math.max(2, ((blockedFirst ? r.blocked : r.bytes) / max) * 100)}%` }} className={blockedFirst ? 'is-blocked' : ''} /></div></td>
+            <tr key={r.key} className={onPick && isIp(r.key) ? 'syslog-pick' : ''} onClick={onPick && isIp(r.key) ? () => onPick(r.key) : undefined} onKeyDown={onPick && isIp(r.key) ? (e) => e.key === 'Enter' && onPick(r.key) : undefined} tabIndex={onPick && isIp(r.key) ? 0 : undefined} aria-label={onPick && isIp(r.key) ? `Look into ${r.key}` : undefined}><td className="mono syslog-key" title={r.key}>{r.key}{r.name && <span className="muted"> {r.name}</span>}{!blockedFirst && r.blocked > 0 && <span className="syslog-tag">{num(r.blocked)} blocked</span>}<div className="syslog-meter"><i style={{ width: `${Math.max(2, ((blockedFirst ? r.blocked : r.bytes) / max) * 100)}%` }} className={blockedFirst ? 'is-blocked' : ''} /></div></td>
               <td className="num">{blockedFirst ? num(r.blocked) : fmtBytes(r.bytes)}</td><td className="num">{num(r.sessions)}</td></tr>))}</tbody></table>
       )}
     </div>
@@ -102,6 +104,8 @@ function Summary({ status }) {
   const [device, setDevice] = useState('');
   const [s, setS] = useState(null);
   const [err, setErr] = useState(null);
+  const [host, setHost] = useState(null);
+  useEffect(() => { setHost(null); }, [range, device]);
   useEffect(() => { api.get(`/syslog/summary?range=${range}${device ? `&device=${encodeURIComponent(device)}` : ''}`).then((d) => { setS(d); setErr(null); }).catch((e) => setErr(e.message)); }, [range, device, status?.counters?.parsed]);
   if (err) return <p className="error">{err}</p>;
   if (!s) return null;
@@ -119,12 +123,43 @@ function Summary({ status }) {
         <div className="traffic-stat"><span className="muted">Security events</span><span><strong>{num(evN('critical') + evN('warning'))}</strong> to look at</span><span className="muted">{num(evN('info'))} for the record</span></div>
       </div>
       <div className="card"><Bars s={s} /></div>
-      {s.sessions === 0 ? <div className="card"><p className="muted">No traffic logs in this range. Traffic is only logged by policies that have logging on (<span className="mono">set logtraffic all</span>), and the syslog filter must forward traffic logs: see “Setup”.</p></div> : (
+      {host && <HostDetail ip={host} range={range} device={device} onClose={() => setHost(null)} />}
+      {s.sessions === 0 && !s.top.site.length ? <div className="card"><p className="muted">No traffic logs in this range. Traffic is only logged by policies that have logging on (<span className="mono">set logtraffic all</span>), and the syslog filter must forward traffic logs: see “Setup”.</p></div> : (
         <div className="syslog-grid">
-          {DIM_TITLES.map(([k, t, label]) => <TopList key={k} title={t} label={label} rows={s.top[k]} max={Math.max(1, ...s.top[k].map((r) => (k === 'blocked_src' ? r.blocked : r.bytes)))} blockedFirst={k === 'blocked_src'} />)}
+          {DIM_TITLES.map(([k, t, label]) => { const bf = k === 'blocked_src' || k === 'site'; return <TopList key={k} title={t} label={label} rows={s.top[k] || []} max={Math.max(1, ...(s.top[k] || []).map((r) => (bf ? r.blocked : r.bytes)))} blockedFirst={bf} onPick={CLICKABLE.has(k) ? setHost : null} />; })}
         </div>
       )}
     </>
+  );
+}
+
+function HostDetail({ ip, range, device, onClose }) {
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => { setD(null); api.get(`/syslog/host?ip=${encodeURIComponent(ip)}&range=${range}${device ? `&device=${encodeURIComponent(device)}` : ''}`).then(setD).catch((e) => setErr(e.message)); }, [ip, range, device]);
+  const list = (title, label, rows) => (
+    <div className="syslog-host-col">
+      <h4>{title}</h4>
+      {rows.length === 0 ? <p className="muted">Nothing in the lists of the hours (only the biggest are kept).</p> : (
+        <table className="table"><thead><tr><th>{label}</th><th className="num">Traffic</th><th className="num">Sessions</th></tr></thead>
+          <tbody>{rows.map((r) => <tr key={r.key}><td className="mono syslog-key" title={r.key}>{r.key}{r.blocked > 0 && <span className="syslog-tag">{num(r.blocked)} blocked</span>}</td><td className="num">{fmtBytes(r.bytes)}</td><td className="num">{num(r.sessions)}</td></tr>)}</tbody></table>
+      )}
+    </div>
+  );
+  return (
+    <section className="card syslog-host" aria-label={`Details of ${ip}`}>
+      <div className="syslog-host-head">
+        <h3><span className="mono">{ip}</span>{d?.name && <span className="muted"> {d.name}</span>}</h3>
+        <button type="button" className="cab-btn-ghost" onClick={onClose}>Close</button>
+      </div>
+      {err && <p className="error">{err}</p>}
+      {d && (
+        <>
+          <p className="muted">{fmtBytes(d.bytes)} in {num(d.sessions)} sessions{d.blocked ? `, ${num(d.blocked)} blocked` : ''} in this range. Where it went, and with what:</p>
+          <div className="syslog-host-grid">{list('Where it went', 'Destination', d.destinations)}{list('With what', 'Service', d.services)}</div>
+        </>
+      )}
+    </section>
   );
 }
 

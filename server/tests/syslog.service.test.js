@@ -119,8 +119,8 @@ test('system events are said (not too often), a login only when it is asked for'
 test('the events table is protected against a flood of one kind', async () => {
   reset(); const login = (i) => `${HEAD()} type="event" subtype="system" level="information" logdesc="Admin login successful" user="u${i}" srcip=10.1.0.5 status="success"`;
   for (let i = 0; i < 250; i++) await send(login(i), T0 + i);
-  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM syslog_events WHERE kind = 'admin_login'").get().n, 200); assert.equal(S.status().counters.events_dropped, 50);
-  await send(adminFail(), T0 + 1000); assert.equal(db.prepare("SELECT COUNT(*) AS n FROM syslog_events WHERE kind = 'admin_login_failed'").get().n, 1, 'the others are not affected'); await send(login(1), T0 + 61_000); assert.equal(db.prepare("SELECT COUNT(*) AS n FROM syslog_events WHERE kind = 'admin_login'").get().n, 201, 'and the next minute starts again');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM syslog_events WHERE kind = 'admin_login'").get().n, 60); assert.equal(S.status().counters.events_dropped, 190);
+  await send(adminFail(), T0 + 1000); assert.equal(db.prepare("SELECT COUNT(*) AS n FROM syslog_events WHERE kind = 'admin_login_failed'").get().n, 1, 'the others are not affected'); await send(login(1), T0 + 61_000); assert.equal(db.prepare("SELECT COUNT(*) AS n FROM syslog_events WHERE kind = 'admin_login'").get().n, 61, 'and the next minute starts again');
 });
 
 test('a firewall that goes quiet is noticed, and its return', async () => {
@@ -146,4 +146,30 @@ test('what is shown: the events can be filtered and paged, the counters of what 
   await S.tick(T0 + 10_000, { notifier }); const st = db.prepare('SELECT SUM(received) AS r, SUM(unparsed) AS u FROM syslog_stats').get(); assert.equal(st.r, 7);
   db.prepare('INSERT INTO syslog_events (ts, device, kind, level, summary) VALUES (?, ?, ?, ?, ?)').run(Math.floor(T0 / 1000) - 100 * 86400, 'FG', 'old', 'info', 'old'); db.prepare('INSERT INTO syslog_hourly (device, hour) VALUES (?, ?)').run('FG', Math.floor(T0 / 1000) - 500 * 86400);
   assert.deepEqual(S.purge(Math.floor(T0 / 1000)), { events: 1, hourly: 1, stats: 0 });
+});
+
+test('blocked web requests are counted by site and never become events', async () => {
+  reset(); const web = (host, cat, src) => `${HEAD()} logid="0316013056" type="utm" subtype="webfilter" level="warning" action="blocked" srcip=${src} hostname="${host}" catdesc="${cat}"`;
+  for (let i = 0; i < 400; i++) await send(web(i % 4 ? 'ads.example' : 'tracker.example', i % 4 ? 'Advertising' : 'Tracking', `10.1.0.${i % 50}`), T0 + i * 10);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM syslog_events').get().n, 0, 'not one event: four hundred of them would bury the ones that matter');
+  const s = S.summary('24h', null, Math.floor(T0 / 1000) + 4100); assert.deepEqual(s.top.site.map((r) => [r.key, r.blocked]), [['ads.example (Advertising)', 300], ['tracker.example (Tracking)', 100]]); assert.deepEqual([s.sessions, s.blocked], [0, 0], 'they are not sessions of the traffic');
+  await S.tick(T0 + 60_000, { notifier }); const row = db.prepare('SELECT top FROM syslog_hourly').get(); assert.equal(JSON.parse(row.top).site['ads.example (Advertising)'][2], 300, 'and they are written with the hour');
+});
+
+test('the web-blocked events that were written before are removed by the migration, the others stay', () => {
+  reset(); const ins = db.prepare('INSERT INTO syslog_events (ts, device, kind, level, summary) VALUES (?, ?, ?, ?, ?)');
+  for (let i = 0; i < 5; i++) ins.run(1000 + i, 'FG', 'web_blocked', 'info', `Web blocked: x${i}`); ins.run(2000, 'FG', 'admin_login_failed', 'warning', 'Admin login failed'); ins.run(2001, 'FG', 'config_change', 'info', 'Edit firewall.policy 3');
+  db.exec(fs.readFileSync(path.join(__dirname, '../src/db/syslog/002_drop_web_blocked_events.sql'), 'utf8'));
+  assert.deepEqual(db.prepare('SELECT kind FROM syslog_events ORDER BY ts').all().map((r) => r.kind), ['admin_login_failed', 'config_change']);
+  assert.deepEqual(db.prepare('SELECT version FROM syslog_migrations ORDER BY version').all().map((r) => r.version), ['001_syslog', '002_drop_web_blocked_events']);
+});
+
+test('the events table never grows past its limit, and one address can be looked into', async () => {
+  reset(); for (let i = 0; i < 40; i++) db.prepare('INSERT INTO syslog_events (ts, device, kind, level, summary) VALUES (?, ?, ?, ?, ?)').run(1000 + i, 'FG', 'ips', 'warning', `e${i}`);
+  assert.equal(S.trimEvents(25), 15); assert.deepEqual(db.prepare('SELECT MIN(summary) AS a, COUNT(*) AS n FROM syslog_events').get(), { a: 'e15', n: 25 }, 'the newest stay'); assert.equal(S.trimEvents(25), 0);
+  reset(); await send(traffic({ src: '10.1.0.55', dst: '142.250.74.46', out: 100, in: 900 })); await send(traffic({ src: '10.1.0.55', dst: '52.97.1.1', out: 10, in: 20, service: 'SMTP' })); await send(traffic({ src: '10.1.0.55', dst: '203.0.113.9', deny: true, action: 'deny', service: 'RDP' })); await send(traffic({ src: '10.1.0.56', dst: '8.8.8.8', out: 5, in: 5, service: 'DNS' }));
+  const d = S.hostDetail('10.1.0.55', '24h', null, Math.floor(T0 / 1000) + 60);
+  assert.deepEqual([d.ip, d.bytes, d.sessions, d.blocked], ['10.1.0.55', 1030, 3, 1]); assert.deepEqual(d.destinations.map((r) => [r.key, r.bytes, r.blocked]), [['142.250.74.46', 1000, 0], ['52.97.1.1', 30, 0], ['203.0.113.9', 0, 1]]); assert.deepEqual(d.services.map((r) => r.key), ['HTTPS', 'SMTP', 'RDP']);
+  const none = S.hostDetail('9.9.9.9', '24h', null, Math.floor(T0 / 1000) + 60); assert.deepEqual([none.bytes, none.sessions, none.destinations, none.services], [0, 0, [], []]);
+  assert.throws(() => S.hostDetail('not an ip'), /not an IP address/); assert.throws(() => S.hostDetail('10.1.0.55', '2w'), /Range must be one of/);
 });

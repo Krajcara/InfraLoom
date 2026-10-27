@@ -3,8 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseLine, eventSeconds } = require('../src/services/syslog/parser');
-const { classify, trafficOf } = require('../src/services/syslog/rules');
-const { Aggregator, toRow, combine, MAX_KEYS, OTHER } = require('../src/services/syslog/aggregate');
+const { classify, trafficOf, webBlockOf } = require('../src/services/syslog/rules');
+const { Aggregator, toRow, combine, pairsFor, MAX_KEYS, OTHER } = require('../src/services/syslog/aggregate');
 
 // lines the way a FortiGate 7.4 writes them
 const HEAD = 'date=2026-10-23 time=11:02:03 devname="FG-100F" devid="FG100FTK21000001" eventtime=1798020123456789012 tz="+0200"';
@@ -46,7 +46,10 @@ test('what an event means', () => {
   assert.equal(classify(parseLine(IPS.replace('severity="high"', 'severity="critical"')).fields).level, 'critical'); assert.equal(classify(parseLine(IPS.replace('severity="high"', 'severity="low"').replace('level="alert"', 'level="notice"')).fields).level, 'info');
   assert.equal(classify(parseLine(`${HEAD} type="event" subtype="system" level="warning" logdesc="Memory conserve mode entered" msg="mem 88%"`).fields).kind, 'system_event');
   assert.equal(classify(parseLine(`${HEAD} type="event" subtype="ha" level="notice" logdesc="HA state changed" msg="member is now primary"`).fields).kind, 'system_event');
-  assert.equal(classify(parseLine(`${HEAD} type="utm" subtype="webfilter" level="warning" action="blocked" hostname="bad.example" catdesc="Malicious Websites" srcip=10.1.0.9`).fields).kind, 'web_blocked');
+  const web = parseLine(`${HEAD} type="utm" subtype="webfilter" level="warning" action="blocked" hostname="bad.example" catdesc="Malicious Websites" srcip=10.1.0.9`).fields;
+  assert.equal(classify(web), null, 'a blocked web request is not an event: a network makes thousands of them an hour');
+  assert.deepEqual(webBlockOf(web), { site: 'bad.example (Malicious Websites)' }); assert.deepEqual(webBlockOf(parseLine(`${HEAD} type="utm" subtype="webfilter" action="blocked" url="https://ads.example.net/x?y=1" dstip=1.2.3.4`).fields), { site: 'ads.example.net' }); assert.deepEqual(webBlockOf(parseLine(`${HEAD} type="utm" subtype="webfilter" action="blocked" dstip=1.2.3.4`).fields), { site: '1.2.3.4' });
+  assert.equal(webBlockOf(parseLine(`${HEAD} type="utm" subtype="webfilter" action="passthrough" hostname="ok.example"`).fields), null); assert.equal(webBlockOf(parseLine(TRAFFIC).fields), null);
   for (const none of [TRAFFIC, `${HEAD} type="event" subtype="system" level="information" logdesc="DHCP statistics"`, `${HEAD} type="utm" subtype="webfilter" action="passthrough"`, `${HEAD} type="event" subtype="router" level="notice" logdesc="Routing log"`]) assert.equal(classify(parseLine(none).fields), null);
 });
 
@@ -81,4 +84,19 @@ test('a dimension is bounded: an attack from thousands of addresses does not gro
   for (let i = 0; i < MAX_KEYS + 500; i++) a.add('FG', H, { blocked: true, out: 0, in: 0, src: `10.${i >> 8 & 255}.${i & 255}.1`, dst: 'x', app: 'a', country: null, service: 's', policy: '1', user: null, srcName: null });
   const b = a.live('FG')[0]; assert.equal(b.dims.src.size, MAX_KEYS + 1, 'the keys, and one entry for the rest'); assert.equal(b.dims.src.get(OTHER)[1], 500);
   const row = toRow(b); assert.ok(row.top.length < 20000, `what is stored stays small (${row.top.length} bytes)`); assert.equal(b.sessions, MAX_KEYS + 500, 'the totals are exact');
+});
+
+test('what one address did: its destinations and services, kept bounded', () => {
+  const a = new Aggregator(); const H = 1798020000 - (1798020000 % 3600);
+  const t = (o) => ({ blocked: false, out: 10, in: 90, src: '10.1.0.55', srcName: null, dst: 'a.example', app: 'Web', country: null, service: 'HTTPS', policy: '3', user: null, ...o });
+  a.add('FG', H, t()); a.add('FG', H + 1, t({ dst: 'b.example', service: 'DNS', out: 1, in: 1 })); a.add('FG', H + 2, t({ src: '10.1.0.56', dst: 'c.example' })); a.add('FG', H + 3, t({ blocked: true, dst: 'evil.example', service: 'RDP', out: 0, in: 0 }));
+  a.addSite('FG', H + 4, 'ads.example (Advertising)'); a.addSite('FG', H + 5, 'ads.example (Advertising)'); a.addSite('FG', H + 6, 'bad.example (Malicious Websites)');
+  const rows = a.live('FG');
+  assert.deepEqual(pairsFor(rows, 'src_dst', '10.1.0.55').map((r) => [r.key, r.bytes, r.blocked]), [['a.example', 100, 0], ['b.example', 2, 0], ['evil.example', 0, 1]]); assert.deepEqual(pairsFor(rows, 'src_service', '10.1.0.55').map((r) => r.key), ['HTTPS', 'DNS', 'RDP']);
+  assert.deepEqual(pairsFor(rows, 'src_dst', '10.1.0.56').map((r) => r.key), ['c.example']); assert.deepEqual(pairsFor(rows, 'src_dst', '9.9.9.9'), [], 'an address nobody heard of'); assert.deepEqual(pairsFor(rows, 'src_dst', '10.1.0.5'), [], 'and 10.1.0.5 is not 10.1.0.55');
+  const c = combine(rows); assert.deepEqual(c.top.site.map((r) => [r.key, r.blocked]), [['ads.example (Advertising)', 2], ['bad.example (Malicious Websites)', 1]]); assert.equal(c.sessions, 4, 'blocked web requests are not sessions of the traffic');
+  assert.equal('src_dst' in c.top, false, 'the pairs are not a list of the page');
+  const big = new Aggregator(); for (let i = 0; i < 500; i++) big.add('FG', H, t({ dst: `d${i}.example`, out: i, in: 0, service: `s${i % 50}` }));
+  const stored = JSON.parse(toRow(big.live('FG')[0]).top); assert.ok(Object.keys(stored.src_dst).length <= 32 && Object.keys(stored.src_service).length <= 32, 'only the biggest pairs are written'); assert.ok(stored.src_dst['10.1.0.55\td499.example'], 'and they are the biggest');
+  const again = new Aggregator(); const row = { ...toRow(a.live('FG')[0]) }; again.add('FG', H + 10, t({ dst: 'a.example' }), () => row); assert.deepEqual(pairsFor(again.live('FG'), 'src_dst', '10.1.0.55').map((r) => [r.key, r.bytes]).slice(0, 1), [['a.example', 200]], 'an hour that is continued keeps its pairs');
 });
