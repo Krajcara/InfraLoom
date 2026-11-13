@@ -1,0 +1,12 @@
+.cf-tabs { margin: .6rem 0 1rem; }
+.cf-svg { width: 100%; height: auto; display: block; }
+.cf-grid { stroke: #2a2e38; stroke-width: 1; } .cf-axis { fill: #8b8f99; font-size: 11px; }
+.cf-bar { fill: #4a8cff; opacity: .85; } .cf-bar:hover { opacity: 1; }
+.cf-hover { min-height: 1.4rem; font-size: .85rem; margin-top: .3rem; } .cf-empty { padding: 2rem 0; text-align: center; }
+.cf-zone { cursor: pointer; } .cf-zone:hover td { background: rgba(255,255,255,.05); } .cf-zone:focus-visible { outline: 2px solid #2b6cff; outline-offset: -2px; }
+.cf-share { width: 40%; } .cf-err { font-size: .78rem; max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-note { font-size: .82rem; margin-top: .6rem; } .cf-h3 { margin: 1rem 0 .5rem; }
+.cf-top { margin-top: 0; } .cf-raw { margin-top: .8rem; } .cf-raw summary { cursor: pointer; color: #8b8f99; }
+.cf-pre { background: #14161c; border: 1px solid #2a2e38; border-radius: 6px; padding: .5rem .7rem; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-all; font-size: .78rem; }
+.bar-green { background: #4cc382; }
+.bar-amber { background: #e6b13d; }
